@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+:root {
+  --color-black: rgb(20, 20, 19);
+  --color-white: rgb(235, 235, 236);
+  --color-grey: rgb(127, 127, 127);
+  --color-grey-dark: rgb(40, 40, 39);
+  --color-grey-light: rgb(180, 180, 181);
+  --border-subtle: rgba(235, 235, 236, 0.08);
+  --border-strong: rgba(235, 235, 236, 0.18);
+  --surface-panel: rgb(20, 20, 19);
+  --surface-hover: rgba(235, 235, 236, 0.06);
+  --surface-active: rgba(235, 235, 236, 0.12);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  body {
+    user-select: none;
+    -webkit-user-select: none;
+    background-color: var(--color-black);
+    color: var(--color-white);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Custom canvas background patterns */
+.canvas-dots {
+  background-size: 24px 24px;
+  background-image: radial-gradient(circle, rgba(235, 235, 236, 0.1) 1px, transparent 1px);
+}
+
+.canvas-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(235, 235, 236, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(235, 235, 236, 0.04) 1px, transparent 1px);
+}
+
+/* Ultra-smooth scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(235, 235, 236, 0.12);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(235, 235, 236, 0.25);
+}
+
+/* Glassmorphism panel */
+.glass-panel {
+  background: rgba(20, 20, 19, 0.94);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  border: 1px solid rgba(235, 235, 236, 0.08);
+}
+
+/* Glassmorphism dropdown */
+.glass-dropdown {
+  background: rgba(20, 20, 19, 0.98);
+  backdrop-filter: blur(24px) saturate(1.2);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  border: 1px solid rgba(235, 235, 236, 0.12);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* iPhone device shadow for prototype player */
+.shadow-device {
+  box-shadow:
+    0 0 0 1px rgba(235, 235, 236, 0.08),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* Subtle pulse for prototype hotspot wire handles */
+@keyframes wire-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(235, 235, 236, 0.6);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 5px rgba(235, 235, 236, 0);
+  }
+}
+
+.hotspot-handle {
+  animation: wire-pulse 2s infinite ease-in-out;
+}
+
+/* Flash for clickable prototype hotspots */
+@keyframes hotspot-flash {
+  0%, 100% {
+    opacity: 0;
+  }
+  25%, 75% {
+    opacity: 0.35;
+    background-color: rgb(235, 235, 236);
+    box-shadow: 0 0 0 3px rgba(235, 235, 236, 0.3);
+  }
+}
+
+.hint-flash {
+  animation: hotspot-flash 0.5s ease-in-out;
+}
+
+/* Smooth global transitions for interactive elements */
+button, [role="button"] {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Tailwind animate-in polyfill (if not included) */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zoomIn95 {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes slideInFromBottom {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-in {
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+  animation-duration: 0.2s;
+  animation-timing-function: ease-out;
+}
+
+.zoom-in-95 {
+  animation-name: zoomIn95;
+  animation-duration: 0.2s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.slide-in-from-bottom-2 {
+  animation-name: slideInFromBottom;
+  animation-duration: 0.25s;
+  animation-timing-function: ease-out;
+}
+
+.slide-in-from-bottom-3 {
+  animation-name: slideInFromBottom;
+  animation-duration: 0.2s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Focus ring for inputs */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: rgba(235, 235, 236, 0.3) !important;
+}
+
+/* Selection text color */
+::selection {
+  background: rgba(235, 235, 236, 0.2);
+  color: rgb(235, 235, 236);
+}
