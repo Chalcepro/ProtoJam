@@ -1,6 +1,37 @@
 import { PrototypeInteraction } from './prototype';
 
-export type UIElementType = 
+// Design variable — a single named, reusable value (color or number) that other
+// elements can bind to. Editing a variable's value propagates live to every
+// element bound to it. Deliberately single-mode (no light/dark collections) —
+// a focused MVP, not full Figma variable-collection parity.
+export interface DesignVariable {
+  id: string;
+  name: string;
+  type: 'color' | 'number';
+  value: string | number;
+}
+
+// A canvas comment pin — a lightweight review/annotation thread anchored to a
+// world-space point, independent of any element (survives elements moving/deleting).
+export interface CommentReply {
+  id: string;
+  text: string;
+  author: string;
+  createdAt: string;
+}
+
+export interface CanvasComment {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+  author: string;
+  createdAt: string;
+  resolved: boolean;
+  replies: CommentReply[];
+}
+
+export type UIElementType =
   // Structure & Layout
   | 'frame'
   | 'section'
@@ -140,6 +171,12 @@ export interface ElementStyle {
   opacity?: number;
   zIndex?: number;
 
+  // Design-variable bindings: maps a style property name to the variable id
+  // driving it. The property itself (e.g. fillColor) still holds the live
+  // resolved literal value, kept in sync whenever the bound variable updates —
+  // rendering never needs to know a binding exists.
+  boundVariables?: Partial<Record<'fillColor' | 'textColor' | 'borderColor', string>>;
+
   // Background / Fill
   fillColor?: string;
   fillGradient?: {
@@ -167,8 +204,18 @@ export interface ElementStyle {
   textColor?: string;
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 
+  // Text sizing behaviour: true = hug content (single-click creation), false =
+  // fixed box that content can overflow (drag-to-size creation). Text/heading only.
+  autoSize?: boolean;
+  // When true on a fixed-size (non-autoSize) element, overflowing content is
+  // clipped and scrollable instead of spilling past the boundary.
+  clipContent?: boolean;
+
   // Auto Layout
   autoLayout?: AutoLayoutSettings;
+  // When true, this child opts out of its parent frame's auto-layout flow and
+  // reverts to free x/y positioning (Figma's "Absolute position" toggle).
+  absolutePosition?: boolean;
   display?: 'block' | 'flex' | 'grid';
   flexDirection?: 'row' | 'column';
   justifyContent?: 'flex-start' | 'center' | 'flex-end' | 'space-between' | 'space-around';
@@ -225,6 +272,13 @@ export interface SemanticProperties {
   innerRadius?: number; // for star
 }
 
+// Style overrides applied automatically on hover/press, live in the Prototype
+// player — an "interactive component" without needing a full variant set.
+export interface InteractiveStates {
+  hover?: Partial<Pick<ElementStyle, 'fillColor' | 'textColor' | 'borderColor' | 'borderWidth' | 'opacity'>>;
+  pressed?: Partial<Pick<ElementStyle, 'fillColor' | 'textColor' | 'borderColor' | 'borderWidth' | 'opacity'>>;
+}
+
 export interface UIElement {
   id: string;
   name: string;
@@ -240,6 +294,8 @@ export interface UIElement {
   isMasterComponent?: boolean;
   masterComponentId?: string;
   isInstance?: boolean;
+  // Hover/Pressed visual states, applied live in the Prototype player
+  states?: InteractiveStates;
 }
 
 export interface DeviceFrame {
@@ -259,6 +315,9 @@ export interface DeviceFrame {
   locked?: boolean;
   hidden?: boolean;
   collapsed?: boolean;
+  // Whether content extending past the frame's edges is hidden. Defaults to
+  // true (matches prior hardcoded behavior) when unset.
+  clipContent?: boolean;
   autoLayout?: AutoLayoutSettings;
 }
 
@@ -274,4 +333,5 @@ export interface SectionFrame {
   elementIds: string[]; // Direct elements in this section
   locked?: boolean;
   hidden?: boolean;
+  collapsed?: boolean;
 }

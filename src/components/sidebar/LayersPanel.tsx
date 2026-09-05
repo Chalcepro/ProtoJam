@@ -21,6 +21,7 @@ export const LayersPanel: React.FC = () => {
     toggleFrameLock,
     toggleFrameHidden,
     toggleFrameCollapsed,
+    toggleSectionCollapsed,
     toggleElementLock,
     toggleElementHidden,
     bringToFront,
@@ -32,13 +33,182 @@ export const LayersPanel: React.FC = () => {
   // Free canvas elements (not inside any frame)
   const freeElements = elements.filter(el => !el.parentId);
 
+  // Frames nested inside a section render only under that section, not flat at the top level
+  const framesInSections = new Set(sections.flatMap(s => s.frameIds));
+  const topLevelFrames = frames.filter(f => !framesInSections.has(f.id));
+
   // Filter helpers
   const q = searchQuery.toLowerCase().trim();
-  const filteredFrames = q ? frames.filter(f => f.name.toLowerCase().includes(q)) : frames;
+  const filteredFrames = q ? topLevelFrames.filter(f => f.name.toLowerCase().includes(q)) : topLevelFrames;
   const filteredSections = q ? sections.filter(s => s.name.toLowerCase().includes(q)) : sections;
   const filteredFreeElements = q ? freeElements.filter(e => (e.name || e.type).toLowerCase().includes(q)) : freeElements;
 
   const totalLayersCount = frames.length + sections.length + elements.length;
+
+  // Renders one artboard frame row plus its (optionally collapsed) child elements.
+  // Shared by the top-level frame list and by frames nested inside a section.
+  const renderFrameRow = (frame: typeof frames[number]) => {
+    const isFrameSelected = selectedFrameIds.includes(frame.id);
+    const childElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
+    const isCollapsed = !!frame.collapsed;
+
+    return (
+      <div key={frame.id} className="space-y-0.5">
+        {/* Frame Row */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            selectFrame(frame.id, e.shiftKey);
+          }}
+          className={`flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer group transition-colors ${
+            isFrameSelected
+              ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow-sm'
+              : 'hover:bg-[rgba(235,235,236,0.06)] text-[rgb(235,235,236)]'
+          } ${frame.hidden ? 'opacity-40' : ''}`}
+        >
+          <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+            {/* Chevron Toggle */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFrameCollapsed(frame.id);
+              }}
+              className={`p-0.5 rounded transition-colors ${
+                isFrameSelected
+                  ? 'hover:bg-[rgb(20,20,19)]/20 text-[rgb(20,20,19)]'
+                  : 'hover:bg-[rgba(235,235,236,0.1)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
+              }`}
+              title={isCollapsed ? 'Expand Screen' : 'Collapse Screen'}
+            >
+              {isCollapsed ? <Icons.ChevronRight size={11} /> : <Icons.ChevronDown size={11} />}
+            </button>
+
+            <Icons.Smartphone size={13} className={isFrameSelected ? 'text-[rgb(20,20,19)]' : 'text-[rgb(235,235,236)] shrink-0'} />
+            <span className="truncate font-semibold text-xs">{frame.name}</span>
+            {childElements.length > 0 && (
+              <span className="text-[10px] opacity-40 font-mono">({childElements.length})</span>
+            )}
+          </div>
+
+          {/* Frame Action Controls */}
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFrameLock(frame.id);
+              }}
+              title={frame.locked ? 'Unlock' : 'Lock'}
+              className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
+            >
+              {frame.locked ? <Icons.Lock size={11} /> : <Icons.Unlock size={11} />}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleFrameHidden(frame.id);
+              }}
+              title={frame.hidden ? 'Show' : 'Hide'}
+              className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
+            >
+              {frame.hidden ? <Icons.EyeOff size={11} /> : <Icons.Eye size={11} />}
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                duplicateFrame(frame.id);
+              }}
+              title="Duplicate"
+              className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
+            >
+              <Icons.Copy size={11} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteFrame(frame.id);
+              }}
+              title="Delete"
+              className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
+            >
+              <Icons.Trash2 size={11} />
+            </button>
+          </div>
+        </div>
+
+        {/* Child Elements inside Frame */}
+        {!isCollapsed && childElements.length > 0 && (
+          <div className="pl-4 space-y-0.5 border-l border-[rgba(235,235,236,0.08)] ml-2.5">
+            {childElements.map(el => {
+              const isElementSelected = selectedElementIds.includes(el.id);
+              return (
+                <div
+                  key={el.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectElement(el.id, e.shiftKey);
+                  }}
+                  className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer group transition-colors ${
+                    isElementSelected
+                      ? 'bg-[rgba(235,235,236,0.18)] text-[rgb(235,235,236)] font-semibold border border-[rgba(235,235,236,0.3)]'
+                      : 'hover:bg-[rgba(235,235,236,0.05)] text-[rgba(235,235,236,0.75)]'
+                  } ${el.hidden ? 'opacity-30' : ''}`}
+                >
+                  <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                    {el.isMasterComponent && <span className="text-[10px] text-[rgb(235,235,236)]">❖</span>}
+                    {el.isInstance && <span className="text-[10px] text-[rgba(235,235,236,0.6)]">◇</span>}
+                    <span className="text-[9px] font-mono text-[rgba(235,235,236,0.35)] uppercase">
+                      {el.type.slice(0, 3)}
+                    </span>
+                    <span className="truncate text-xs">{el.name || el.type}</span>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleElementLock(el.id);
+                      }}
+                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+                    >
+                      {el.locked ? <Icons.Lock size={10} /> : <Icons.Unlock size={10} />}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleElementHidden(el.id);
+                      }}
+                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+                    >
+                      {el.hidden ? <Icons.EyeOff size={10} /> : <Icons.Eye size={10} />}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        duplicateElement(el.id);
+                      }}
+                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+                    >
+                      <Icons.Copy size={10} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteElement(el.id);
+                      }}
+                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+                    >
+                      <Icons.Trash2 size={10} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full overflow-hidden text-xs text-[rgb(235,235,236)] select-none">
@@ -97,129 +267,63 @@ export const LayersPanel: React.FC = () => {
         {/* 1. SECTIONS */}
         {filteredSections.map(sec => {
           const isSecSelected = selectedSectionIds.includes(sec.id);
-          return (
-            <div
-              key={sec.id}
-              onClick={(e) => {
-                e.stopPropagation();
-                selectSection(sec.id, e.shiftKey);
-              }}
-              className={`flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer group transition-colors ${
-                isSecSelected
-                  ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow-sm'
-                  : 'hover:bg-[rgba(235,235,236,0.06)] text-[rgb(235,235,236)]'
-              }`}
-            >
-              <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                <Icons.LayoutGrid size={13} className={isSecSelected ? 'text-[rgb(20,20,19)]' : 'text-[rgba(235,235,236,0.5)] shrink-0'} />
-                <span className="truncate font-bold text-xs">{sec.name}</span>
-              </div>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteSection(sec.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-[rgba(235,235,236,0.4)] hover:text-rose-400"
-                title="Delete section"
-              >
-                <Icons.Trash2 size={11} />
-              </button>
-            </div>
-          );
-        })}
-
-        {/* 2. ARTBOARD FRAMES & NESTED ELEMENTS */}
-        {filteredFrames.map(frame => {
-          const isFrameSelected = selectedFrameIds.includes(frame.id);
-          const childElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
-          const isCollapsed = !!frame.collapsed;
+          const isSecCollapsed = !!sec.collapsed;
+          const childFrames = frames.filter(f => sec.frameIds.includes(f.id));
+          const childElements = elements.filter(el => sec.elementIds.includes(el.id) || el.parentId === sec.id);
+          const childCount = childFrames.length + childElements.length;
 
           return (
-            <div key={frame.id} className="space-y-0.5">
-              {/* Frame Row */}
+            <div key={sec.id} className="space-y-0.5">
               <div
                 onClick={(e) => {
                   e.stopPropagation();
-                  selectFrame(frame.id, e.shiftKey);
+                  selectSection(sec.id, e.shiftKey);
                 }}
                 className={`flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer group transition-colors ${
-                  isFrameSelected
+                  isSecSelected
                     ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow-sm'
                     : 'hover:bg-[rgba(235,235,236,0.06)] text-[rgb(235,235,236)]'
-                } ${frame.hidden ? 'opacity-40' : ''}`}
+                }`}
               >
                 <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
                   {/* Chevron Toggle */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleFrameCollapsed(frame.id);
+                      toggleSectionCollapsed(sec.id);
                     }}
                     className={`p-0.5 rounded transition-colors ${
-                      isFrameSelected 
-                        ? 'hover:bg-[rgb(20,20,19)]/20 text-[rgb(20,20,19)]' 
+                      isSecSelected
+                        ? 'hover:bg-[rgb(20,20,19)]/20 text-[rgb(20,20,19)]'
                         : 'hover:bg-[rgba(235,235,236,0.1)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
                     }`}
-                    title={isCollapsed ? 'Expand Screen' : 'Collapse Screen'}
+                    title={isSecCollapsed ? 'Expand Section' : 'Collapse Section'}
                   >
-                    {isCollapsed ? <Icons.ChevronRight size={11} /> : <Icons.ChevronDown size={11} />}
+                    {isSecCollapsed ? <Icons.ChevronRight size={11} /> : <Icons.ChevronDown size={11} />}
                   </button>
 
-                  <Icons.Smartphone size={13} className={isFrameSelected ? 'text-[rgb(20,20,19)]' : 'text-[rgb(235,235,236)] shrink-0'} />
-                  <span className="truncate font-semibold text-xs">{frame.name}</span>
-                  {childElements.length > 0 && (
-                    <span className="text-[10px] opacity-40 font-mono">({childElements.length})</span>
+                  <Icons.LayoutGrid size={13} className={isSecSelected ? 'text-[rgb(20,20,19)]' : 'text-[rgba(235,235,236,0.5)] shrink-0'} />
+                  <span className="truncate font-bold text-xs">{sec.name}</span>
+                  {childCount > 0 && (
+                    <span className="text-[10px] opacity-40 font-mono">({childCount})</span>
                   )}
                 </div>
-
-                {/* Frame Action Controls */}
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFrameLock(frame.id);
-                    }}
-                    title={frame.locked ? 'Unlock' : 'Lock'}
-                    className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
-                  >
-                    {frame.locked ? <Icons.Lock size={11} /> : <Icons.Unlock size={11} />}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleFrameHidden(frame.id);
-                    }}
-                    title={frame.hidden ? 'Show' : 'Hide'}
-                    className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
-                  >
-                    {frame.hidden ? <Icons.EyeOff size={11} /> : <Icons.Eye size={11} />}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      duplicateFrame(frame.id);
-                    }}
-                    title="Duplicate"
-                    className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
-                  >
-                    <Icons.Copy size={11} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteFrame(frame.id);
-                    }}
-                    title="Delete"
-                    className={`p-1 rounded ${isFrameSelected ? 'hover:bg-black/10' : 'hover:bg-white/10'}`}
-                  >
-                    <Icons.Trash2 size={11} />
-                  </button>
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSection(sec.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 text-[rgba(235,235,236,0.4)] hover:text-rose-400"
+                  title="Delete section"
+                >
+                  <Icons.Trash2 size={11} />
+                </button>
               </div>
 
-              {/* Child Elements inside Frame */}
-              {!isCollapsed && childElements.length > 0 && (
+              {/* Nested Frames & Elements inside Section */}
+              {!isSecCollapsed && childCount > 0 && (
                 <div className="pl-4 space-y-0.5 border-l border-[rgba(235,235,236,0.08)] ml-2.5">
+                  {childFrames.map(f => renderFrameRow(f))}
                   {childElements.map(el => {
                     const isElementSelected = selectedElementIds.includes(el.id);
                     return (
@@ -243,8 +347,6 @@ export const LayersPanel: React.FC = () => {
                           </span>
                           <span className="truncate text-xs">{el.name || el.type}</span>
                         </div>
-
-                        {/* Actions */}
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={(e) => {
@@ -291,6 +393,9 @@ export const LayersPanel: React.FC = () => {
             </div>
           );
         })}
+
+        {/* 2. ARTBOARD FRAMES & NESTED ELEMENTS */}
+        {filteredFrames.map(frame => renderFrameRow(frame))}
 
         {/* 3. FREE CANVAS ELEMENTS (PLACED DIRECTLY ON INFINITE CANVAS) */}
         {filteredFreeElements.length > 0 && (

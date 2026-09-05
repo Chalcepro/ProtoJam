@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { UIElement, DeviceFrame, SectionFrame } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import * as Icons from 'lucide-react';
@@ -9,8 +9,217 @@ interface DesignPropertiesProps {
   section?: SectionFrame;
 }
 
+// Native <input type="color"> can't express alpha at all — it silently drops
+// it. These helpers let fill/stroke colors carry a real alpha channel as an
+// rgba() string while still feeding the native picker a plain 6-digit hex.
+const parseColorToRgba = (color: string | undefined): { r: number; g: number; b: number; a: number } => {
+  if (!color) return { r: 235, g: 235, b: 236, a: 1 };
+  const rgbaMatch = color.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\)/i);
+  if (rgbaMatch) {
+    return {
+      r: Number(rgbaMatch[1]),
+      g: Number(rgbaMatch[2]),
+      b: Number(rgbaMatch[3]),
+      a: rgbaMatch[4] !== undefined ? Number(rgbaMatch[4]) : 1
+    };
+  }
+  const hex = color.replace('#', '');
+  if (hex.length === 6 || hex.length === 3) {
+    const full = hex.length === 3 ? hex.split('').map(c => c + c).join('') : hex;
+    return {
+      r: parseInt(full.slice(0, 2), 16),
+      g: parseInt(full.slice(2, 4), 16),
+      b: parseInt(full.slice(4, 6), 16),
+      a: 1
+    };
+  }
+  return { r: 235, g: 235, b: 236, a: 1 };
+};
+
+const toHex = ({ r, g, b }: { r: number; g: number; b: number }): string =>
+  '#' + [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
+
+const toRgbaString = ({ r, g, b, a }: { r: number; g: number; b: number; a: number }): string =>
+  a >= 1 ? toHex({ r, g, b }) : `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${Math.round(a * 100) / 100})`;
+
+// Compact alpha (opacity) slider shown next to a fill/stroke color picker.
+const ColorAlphaSlider: React.FC<{ color: string | undefined; onChange: (next: string) => void }> = ({ color, onChange }) => {
+  const { a } = parseColorToRgba(color);
+  return (
+    <div className="flex items-center gap-1.5 shrink-0" title="Fill opacity (alpha) — not supported by the native color swatch">
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={Math.round(a * 100)}
+        onChange={(e) => {
+          const rgba = parseColorToRgba(color);
+          onChange(toRgbaString({ ...rgba, a: Number(e.target.value) / 100 }));
+        }}
+        className="w-14 accent-[rgb(235,235,236)]"
+      />
+      <span className="text-[10px] text-[rgba(235,235,236,0.45)] font-mono w-8 text-right">
+        {Math.round(a * 100)}%
+      </span>
+    </div>
+  );
+};
+
+// Small popover button that lets a color field bind to (or unbind from) a
+// design variable. Shown next to any color input that supports token binding.
+const VariableBindButton: React.FC<{
+  elementId: string;
+  styleKey: 'fillColor' | 'textColor' | 'borderColor';
+  boundVariableId?: string;
+}> = ({ elementId, styleKey, boundVariableId }) => {
+  const { variables, bindStyleToVariable, unbindStyleVariable } = useProjectStore();
+  const [open, setOpen] = useState(false);
+  const colorVars = variables.filter(v => v.type === 'color');
+  const boundVar = boundVariableId ? variables.find(v => v.id === boundVariableId) : undefined;
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        title={boundVar ? `Bound to "${boundVar.name}"` : 'Bind to a color variable'}
+        className={`p-1.5 rounded-lg border transition-colors ${
+          boundVar
+            ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] border-[rgb(235,235,236)]'
+            : 'bg-[rgba(235,235,236,0.04)] text-[rgba(235,235,236,0.5)] border-[rgba(235,235,236,0.08)] hover:text-[rgb(235,235,236)]'
+        }`}
+      >
+        <Icons.Variable size={12} />
+      </button>
+
+      {open && (
+        <div className="absolute top-full right-0 mt-1 w-44 bg-[rgb(20,20,19)] border border-[rgba(235,235,236,0.18)] rounded-xl shadow-2xl p-1.5 z-50 space-y-0.5">
+          {colorVars.length === 0 && (
+            <div className="text-[10px] text-[rgba(235,235,236,0.4)] px-2 py-2 text-center">
+              No color variables yet — add one in the Tokens tab.
+            </div>
+          )}
+          {colorVars.map(v => (
+            <button
+              key={v.id}
+              onClick={() => {
+                bindStyleToVariable(elementId, styleKey, v.id);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-xs transition-colors ${
+                boundVariableId === v.id
+                  ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)] font-semibold'
+                  : 'hover:bg-[rgba(235,235,236,0.08)] text-[rgb(235,235,236)]'
+              }`}
+            >
+              <span
+                className="w-3.5 h-3.5 rounded-full border border-[rgba(235,235,236,0.2)] shrink-0"
+                style={{ backgroundColor: v.value as string }}
+              />
+              <span className="truncate">{v.name}</span>
+            </button>
+          ))}
+          {boundVar && (
+            <button
+              onClick={() => {
+                unbindStyleVariable(elementId, styleKey);
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-xs text-rose-400 hover:bg-[rgba(235,235,236,0.08)] border-t border-[rgba(235,235,236,0.08)] mt-0.5 pt-1.5"
+            >
+              <Icons.Unlink size={12} />
+              <span>Detach from "{boundVar.name}"</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Compact editor for hover/pressed style overrides on the selected element.
+// These apply automatically in the Prototype player — no wiring required.
+const InteractiveStatesSection: React.FC<{ element: UIElement }> = ({ element }) => {
+  const { updateElementState, clearElementState } = useProjectStore();
+  const [openState, setOpenState] = useState<'hover' | 'pressed' | null>(null);
+
+  const renderStateEditor = (key: 'hover' | 'pressed') => {
+    const override = element.states?.[key] || {};
+    const base = element.style;
+    return (
+      <div className="space-y-2 bg-[rgba(235,235,236,0.02)] p-2.5 rounded-xl border border-[rgba(235,235,236,0.08)] mt-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Fill Color</span>
+          <input
+            type="color"
+            value={override.fillColor ?? base.fillColor ?? '#ebebec'}
+            onChange={(e) => updateElementState(element.id, key, { fillColor: e.target.value })}
+            className="w-6 h-6 rounded cursor-pointer bg-transparent"
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Text Color</span>
+          <input
+            type="color"
+            value={override.textColor ?? base.textColor ?? '#ebebec'}
+            onChange={(e) => updateElementState(element.id, key, { textColor: e.target.value })}
+            className="w-6 h-6 rounded cursor-pointer bg-transparent"
+          />
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Opacity</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={Math.round((override.opacity ?? base.opacity ?? 1) * 100)}
+            onChange={(e) => updateElementState(element.id, key, { opacity: Number(e.target.value) / 100 })}
+            className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
+          />
+        </div>
+        {element.states?.[key] && (
+          <button
+            onClick={() => clearElementState(element.id, key)}
+            className="w-full text-[10px] text-rose-400 hover:text-rose-300 py-1 flex items-center justify-center gap-1"
+          >
+            <Icons.X size={10} /> Clear {key} override
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
+      <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
+        Interactive States
+      </div>
+      <div className="flex bg-[rgba(235,235,236,0.06)] rounded-lg p-0.5 border border-[rgba(235,235,236,0.08)]">
+        {(['hover', 'pressed'] as const).map(key => (
+          <button
+            key={key}
+            onClick={() => setOpenState(openState === key ? null : key)}
+            className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-[11px] font-semibold transition-colors ${
+              openState === key
+                ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
+                : element.states?.[key]
+                ? 'text-[rgb(235,235,236)]'
+                : 'text-[rgba(235,235,236,0.5)]'
+            }`}
+          >
+            {element.states?.[key] && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6b4a]" />}
+            {key === 'hover' ? 'Hover' : 'Pressed'}
+          </button>
+        ))}
+      </div>
+      {openState && renderStateEditor(openState)}
+    </div>
+  );
+};
+
 export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, frame, section }) => {
   const {
+    frames,
+    variables,
     updateElementStyle,
     updateElementSemanticProps,
     updateFrame,
@@ -28,6 +237,18 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   const [fillType, setFillType] = useState<'solid' | 'gradient' | 'image'>('solid');
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
   const [isIndividualPadding, setIsIndividualPadding] = useState(false);
+  const imageUploadInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFillUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !element) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateElementSemanticProps(element.id, { src: reader.result as string });
+    };
+    reader.readAsDataURL(file);
+  };
   const [copiedCss, setCopiedCss] = useState(false);
 
   if (!element && !frame && !section) {
@@ -141,8 +362,57 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                   className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
                 />
               </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Align</span>
+                <div className="flex bg-[rgba(235,235,236,0.06)] rounded p-0.5 border border-[rgba(235,235,236,0.08)]">
+                  {(['start', 'center', 'end', 'spaceBetween'] as const).map(a => (
+                    <button
+                      key={a}
+                      onClick={() => updateAutoLayout(frame.id, { align: a })}
+                      title={a === 'spaceBetween' ? 'Space Between' : a}
+                      className={`px-2 py-1 rounded text-[10px] ${
+                        frame.autoLayout!.align === a ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
+                      }`}
+                    >
+                      {a === 'spaceBetween' ? 'Between' : a.charAt(0).toUpperCase() + a.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Wrap</span>
+                <button
+                  onClick={() => updateAutoLayout(frame.id, { wrap: !frame.autoLayout!.wrap })}
+                  className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                    frame.autoLayout.wrap
+                      ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
+                      : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
+                  }`}
+                >
+                  {frame.autoLayout.wrap ? 'On' : 'Off'}
+                </button>
+              </div>
             </div>
           )}
+        </div>
+
+        {/* Clip Content */}
+        <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider" title="When off, content extending past this screen's edges stays visible instead of being cut off">
+              Clip Content
+            </span>
+            <button
+              onClick={() => updateFrame(frame.id, { clipContent: frame.clipContent === false })}
+              className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                frame.clipContent !== false
+                  ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
+                  : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
+              }`}
+            >
+              {frame.clipContent !== false ? 'On' : 'Off'}
+            </button>
+          </div>
         </div>
 
         {/* Screen Background Color */}
@@ -217,20 +487,62 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   const { style } = element!;
 
   // Copy CSS helper
-  const handleCopyCss = () => {
-    const cssLines = [
-      `width: ${style.width}px;`,
-      `height: ${style.height}px;`,
-      style.fillColor ? `background-color: ${style.fillColor};` : '',
-      style.borderColor ? `border: ${style.borderWidth || 1}px solid ${style.borderColor};` : '',
-      style.borderRadius ? `border-radius: ${typeof style.borderRadius === 'number' ? `${style.borderRadius}px` : `${style.borderRadius.tl}px ${style.borderRadius.tr}px ${style.borderRadius.br}px ${style.borderRadius.bl}px`};` : '',
-      style.opacity !== undefined ? `opacity: ${style.opacity};` : '',
-      style.boxShadow ? `box-shadow: ${style.boxShadow};` : '',
-      style.fontSize ? `font-size: ${style.fontSize}px;` : '',
-      style.textColor ? `color: ${style.textColor};` : ''
-    ].filter(Boolean).join('\n');
+  // Dev-mode CSS generation — reflects auto-layout, bound variables (as CSS
+  // custom-property references), and hover/pressed states as real pseudo-classes.
+  const generateCss = (): string => {
+    if (!element) return '';
+    const s = element.style;
+    const bound = s.boundVariables || {};
+    const varRef = (key: 'fillColor' | 'textColor' | 'borderColor', literal?: string) => {
+      const varId = bound[key];
+      const v = varId ? variables.find(x => x.id === varId) : null;
+      return v ? `var(--${v.name}, ${literal})` : literal;
+    };
 
-    navigator.clipboard.writeText(cssLines);
+    const baseLines = [
+      `width: ${s.width}px;`,
+      `height: ${s.height}px;`,
+      s.fillColor ? `background-color: ${varRef('fillColor', s.fillColor)};` : '',
+      s.borderColor ? `border: ${s.borderWidth || 1}px solid ${varRef('borderColor', s.borderColor)};` : '',
+      s.borderRadius ? `border-radius: ${typeof s.borderRadius === 'number' ? `${s.borderRadius}px` : `${s.borderRadius.tl}px ${s.borderRadius.tr}px ${s.borderRadius.br}px ${s.borderRadius.bl}px`};` : '',
+      s.opacity !== undefined ? `opacity: ${s.opacity};` : '',
+      s.boxShadow ? `box-shadow: ${s.boxShadow};` : '',
+      s.padding ? `padding: ${s.padding.top}px ${s.padding.right}px ${s.padding.bottom}px ${s.padding.left}px;` : '',
+      s.display === 'flex' ? 'display: flex;' : '',
+      s.display === 'flex' && s.flexDirection ? `flex-direction: ${s.flexDirection};` : '',
+      s.display === 'flex' && s.gap ? `gap: ${s.gap}px;` : '',
+      s.display === 'flex' && s.justifyContent ? `justify-content: ${s.justifyContent};` : '',
+      s.display === 'flex' && s.alignItems ? `align-items: ${s.alignItems};` : '',
+      s.fontFamily ? `font-family: ${s.fontFamily};` : '',
+      s.fontSize ? `font-size: ${s.fontSize}px;` : '',
+      s.fontWeight ? `font-weight: ${s.fontWeight};` : '',
+      s.lineHeight ? `line-height: ${s.lineHeight};` : '',
+      s.letterSpacing ? `letter-spacing: ${s.letterSpacing}px;` : '',
+      s.textColor ? `color: ${varRef('textColor', s.textColor)};` : ''
+    ].filter(Boolean);
+
+    const indent = (lines: string[]) => lines.map(l => `  ${l}`).join('\n');
+    let css = `.element {\n${indent(baseLines)}\n}`;
+
+    (['hover', 'pressed'] as const).forEach(key => {
+      const stateStyle = element.states?.[key];
+      if (!stateStyle) return;
+      const stateLines = [
+        stateStyle.fillColor ? `background-color: ${stateStyle.fillColor};` : '',
+        stateStyle.textColor ? `color: ${stateStyle.textColor};` : '',
+        stateStyle.borderColor ? `border-color: ${stateStyle.borderColor};` : '',
+        stateStyle.opacity !== undefined ? `opacity: ${stateStyle.opacity};` : ''
+      ].filter(Boolean);
+      if (stateLines.length === 0) return;
+      const pseudo = key === 'hover' ? ':hover' : ':active';
+      css += `\n\n.element${pseudo} {\n${indent(stateLines)}\n}`;
+    });
+
+    return css;
+  };
+
+  const handleCopyCss = () => {
+    navigator.clipboard.writeText(generateCss());
     setCopiedCss(true);
     setTimeout(() => setCopiedCss(false), 2000);
   };
@@ -407,7 +719,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             />
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
-            <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px]">Opacity</span>
+            <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">Opacity</span>
             <input
               type="number"
               min="0"
@@ -419,6 +731,48 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <span className="text-[10px] text-[rgba(235,235,236,0.4)] font-mono">%</span>
           </div>
         </div>
+
+        {/* Absolute Position — opt this child out of its parent frame's auto-layout flow */}
+        {element && (() => {
+          const parentFrame = frames.find(f => f.id === element.parentId);
+          if (!parentFrame?.autoLayout?.enabled) return null;
+          return (
+            <div className="flex items-center justify-between mt-2 bg-[rgba(235,235,236,0.02)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)]">
+              <span className="text-[rgba(235,235,236,0.5)] text-[11px]" title="Take this element out of the auto-layout flow and position it freely with X/Y">
+                Absolute Position
+              </span>
+              <button
+                onClick={() => updateElementStyle(element.id, { absolutePosition: !style.absolutePosition })}
+                className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                  style.absolutePosition
+                    ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
+                    : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
+                }`}
+              >
+                {style.absolutePosition ? 'On' : 'Off'}
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* Clip Content — fixed-size text/heading only: clip + scroll overflow instead of spilling past the box */}
+        {element && (element.type === 'text' || element.type === 'heading') && style.autoSize !== true && (
+          <div className="flex items-center justify-between mt-2 bg-[rgba(235,235,236,0.02)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)]">
+            <span className="text-[rgba(235,235,236,0.5)] text-[11px]" title="When on, text that overflows this fixed box is clipped and scrollable instead of spilling past its edges">
+              Clip Content
+            </span>
+            <button
+              onClick={() => updateElementStyle(element.id, { clipContent: !style.clipContent })}
+              className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
+                style.clipContent
+                  ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
+                  : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
+              }`}
+            >
+              {style.clipContent ? 'On' : 'Off'}
+            </button>
+          </div>
+        )}
 
         {/* Corner Radius Controls (Uniform vs Individual) */}
         <div className="mt-2 space-y-1.5">
@@ -572,6 +926,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         )}
       </div>
 
+      {/* 4b. INTERACTIVE STATES (hover / pressed overrides, live in Play mode) */}
+      {element && <InteractiveStatesSection element={element} />}
+
       {/* 5. FILLS & COLORS (SOLID, GRADIENT, IMAGE) */}
       <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
         <div className="flex items-center justify-between mb-2">
@@ -609,16 +966,25 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={style.fillColor || '#ebebec'}
-                onChange={(e) => updateElementStyle(element!.id, { fillColor: e.target.value, fillGradient: undefined })}
+                value={toHex(parseColorToRgba(style.fillColor || '#ebebec'))}
+                onChange={(e) => {
+                  const { a } = parseColorToRgba(style.fillColor);
+                  const next = toRgbaString({ ...parseColorToRgba(e.target.value), a });
+                  updateElementStyle(element!.id, { fillColor: next, fillGradient: undefined });
+                }}
                 className="w-7 h-7 rounded border-none cursor-pointer bg-transparent"
               />
               <input
                 type="text"
                 value={style.fillColor || '#ebebec'}
                 onChange={(e) => updateElementStyle(element!.id, { fillColor: e.target.value, fillGradient: undefined })}
-                className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] font-mono text-xs flex-1 outline-none"
+                className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] font-mono text-xs flex-1 outline-none min-w-0"
               />
+              <ColorAlphaSlider
+                color={style.fillColor}
+                onChange={(next) => updateElementStyle(element!.id, { fillColor: next, fillGradient: undefined })}
+              />
+              <VariableBindButton elementId={element!.id} styleKey="fillColor" boundVariableId={style.boundVariables?.fillColor} />
             </div>
 
             {/* Quick Monochrome Palette Swatches */}
@@ -680,6 +1046,25 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
         {fillType === 'image' && (
           <div className="space-y-2">
+            <button
+              onClick={() => imageUploadInputRef.current?.click()}
+              className="w-full flex items-center justify-center gap-1.5 bg-[rgba(235,235,236,0.06)] hover:bg-[rgba(235,235,236,0.12)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.1)] text-xs font-semibold transition-colors"
+            >
+              <Icons.Upload size={13} />
+              Upload from Device
+            </button>
+            <input
+              ref={imageUploadInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageFillUpload}
+              className="hidden"
+            />
+            <div className="flex items-center gap-2 text-[10px] text-[rgba(235,235,236,0.35)]">
+              <div className="flex-1 h-px bg-[rgba(235,235,236,0.08)]" />
+              or paste a URL
+              <div className="flex-1 h-px bg-[rgba(235,235,236,0.08)]" />
+            </div>
             <input
               type="text"
               placeholder="https://images.unsplash.com/..."
@@ -715,9 +1100,16 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         <div className="flex items-center gap-2">
           <input
             type="color"
-            value={style.borderColor || '#ebebec'}
-            onChange={(e) => updateElementStyle(element!.id, { borderColor: e.target.value })}
+            value={toHex(parseColorToRgba(style.borderColor || '#ebebec'))}
+            onChange={(e) => {
+              const { a } = parseColorToRgba(style.borderColor);
+              updateElementStyle(element!.id, { borderColor: toRgbaString({ ...parseColorToRgba(e.target.value), a }) });
+            }}
             className="w-7 h-7 rounded border-none cursor-pointer bg-transparent"
+          />
+          <ColorAlphaSlider
+            color={style.borderColor}
+            onChange={(next) => updateElementStyle(element!.id, { borderColor: next })}
           />
           <input
             type="number"
@@ -808,7 +1200,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                 />
               </div>
 
-              <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
+              <div className="flex items-center gap-1 bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
                 <span className="text-[rgba(235,235,236,0.4)] mr-1.5 text-[10px]">Color</span>
                 <input
                   type="color"
@@ -816,6 +1208,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                   onChange={(e) => updateElementStyle(element!.id, { textColor: e.target.value })}
                   className="w-5 h-5 rounded cursor-pointer bg-transparent ml-auto"
                 />
+                <VariableBindButton elementId={element!.id} styleKey="textColor" boundVariableId={style.boundVariables?.textColor} />
               </div>
             </div>
 
@@ -852,16 +1245,24 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         </div>
       )}
 
-      {/* 9. CODE & CSS EXPORT */}
-      <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
-        <button
-          onClick={handleCopyCss}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[rgba(235,235,236,0.06)] hover:bg-[rgba(235,235,236,0.12)] text-[rgb(235,235,236)] font-semibold text-xs transition-colors border border-[rgba(235,235,236,0.08)]"
-        >
-          {copiedCss ? <Icons.Check size={13} className="text-emerald-400" /> : <Icons.Code2 size={13} />}
-          <span>{copiedCss ? 'CSS Copied!' : 'Copy CSS Code'}</span>
-        </button>
-      </div>
+      {/* 9. DEV MODE — INSPECTABLE CSS (reflects auto-layout, bound tokens, hover/pressed states) */}
+      {element && (
+        <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider">Inspect (CSS)</span>
+          </div>
+          <pre className="bg-[rgba(235,235,236,0.03)] border border-[rgba(235,235,236,0.08)] rounded-lg p-2.5 text-[10px] leading-relaxed text-[rgba(235,235,236,0.75)] font-mono overflow-x-auto whitespace-pre">
+            {generateCss()}
+          </pre>
+          <button
+            onClick={handleCopyCss}
+            className="w-full mt-2 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[rgba(235,235,236,0.06)] hover:bg-[rgba(235,235,236,0.12)] text-[rgb(235,235,236)] font-semibold text-xs transition-colors border border-[rgba(235,235,236,0.08)]"
+          >
+            {copiedCss ? <Icons.Check size={13} className="text-emerald-400" /> : <Icons.Code2 size={13} />}
+            <span>{copiedCss ? 'CSS Copied!' : 'Copy CSS Code'}</span>
+          </button>
+        </div>
+      )}
 
     </div>
   );

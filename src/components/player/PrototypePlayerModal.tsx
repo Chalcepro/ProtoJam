@@ -23,6 +23,8 @@ export const PrototypePlayerModal: React.FC = () => {
   const [fitMode, setFitMode] = useState<'fit' | 'actual'>('fit');
   const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
   const [showFooterHint, setShowFooterHint] = useState(true);
+  const [hoveredElementId, setHoveredElementId] = useState<string | null>(null);
+  const [pressedElementId, setPressedElementId] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScale, setAutoScale] = useState(1);
@@ -288,10 +290,19 @@ export const PrototypePlayerModal: React.FC = () => {
                       zIndex: element.style.zIndex || 10
                     }}
                     className={`transition-transform ${hasInteractions ? 'cursor-pointer' : ''}`}
+                    onMouseEnter={() => setHoveredElementId(element.id)}
+                    onMouseLeave={() => {
+                      setHoveredElementId(prev => prev === element.id ? null : prev);
+                      setPressedElementId(prev => prev === element.id ? null : prev);
+                    }}
+                    onMouseDown={() => setPressedElementId(element.id)}
+                    onMouseUp={() => setPressedElementId(prev => prev === element.id ? null : prev)}
                   >
                     <SemanticElementRenderer
                       element={element}
                       isInteractive={true}
+                      isHovering={hoveredElementId === element.id}
+                      isPressed={pressedElementId === element.id}
                       onTriggerInteraction={handleTriggerInteraction}
                     />
 

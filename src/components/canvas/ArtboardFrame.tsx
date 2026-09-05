@@ -36,13 +36,36 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     startWiring,
     updateFrameDimensions,
     viewport,
-    pushHistory
+    pushHistory,
+    activeTool
   } = useProjectStore();
 
   const isFrameSelected = selectedFrameIds.includes(frame.id);
   const frameElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
 
   if (frame.hidden) return null;
+
+  const autoLayout = frame.autoLayout?.enabled ? frame.autoLayout : null;
+  const justifyContentMap: Record<string, React.CSSProperties['justifyContent']> = {
+    start: 'flex-start',
+    center: 'center',
+    end: 'flex-end',
+    spaceBetween: 'space-between'
+  };
+  const frameBodyLayoutStyle: React.CSSProperties = autoLayout
+    ? {
+        display: 'flex',
+        flexDirection: autoLayout.direction === 'horizontal' ? 'row' : 'column',
+        flexWrap: autoLayout.wrap ? 'wrap' : 'nowrap',
+        gap: autoLayout.gap,
+        justifyContent: justifyContentMap[autoLayout.align] || 'flex-start',
+        alignItems: 'flex-start',
+        paddingTop: autoLayout.padding?.top,
+        paddingRight: autoLayout.padding?.right,
+        paddingBottom: autoLayout.padding?.bottom,
+        paddingLeft: autoLayout.padding?.left
+      }
+    : {};
 
   const handleFrameBodyPointerDown = (e: React.PointerEvent) => {
     if (frame.locked) return;
@@ -210,9 +233,11 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           width: '100%',
           height: '100%',
           backgroundColor: frame.backgroundColor || '#141413',
-          borderRadius: frame.deviceType === 'mobile' ? 44 : frame.deviceType === 'tablet' ? 24 : 12
+          borderRadius: frame.deviceType === 'mobile' ? 44 : frame.deviceType === 'tablet' ? 24 : 12,
+          overflow: frame.clipContent === false ? 'visible' : 'hidden',
+          ...frameBodyLayoutStyle
         }}
-        className={`relative overflow-hidden transition-shadow shadow-2xl ${
+        className={`relative transition-shadow shadow-2xl ${
           isFrameSelected 
             ? 'ring-2 ring-[rgb(235,235,236)] ring-offset-2 ring-offset-[rgb(20,20,19)]' 
             : 'border border-[rgba(235,235,236,0.15)]'
@@ -243,10 +268,36 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
         {/* Child Elements inside Frame */}
         {frameElements.map(element => {
           const isSelected = selectedElementIds.includes(element.id);
+          // Inside an auto-layout frame, children flow in flex order and ignore
+          // stored x/y — unless explicitly opted out via "Absolute Position".
+          const participatesInFlow = !!autoLayout && !element.style.absolutePosition;
+          const isAutoSizeText = (element.type === 'text' || element.type === 'heading') && element.style.autoSize;
+          const sizeStyle: React.CSSProperties = isAutoSizeText
+            ? { width: 'max-content', height: 'max-content', maxWidth: 'none' }
+            : { width: Number(element.style.width), height: Number(element.style.height) };
+          const positionStyle: React.CSSProperties = participatesInFlow
+            ? {
+                position: 'relative',
+                ...sizeStyle,
+                flexShrink: 0,
+                zIndex: isSelected ? 35 : (element.style.zIndex || 10)
+              }
+            : {
+                position: 'absolute',
+                left: Number(element.style.x),
+                top: Number(element.style.y),
+                ...sizeStyle,
+                zIndex: isSelected ? 35 : (element.style.zIndex || 10)
+              };
           return (
             <div
               key={element.id}
               onPointerDown={(e) => {
+                // Let a drawing/placement tool pass straight through to the frame
+                // body beneath instead of this existing element hijacking the
+                // click as a select/drag — otherwise you can never draw or place
+                // something on top of it.
+                if (activeTool !== 'select') return;
                 e.stopPropagation();
                 if (isWiring) {
                   finishWiring(frame.id);
@@ -258,20 +309,15 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
                   selectElement(element.id, e.shiftKey);
                 }
               }}
-              style={{
-                position: 'absolute',
-                left: Number(element.style.x),
-                top: Number(element.style.y),
-                width: Number(element.style.width),
-                height: Number(element.style.height),
-                zIndex: isSelected ? 35 : (element.style.zIndex || 10)
-              }}
+              style={{ ...positionStyle, pointerEvents: activeTool !== 'select' ? 'none' : undefined }}
               className={`group/el relative ${element.locked ? 'cursor-default' : 'cursor-move'} transition-all`}
             >
               <SemanticElementRenderer element={element} isInteractive={false} />
 
-              {/* Interactive Transform, Scale & Rotate Box */}
-              {isSelected && (
+              {/* Interactive Transform, Scale & Rotate Box — hidden while a drawing
+                  tool is active so its handles can't intercept clicks meant to
+                  place a new object on top of this one. */}
+              {isSelected && activeTool === 'select' && (
                 <TransformSelectionBox
                   element={element}
                   parentFrameOffset={{ x: frame.x, y: frame.y }}

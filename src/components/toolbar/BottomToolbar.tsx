@@ -16,11 +16,59 @@ export const BottomToolbar: React.FC = () => {
     closeVectorPath,
     addFrame,
     addSection,
-    activeVectorData
+    activeVectorData,
+    frames,
+    viewport,
+    addPredefinedElement
   } = useProjectStore();
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Places an uploaded image at the current viewport center, parented into whatever
+  // frame occupies that point (same lookup dropComponentAt uses).
+  const placeUploadedImage = (file: File, offsetIndex: number) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 360;
+        const scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+        const width = Math.max(20, Math.round(img.naturalWidth * scale));
+        const height = Math.max(20, Math.round(img.naturalHeight * scale));
+
+        const worldX = (window.innerWidth / 2 - viewport.x) / viewport.zoom + offsetIndex * 32;
+        const worldY = (window.innerHeight / 2 - viewport.y) / viewport.zoom + offsetIndex * 32;
+
+        const targetFrame = frames.find(f =>
+          worldX >= f.x && worldX <= f.x + f.width && worldY >= f.y && worldY <= f.y + f.height
+        );
+        const x = Math.round(targetFrame ? worldX - targetFrame.x : worldX);
+        const y = Math.round(targetFrame ? worldY - targetFrame.y : worldY);
+
+        const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        addPredefinedElement({
+          id,
+          name: file.name.replace(/\.[^/.]+$/, '') || 'Image',
+          type: 'image',
+          parentId: targetFrame?.id,
+          interactions: [],
+          style: { x, y, width, height },
+          semanticProps: { src, alt: file.name }
+        });
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(f => f.type.startsWith('image/'));
+    files.forEach((file, i) => placeUploadedImage(file, i));
+    e.target.value = '';
+  };
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -342,7 +390,7 @@ export const BottomToolbar: React.FC = () => {
       {/* 4. PEN TOOL (P) */}
       <button
         onClick={() => setActiveTool('pen')}
-        title="Vector Pen Tool (P) - Draw & Edit Bezier Paths"
+        title="Vector Pen Tool - Draw & Edit Bezier Paths"
         className={`p-2 rounded-xl transition-all flex items-center gap-1 ${
           activeTool === 'pen'
             ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow'
@@ -403,6 +451,36 @@ export const BottomToolbar: React.FC = () => {
       >
         <Icons.StickyNote size={16} />
       </button>
+
+      {/* 8b. COMMENT PIN */}
+      <button
+        onClick={() => setActiveTool('comment')}
+        title="Add Comment"
+        className={`p-2 rounded-xl transition-all flex items-center gap-1 ${
+          activeTool === 'comment'
+            ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow'
+            : 'hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)]'
+        }`}
+      >
+        <Icons.MessageCircle size={16} />
+      </button>
+
+      {/* 9. IMAGE UPLOAD (local file, multi-select) */}
+      <button
+        onClick={() => imageFileInputRef.current?.click()}
+        title="Insert Image from Device"
+        className="p-2 rounded-xl transition-all flex items-center gap-1 hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)]"
+      >
+        <Icons.Image size={16} />
+      </button>
+      <input
+        ref={imageFileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleImageFilesSelected}
+        className="hidden"
+      />
     </div>
   );
 };

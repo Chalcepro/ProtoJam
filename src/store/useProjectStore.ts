@@ -1,15 +1,17 @@
 import { create } from 'zustand';
-import { 
-  DeviceFrame, 
-  SectionFrame, 
-  UIElement, 
-  UIElementType, 
-  ElementStyle, 
-  SemanticProperties, 
-  VectorData, 
-  VectorPoint, 
-  VectorFace, 
-  AutoLayoutSettings 
+import {
+  DeviceFrame,
+  SectionFrame,
+  UIElement,
+  UIElementType,
+  ElementStyle,
+  SemanticProperties,
+  VectorData,
+  VectorPoint,
+  VectorFace,
+  AutoLayoutSettings,
+  DesignVariable,
+  CanvasComment
 } from '../types/components';
 import { ToolMode, ViewportTransform, CanvasSettings, DragState, SnapGuide } from '../types/canvas';
 import { PrototypeInteraction, PrototypeFlow } from '../types/prototype';
@@ -51,6 +53,8 @@ export interface ProjectState {
   sections: SectionFrame[];
   elements: UIElement[];
   prototypeFlows: PrototypeFlow[];
+  variables: DesignVariable[];
+  comments: CanvasComment[];
 
   // Selection & Interactions
   selectedFrameIds: string[];
@@ -122,6 +126,7 @@ export interface ProjectState {
   addFrame: (preset: DevicePreset, x?: number, y?: number) => string;
   addCustomFrame: (x: number, y: number, width: number, height: number, name?: string) => string;
   updateFrame: (id: string, updates: Partial<DeviceFrame>) => void;
+  updateFrameDimensions: (id: string, width: number, height: number) => void;
   deleteFrame: (id: string) => void;
   duplicateFrame: (id: string) => void;
   toggleFrameOrientation: (id: string) => void;
@@ -136,6 +141,7 @@ export interface ProjectState {
   updateSection: (id: string, updates: Partial<SectionFrame>) => void;
   deleteSection: (id: string) => void;
   moveSection: (id: string, dx: number, dy: number) => void;
+  toggleSectionCollapsed: (id: string) => void;
 
   // Element CRUD & Reparenting
   addElement: (type: UIElementType, x: number, y: number, parentFrameId?: string) => string;
@@ -144,6 +150,8 @@ export interface ProjectState {
   addPredefinedElement: (element: UIElement) => void;
   updateElement: (id: string, updates: Partial<UIElement>) => void;
   updateElementStyle: (id: string, styleUpdates: Partial<ElementStyle>) => void;
+  updateElementState: (id: string, stateKey: 'hover' | 'pressed', updates: Partial<ElementStyle>) => void;
+  clearElementState: (id: string, stateKey: 'hover' | 'pressed') => void;
   updateElementSemanticProps: (id: string, propUpdates: Partial<SemanticProperties>) => void;
   deleteElement: (id: string) => void;
   duplicateElement: (id: string) => void;
@@ -212,6 +220,21 @@ export interface ProjectState {
   loadSavedProjectById: (id: string) => void;
   deleteSavedProjectById: (id: string) => void;
   refreshSavedProjectsList: () => void;
+
+  // Design Variables (color/number tokens)
+  addVariable: (name: string, type: 'color' | 'number', value: string | number) => string;
+  updateVariable: (id: string, updates: Partial<DesignVariable>) => void;
+  deleteVariable: (id: string) => void;
+  bindStyleToVariable: (elementId: string, styleKey: 'fillColor' | 'textColor' | 'borderColor', variableId: string) => void;
+  unbindStyleVariable: (elementId: string, styleKey: 'fillColor' | 'textColor' | 'borderColor') => void;
+
+  // Canvas Comments
+  addComment: (x: number, y: number, text: string) => string;
+  addCommentReply: (commentId: string, text: string) => void;
+  toggleCommentResolved: (commentId: string) => void;
+  deleteComment: (commentId: string) => void;
+  activeCommentId: string | null;
+  setActiveCommentId: (id: string | null) => void;
 }
 
 const STORAGE_KEY_SAVED_LIST = 'protojam_saved_projects_list';
@@ -227,14 +250,51 @@ const getInitialSavedProjects = (): SavedProjectMeta[] => {
   return [];
 };
 
-const defaultStarter = STARTER_PROJECTS[0];
+// On startup, resume whatever the user last saved instead of force-loading the
+// ApexPay tutorial/demo project every time. First-run users (nothing saved yet)
+// get a genuinely blank canvas — the demo is still available under Templates.
+const getInitialProjectData = () => {
+  try {
+    const list = getInitialSavedProjects();
+    if (list.length > 0) {
+      const raw = localStorage.getItem(`${STORAGE_KEY_PROJECT_PREFIX}${list[0].id}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          projectId: parsed.projectId || list[0].id,
+          projectName: parsed.projectName || list[0].name,
+          frames: parsed.frames || [],
+          sections: parsed.sections || [],
+          elements: parsed.elements || [],
+          prototypeFlows: parsed.prototypeFlows || [],
+          variables: parsed.variables || [],
+          comments: parsed.comments || []
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Error resuming last saved project on startup', e);
+  }
+  return {
+    projectId: 'proj-blank',
+    projectName: 'Untitled Project',
+    frames: [] as DeviceFrame[],
+    sections: [] as SectionFrame[],
+    elements: [] as UIElement[],
+    prototypeFlows: [] as PrototypeFlow[],
+    variables: [] as DesignVariable[],
+    comments: [] as CanvasComment[]
+  };
+};
+
+const initialProject = getInitialProjectData();
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
-  projectId: 'proj-default-1',
-  projectName: defaultStarter.name,
+  projectId: initialProject.projectId,
+  projectName: initialProject.projectName,
   isSaved: true,
   lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-  activeProjectId: defaultStarter.id,
+  activeProjectId: initialProject.projectId,
   editorMode: 'design',
   isProjectMenuOpen: false,
   savedProjects: getInitialSavedProjects(),
@@ -242,14 +302,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   isLeftSidebarOpen: true,
   isRightSidebarOpen: true,
 
-  frames: JSON.parse(JSON.stringify(defaultStarter.frames)),
-  sections: [],
-  elements: JSON.parse(JSON.stringify(defaultStarter.elements)),
-  prototypeFlows: JSON.parse(JSON.stringify(defaultStarter.flows)),
+  frames: initialProject.frames,
+  sections: initialProject.sections,
+  elements: initialProject.elements,
+  prototypeFlows: initialProject.prototypeFlows,
+  variables: initialProject.variables,
+  comments: initialProject.comments,
+  activeCommentId: null,
 
   selectedFrameIds: [],
   selectedSectionIds: [],
-  selectedElementIds: ['el-action-row'],
+  selectedElementIds: [],
   selectedVectorPointIds: [],
   hoveredElementId: null,
   hoveredFrameId: null,
@@ -290,15 +353,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   wireMousePos: null,
 
   isPlaying: false,
-  currentPlayingFrameId: 'frame-screen-1',
+  currentPlayingFrameId: initialProject.frames.find(f => f.isStartingFrame)?.id ?? initialProject.frames[0]?.id ?? null,
   activeOverlays: [],
-  prototypeNavigationHistory: ['frame-screen-1'],
+  prototypeNavigationHistory: initialProject.frames[0] ? [initialProject.frames[0].id] : [],
 
   history: [
     {
-      frames: JSON.parse(JSON.stringify(defaultStarter.frames)),
-      sections: [],
-      elements: JSON.parse(JSON.stringify(defaultStarter.elements))
+      frames: JSON.parse(JSON.stringify(initialProject.frames)),
+      sections: JSON.parse(JSON.stringify(initialProject.sections)),
+      elements: JSON.parse(JSON.stringify(initialProject.elements))
     }
   ],
   historyIndex: 0,
@@ -434,7 +497,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       isStartingFrame: frames.length === 0,
       locked: false,
       hidden: false,
-      collapsed: false
+      collapsed: true,
+      clipContent: true
     };
 
     set((state) => ({
@@ -467,7 +531,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       isStartingFrame: frames.length === 0,
       locked: false,
       hidden: false,
-      collapsed: false
+      collapsed: true,
+      clipContent: true
     };
 
     set((state) => ({
@@ -483,8 +548,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   updateFrame: (id, updates) => {
+    // Dimensions & position always stay whole numbers; every other field
+    // (colors, autoLayout, etc.) passes through untouched.
+    const rounded = { ...updates };
+    (['x', 'y', 'width', 'height'] as const).forEach(key => {
+      if (typeof rounded[key] === 'number') rounded[key] = Math.round(rounded[key] as number);
+    });
     set((state) => ({
-      frames: state.frames.map(f => f.id === id ? { ...f, ...updates } : f),
+      frames: state.frames.map(f => f.id === id ? { ...f, ...rounded } : f),
+      isSaved: false
+    }));
+  },
+
+  updateFrameDimensions: (id, width, height) => {
+    set((state) => ({
+      frames: state.frames.map(f => f.id === id
+        ? { ...f, width: Math.round(width), height: Math.round(height) }
+        : f),
       isSaved: false
     }));
   },
@@ -583,6 +663,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }));
   },
 
+  toggleSectionCollapsed: (id) => {
+    set((state) => ({
+      sections: state.sections.map(s => s.id === id ? { ...s, collapsed: !s.collapsed } : s)
+    }));
+  },
+
   moveFrame: (id, dx, dy) => {
     set((state) => ({
       frames: state.frames.map(f => f.id === id ? { ...f, x: Math.round(f.x + dx), y: Math.round(f.y + dy) } : f),
@@ -612,7 +698,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       frameIds: [],
       elementIds: [],
       locked: false,
-      hidden: false
+      hidden: false,
+      collapsed: true
     };
 
     set((state) => ({
@@ -665,11 +752,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const template = COMPONENT_TEMPLATES.find(t => t.type === type) || COMPONENT_TEMPLATES[0];
     const newElement = template.createDefaultElement(id, x, y, parentFrameId);
 
+    // A single click (no drag) places text/heading at its natural content size,
+    // hugging whatever gets typed. Dragging to a specific size (createShapeAt)
+    // is the only way to get a fixed box — see the autoSize:false there.
+    if (type === 'text' || type === 'heading') {
+      newElement.style.autoSize = true;
+    }
+
     set((state) => {
       let updatedFrames = state.frames;
       if (parentFrameId) {
-        updatedFrames = state.frames.map(f => 
-          f.id === parentFrameId 
+        updatedFrames = state.frames.map(f =>
+          f.id === parentFrameId
             ? { ...f, elementIds: [...f.elementIds, id] }
             : f
         );
@@ -694,15 +788,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     
     const template = COMPONENT_TEMPLATES.find(t => t.type === type) || COMPONENT_TEMPLATES[0];
     const defaultEl = template.createDefaultElement(id, x, y, parentId);
-    
+
     defaultEl.style.width = width;
     defaultEl.style.height = height;
+    // Dragging to a specific size means the box should stay fixed at that size
+    // even as content grows — the opposite of the auto-hug single-click default.
+    if (type === 'text' || type === 'heading') {
+      defaultEl.style.autoSize = false;
+    }
 
     set((state) => {
       let updatedFrames = state.frames;
       if (parentId) {
-        updatedFrames = state.frames.map(f => 
-          f.id === parentId 
+        updatedFrames = state.frames.map(f =>
+          f.id === parentId
             ? { ...f, elementIds: [...f.elementIds, id] }
             : f
         );
@@ -769,12 +868,40 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   updateElementStyle: (id, styleUpdates) => {
+    // Dimensions & position always stay whole numbers; every other style
+    // field (opacity, gap, fontSize, etc.) keeps its decimal precision.
+    const rounded = { ...styleUpdates };
+    (['x', 'y', 'width', 'height'] as const).forEach(key => {
+      if (typeof rounded[key] === 'number') rounded[key] = Math.round(rounded[key] as number);
+    });
     set((state) => ({
-      elements: state.elements.map(el => 
-        el.id === id 
-          ? { ...el, style: { ...el.style, ...styleUpdates } }
+      elements: state.elements.map(el =>
+        el.id === id
+          ? { ...el, style: { ...el.style, ...rounded } }
           : el
       ),
+      isSaved: false
+    }));
+  },
+
+  updateElementState: (id, stateKey, updates) => {
+    set((state) => ({
+      elements: state.elements.map(el => {
+        if (el.id !== id) return el;
+        const nextStateStyle = { ...el.states?.[stateKey], ...updates };
+        return { ...el, states: { ...el.states, [stateKey]: nextStateStyle } };
+      }),
+      isSaved: false
+    }));
+  },
+
+  clearElementState: (id, stateKey) => {
+    set((state) => ({
+      elements: state.elements.map(el => {
+        if (el.id !== id || !el.states) return el;
+        const { [stateKey]: _removed, ...rest } = el.states;
+        return { ...el, states: rest };
+      }),
       isSaved: false
     }));
   },
@@ -1461,10 +1588,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setSnapGuides: (guides) => set({ snapGuides: guides }),
 
   finishDrawingShape: (type, startX, startY, endX, endY) => {
-    const x = Math.min(startX, endX);
-    const y = Math.min(startY, endY);
-    const width = Math.max(Math.abs(endX - startX), 20);
-    const height = Math.max(Math.abs(endY - startY), 20);
+    const x = Math.round(Math.min(startX, endX));
+    const y = Math.round(Math.min(startY, endY));
+    const width = Math.round(Math.max(Math.abs(endX - startX), 20));
+    const height = Math.round(Math.max(Math.abs(endY - startY), 20));
 
     if (type === 'frame') {
       get().addCustomFrame(x, y, width, height);
@@ -1567,6 +1694,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       sections: [],
       elements: [],
       prototypeFlows: [],
+      variables: [],
+      comments: [],
       selectedFrameIds: [],
       selectedSectionIds: [],
       selectedElementIds: [],
@@ -1580,7 +1709,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   saveCurrentProject: (customName) => {
-    const { projectId, projectName, frames, sections, elements, prototypeFlows } = get();
+    const { projectId, projectName, frames, sections, elements, prototypeFlows, variables, comments } = get();
     const finalName = customName || projectName;
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1595,7 +1724,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       frames,
       sections,
       elements,
-      prototypeFlows
+      prototypeFlows,
+      variables,
+      comments
     };
 
     try {
@@ -1649,6 +1780,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const sections = projectData.sections || [];
     const elements = projectData.elements || [];
     const flows = projectData.prototypeFlows || [];
+    const variables = projectData.variables || [];
+    const comments = projectData.comments || [];
 
     set({
       projectId: newProjId,
@@ -1657,6 +1790,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       sections: JSON.parse(JSON.stringify(sections)),
       elements: JSON.parse(JSON.stringify(elements)),
       prototypeFlows: JSON.parse(JSON.stringify(flows)),
+      variables: JSON.parse(JSON.stringify(variables)),
+      comments: JSON.parse(JSON.stringify(comments)),
       selectedFrameIds: [],
       selectedSectionIds: [],
       selectedElementIds: [],
@@ -1702,7 +1837,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   exportProjectData: () => {
-    const { projectId, projectName, frames, sections, elements, prototypeFlows } = get();
+    const { projectId, projectName, frames, sections, elements, prototypeFlows, variables, comments } = get();
     return {
       version: '1.0.0',
       appName: 'ProtoJam Desktop',
@@ -1712,7 +1847,139 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       frames,
       sections,
       elements,
-      prototypeFlows
+      prototypeFlows,
+      variables,
+      comments
     };
+  },
+
+  // ---------------- Design Variables ----------------
+  addVariable: (name, type, value) => {
+    const id = `var-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    set((state) => ({
+      variables: [...state.variables, { id, name, type, value }],
+      isSaved: false
+    }));
+    return id;
+  },
+
+  updateVariable: (id, updates) => {
+    set((state) => {
+      const nextVariables = state.variables.map(v => v.id === id ? { ...v, ...updates } : v);
+      // If the value changed, propagate it live to every element bound to this variable.
+      let nextElements = state.elements;
+      if ('value' in updates) {
+        const changed = nextVariables.find(v => v.id === id);
+        if (changed) {
+          nextElements = state.elements.map(el => {
+            if (!el.style.boundVariables) return el;
+            const boundKeys = (Object.entries(el.style.boundVariables) as [string, string][])
+              .filter(([, varId]) => varId === id)
+              .map(([key]) => key);
+            if (boundKeys.length === 0) return el;
+            const styleUpdates: Record<string, string | number> = {};
+            boundKeys.forEach(key => { styleUpdates[key] = changed.value; });
+            return { ...el, style: { ...el.style, ...styleUpdates } };
+          });
+        }
+      }
+      return { variables: nextVariables, elements: nextElements, isSaved: false };
+    });
+  },
+
+  deleteVariable: (id) => {
+    set((state) => ({
+      variables: state.variables.filter(v => v.id !== id),
+      elements: state.elements.map(el => {
+        if (!el.style.boundVariables) return el;
+        const stillBound = Object.entries(el.style.boundVariables).filter(([, varId]) => varId !== id);
+        if (stillBound.length === Object.keys(el.style.boundVariables).length) return el;
+        return { ...el, style: { ...el.style, boundVariables: Object.fromEntries(stillBound) } };
+      }),
+      isSaved: false
+    }));
+  },
+
+  bindStyleToVariable: (elementId, styleKey, variableId) => {
+    set((state) => {
+      const variable = state.variables.find(v => v.id === variableId);
+      if (!variable) return state;
+      return {
+        elements: state.elements.map(el => el.id === elementId ? {
+          ...el,
+          style: {
+            ...el.style,
+            [styleKey]: variable.value,
+            boundVariables: { ...el.style.boundVariables, [styleKey]: variableId }
+          }
+        } : el),
+        isSaved: false
+      };
+    });
+  },
+
+  unbindStyleVariable: (elementId, styleKey) => {
+    set((state) => ({
+      elements: state.elements.map(el => {
+        if (el.id !== elementId || !el.style.boundVariables) return el;
+        const { [styleKey]: _removed, ...rest } = el.style.boundVariables;
+        return { ...el, style: { ...el.style, boundVariables: rest } };
+      }),
+      isSaved: false
+    }));
+  },
+
+  // ---------------- Canvas Comments ----------------
+  setActiveCommentId: (id) => set({ activeCommentId: id }),
+
+  addComment: (x, y, text) => {
+    const id = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const comment: CanvasComment = {
+      id,
+      x,
+      y,
+      text,
+      author: 'You',
+      createdAt: new Date().toISOString(),
+      resolved: false,
+      replies: []
+    };
+    set((state) => ({
+      comments: [...state.comments, comment],
+      activeCommentId: id,
+      activeTool: 'select',
+      isSaved: false
+    }));
+    return id;
+  },
+
+  addCommentReply: (commentId, text) => {
+    set((state) => ({
+      comments: state.comments.map(c => c.id === commentId ? {
+        ...c,
+        replies: [...c.replies, {
+          id: `reply-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          text,
+          author: 'You',
+          createdAt: new Date().toISOString()
+        }]
+      } : c),
+      isSaved: false
+    }));
+  },
+
+  toggleCommentResolved: (commentId) => {
+    set((state) => ({
+      comments: state.comments.map(c => c.id === commentId ? { ...c, resolved: !c.resolved } : c),
+      isSaved: false
+    }));
+  },
+
+  deleteComment: (commentId) => {
+    set((state) => ({
+      comments: state.comments.filter(c => c.id !== commentId),
+      activeCommentId: state.activeCommentId === commentId ? null : state.activeCommentId,
+      isSaved: false
+    }));
   }
 }));

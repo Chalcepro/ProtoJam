@@ -6,15 +6,28 @@ import * as Icons from 'lucide-react';
 interface SemanticElementRendererProps {
   element: UIElement;
   isInteractive?: boolean; // When in Player mode vs Canvas mode
+  isHovering?: boolean; // Player mode only: pointer is currently over this element
+  isPressed?: boolean; // Player mode only: mouse button is currently down on this element
   onTriggerInteraction?: (element: UIElement, trigger: string) => void;
 }
 
 export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = ({
   element,
   isInteractive = false,
+  isHovering = false,
+  isPressed = false,
   onTriggerInteraction
 }) => {
-  const { type, style, semanticProps } = element;
+  const { type, semanticProps } = element;
+  // In the live player, layer hover/pressed style overrides on top of the base
+  // style — an "interactive component" without a full variant-set system.
+  const style = isInteractive && element.states
+    ? {
+        ...element.style,
+        ...(isHovering ? element.states.hover : null),
+        ...(isPressed ? element.states.pressed : null)
+      }
+    : element.style;
   const { inlineEditingElementId, setInlineEditingElementId, updateElementSemanticProps } = useProjectStore();
 
   const [internalValue, setInternalValue] = useState<any>(semanticProps.value ?? '');
@@ -91,6 +104,25 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
   switch (type) {
     // ---------------- RECTANGLE SHAPE ----------------
     case 'rectangle':
+      return (
+        <div
+          style={getCommonStyles()}
+          onClick={handleClick}
+          className="transition-all"
+        />
+      );
+
+    // ---------------- DIVIDER ----------------
+    case 'divider':
+      return (
+        <div
+          style={getCommonStyles()}
+          onClick={handleClick}
+        />
+      );
+
+    // ---------------- CONTAINER (plain auto-layout grouping box) ----------------
+    case 'container':
       return (
         <div
           style={getCommonStyles()}
@@ -252,9 +284,27 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         );
       }
 
+      {
+        // A fixed-size box (drag-created) lets its content spill past the
+        // boundary instead of clipping it, and keeps a faint outline visible
+        // at all times — not just while selected — so the fixed bounds this
+        // will eventually clip/scroll against stay legible.
+      }
       return (
         <div
-          style={getCommonStyles()}
+          style={{
+            ...getCommonStyles(),
+            // width/height:100% (from getCommonStyles) would fight a max-content
+            // sized parent in a circular way — auto-size boxes need the inner
+            // element to size itself from its own text, not from the parent.
+            ...(style.autoSize === true
+              ? { width: 'max-content', height: 'max-content', whiteSpace: 'pre', paddingRight: 4 }
+              : {
+                  overflow: style.clipContent ? 'auto' : 'visible',
+                  outline: !style.borderWidth ? '1px dashed rgba(235,235,236,0.3)' : undefined,
+                  outlineOffset: '1px'
+                })
+          }}
           onClick={handleClick}
           onDoubleClick={() => !isInteractive && setInlineEditingElementId(element.id)}
           className="flex items-center select-text cursor-text"
@@ -266,7 +316,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           {element.isInstance && (
             <span className="text-[10px] text-[rgb(235,235,236)] mr-1 opacity-60">◇</span>
           )}
-          <span>{semanticProps.label || 'Text Element'}</span>
+          {semanticProps.label ? (
+            <span>{semanticProps.label}</span>
+          ) : (
+            <span className="italic opacity-40 select-none">Type something...</span>
+          )}
         </div>
       );
 
@@ -532,6 +586,60 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         </div>
       );
 
+    // ---------------- MODAL / DIALOG ----------------
+    case 'modal':
+      return (
+        <div style={getCommonStyles()} onClick={handleClick} className="overflow-hidden relative">
+          <Icons.X size={16} className="absolute top-0 right-0 text-[rgba(235,235,236,0.4)]" />
+          <div className="text-base font-bold text-[rgb(235,235,236)] pr-6">
+            {semanticProps.label || 'Dialog Title'}
+          </div>
+          {semanticProps.placeholder && (
+            <div className="text-xs font-medium text-[rgba(235,235,236,0.6)] mt-1.5 leading-relaxed">
+              {semanticProps.placeholder}
+            </div>
+          )}
+        </div>
+      );
+
+    // ---------------- BOTTOM SHEET ----------------
+    case 'bottomSheet':
+      return (
+        <div style={getCommonStyles()} onClick={handleClick} className="overflow-hidden">
+          <div className="w-10 h-1 rounded-full bg-[rgba(235,235,236,0.25)] mx-auto mb-3" />
+          <div className="text-sm font-bold text-[rgb(235,235,236)]">
+            {semanticProps.label || 'Bottom Sheet'}
+          </div>
+        </div>
+      );
+
+    // ---------------- FLOW CONNECTOR (FigJam) ----------------
+    case 'connector':
+      return (
+        <div style={{ width: '100%', height: '100%', position: 'relative' }} onClick={handleClick}>
+          {semanticProps.connectorLabel && (
+            <div className="absolute inset-x-0 top-0 text-center text-[11px] font-semibold text-[rgba(235,235,236,0.7)]">
+              {semanticProps.connectorLabel}
+            </div>
+          )}
+          <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
+            <path
+              d={semanticProps.connectorType === 'straight' ? 'M2,50 L94,50' : 'M2,50 Q50,10 94,50'}
+              fill="none"
+              stroke={style.borderColor || 'rgb(235,235,236)'}
+              strokeWidth={style.borderWidth || 2}
+              vectorEffect="non-scaling-stroke"
+            />
+            {semanticProps.connectorEndArrow !== false && (
+              <polygon points="88,44 98,50 88,56" fill={style.borderColor || 'rgb(235,235,236)'} />
+            )}
+            {semanticProps.connectorStartArrow && (
+              <polygon points="12,44 2,50 12,56" fill={style.borderColor || 'rgb(235,235,236)'} />
+            )}
+          </svg>
+        </div>
+      );
+
     // ---------------- METRIC CARD ----------------
     case 'metricCard':
       return (
@@ -543,6 +651,19 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             <span>{semanticProps.placeholder || '+12.5%'}</span>
           </div>
         </div>
+      );
+
+    // ---------------- IMAGE ----------------
+    case 'image':
+      return (
+        <img
+          src={semanticProps.src || 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=400&auto=format&fit=crop&q=80'}
+          alt={semanticProps.alt || semanticProps.label || 'Image'}
+          style={{ ...getCommonStyles(), objectFit: 'contain', backgroundColor: undefined }}
+          className="pointer-events-none select-none"
+          draggable={false}
+          onClick={handleClick}
+        />
       );
 
     // ---------------- AVATAR ----------------

@@ -7,10 +7,12 @@ import { ShapeSelectionHighlight } from './ShapeSelectionHighlight';
 import { FlowConnectorLines } from './FlowConnectorLines';
 import { Minimap } from './Minimap';
 import { BottomToolbar } from '../toolbar/BottomToolbar';
+import { CommentPin } from './CommentPin';
 import { UIElement, UIElementType } from '../../types/components';
 
 export const InfiniteCanvas: React.FC = () => {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
@@ -23,6 +25,9 @@ export const InfiniteCanvas: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState({ x: 0, y: 0 });
   const [drawCurrent, setDrawCurrent] = useState({ x: 0, y: 0 });
+
+  // Pending comment pin — a world-space point awaiting its first message
+  const [draftCommentPos, setDraftCommentPos] = useState<{ x: number; y: number } | null>(null);
 
   const {
     frames,
@@ -51,7 +56,10 @@ export const InfiniteCanvas: React.FC = () => {
     vectorTool,
     addVectorPoint,
     setInlineEditingElementId,
-    addElement
+    addElement,
+    addPredefinedElement,
+    comments,
+    addComment
   } = useProjectStore();
 
   const freeElements = elements.filter(el => !el.parentId && !el.hidden);
@@ -115,6 +123,15 @@ export const InfiniteCanvas: React.FC = () => {
       return;
     }
 
+    // Comment pin placement — single click opens a draft composer; nothing is
+    // created until the first message is actually submitted.
+    if (activeTool === 'comment') {
+      const { x, y } = getWorldCoords(e.clientX, e.clientY);
+      setDraftCommentPos({ x, y });
+      setActiveTool('select');
+      return;
+    }
+
     // Drag-to-draw shapes, frames, sections, text
     const shapeDrawTools: string[] = ['rectangle', 'ellipse', 'line', 'arrow', 'polygon', 'star', 'frame', 'section', 'text', 'button', 'input', 'sticky'];
     if (shapeDrawTools.includes(activeTool)) {
@@ -125,7 +142,11 @@ export const InfiniteCanvas: React.FC = () => {
       return;
     }
 
-    if (e.button === 0 && e.target === canvasContainerRef.current) {
+    // Clicking truly empty canvas — either the outer container or the
+    // pannable stage background itself, never a frame/element/pin (those
+    // stop propagation before this handler ever sees the click) — clears
+    // whatever was selected or being edited.
+    if (e.button === 0 && (e.target === canvasContainerRef.current || e.target === stageRef.current)) {
       clearSelection();
       setInlineEditingElementId(null);
       setIsPanning(true);
@@ -234,9 +255,52 @@ export const InfiniteCanvas: React.FC = () => {
     setDraggingFrameId(null);
   };
 
-  // Drag-and-drop from sidebar component library
+  // Places a dropped/uploaded image file onto the canvas at the given world coordinates,
+  // parenting it into whichever frame occupies that point (mirrors dropComponentAt's frame lookup).
+  const placeImageFileAt = (file: File, worldX: number, worldY: number) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const src = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 360;
+        const scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
+        const width = Math.max(20, Math.round(img.naturalWidth * scale));
+        const height = Math.max(20, Math.round(img.naturalHeight * scale));
+
+        const targetFrame = frames.find(f =>
+          worldX >= f.x && worldX <= f.x + f.width && worldY >= f.y && worldY <= f.y + f.height
+        );
+        const x = Math.round(targetFrame ? worldX - targetFrame.x : worldX);
+        const y = Math.round(targetFrame ? worldY - targetFrame.y : worldY);
+
+        const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        addPredefinedElement({
+          id,
+          name: file.name.replace(/\.[^/.]+$/, '') || 'Image',
+          type: 'image',
+          parentId: targetFrame?.id,
+          interactions: [],
+          style: { x, y, width, height },
+          semanticProps: { src, alt: file.name }
+        });
+      };
+      img.src = src;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Drag-and-drop from sidebar component library, or image files dragged in from the OS
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+
+    const files = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith('image/'));
+    if (files.length > 0) {
+      const { x, y } = getWorldCoords(e.clientX, e.clientY);
+      files.forEach((file, i) => placeImageFileAt(file, x + i * 32, y + i * 32));
+      return;
+    }
+
     const componentType = e.dataTransfer.getData('application/protojam-component') as UIElementType;
     if (!componentType) return;
 
@@ -280,6 +344,7 @@ export const InfiniteCanvas: React.FC = () => {
 
       {/* Scaled & Transformed Canvas Stage */}
       <div
+        ref={stageRef}
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
           transformOrigin: '0 0'
@@ -312,28 +377,35 @@ export const InfiniteCanvas: React.FC = () => {
         {/* 3. Free Canvas Elements (Detached / Outside Frames) */}
         {freeElements.map(element => {
           const isSelected = selectedElementIds.includes(element.id);
+          const isAutoSizeText = (element.type === 'text' || element.type === 'heading') && element.style.autoSize;
           return (
             <div
               key={element.id}
               onMouseDown={(e) => {
+                // Let a drawing/placement tool pass straight through to the canvas
+                // instead of this existing element hijacking the click as a move —
+                // otherwise you can never draw or place something on top of it.
+                if (activeTool !== 'select') return;
                 e.stopPropagation();
                 selectElement(element.id, e.shiftKey);
                 setDraggingElementId(element.id);
                 setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(element.style.x), origY: Number(element.style.y) });
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { if (activeTool === 'select') e.stopPropagation(); }}
               style={{
                 position: 'absolute',
                 left: Number(element.style.x),
                 top: Number(element.style.y),
-                width: Number(element.style.width),
-                height: Number(element.style.height),
-                zIndex: isSelected ? 35 : (element.style.zIndex || 5)
+                ...(isAutoSizeText
+                  ? { width: 'max-content', height: 'max-content', maxWidth: 'none' as const }
+                  : { width: Number(element.style.width), height: Number(element.style.height) }),
+                zIndex: isSelected ? 35 : (element.style.zIndex || 5),
+                pointerEvents: activeTool !== 'select' ? 'none' : undefined
               }}
               className="cursor-move group relative"
             >
               <SemanticElementRenderer element={element} isInteractive={false} />
-              {isSelected && <ShapeSelectionHighlight element={element} />}
+              {isSelected && activeTool === 'select' && <ShapeSelectionHighlight element={element} />}
             </div>
           );
         })}
@@ -358,7 +430,50 @@ export const InfiniteCanvas: React.FC = () => {
             <span>{Math.round(Math.abs(drawCurrent.x - drawStart.x))} × {Math.round(Math.abs(drawCurrent.y - drawStart.y))}</span>
           </div>
         )}
+
+        {/* 6. Comment Pins */}
+        {comments.map(c => (
+          <CommentPin key={c.id} comment={c} />
+        ))}
+
+        {/* 7. Draft Comment Composer — pending pin awaiting its first message */}
+        {draftCommentPos && (
+          <div
+            style={{ position: 'absolute', left: draftCommentPos.x, top: draftCommentPos.y }}
+            className="z-50"
+          >
+            <div className="w-7 h-7 rounded-full bg-[#ff6b4a] border-2 border-[rgb(20,20,19)] shadow-lg -translate-x-1/2" />
+            <div className="mt-1 w-56 bg-[rgb(20,20,19)] border border-[rgba(235,235,236,0.18)] rounded-xl shadow-2xl p-2">
+              <textarea
+                rows={2}
+                placeholder="Leave a comment... (Enter to post, Esc to cancel)"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    const text = (e.target as HTMLTextAreaElement).value.trim();
+                    if (text) addComment(draftCommentPos.x, draftCommentPos.y, text);
+                    setDraftCommentPos(null);
+                  } else if (e.key === 'Escape') {
+                    setDraftCommentPos(null);
+                  }
+                }}
+                className="w-full bg-[rgba(235,235,236,0.06)] text-[rgb(235,235,236)] text-xs p-2 rounded-lg outline-none border border-[rgba(235,235,236,0.1)] resize-none"
+              />
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Drag cursor overlay — while actively dragging an element/frame, force a
+          consistent grabbing cursor regardless of what's underneath (a text
+          element's own cursor-text style would otherwise win mid-drag). */}
+      {(draggingElementId || draggingFrameId) && (
+        <div
+          className="fixed inset-0 z-[9999] cursor-grabbing"
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        />
+      )}
 
       {/* Floating Centered Bottom Toolbar */}
       <BottomToolbar />

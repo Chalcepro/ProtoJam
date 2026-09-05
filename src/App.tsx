@@ -141,6 +141,21 @@ export const App: React.FC = () => {
       if (e.key === 'v' || e.key === 'V') setActiveTool('select');
       if (e.key === 'h' || e.key === 'H') setActiveTool('hand');
       if (e.key === 't' || e.key === 'T') setActiveTool('text');
+
+      // Remaining tool shortcuts advertised in the toolbar tooltips but never wired up.
+      // Skipped when a modifier is held so they don't clash with browser/OS shortcuts.
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === 'a' || e.key === 'A') setActiveTool('directSelect');
+        if (e.key === 'r' || e.key === 'R') setActiveTool('rectangle');
+        if (e.key === 'o' || e.key === 'O') setActiveTool('ellipse');
+        if (e.key === 'l' && !e.shiftKey) setActiveTool('line');
+        if (e.key === 'L' && e.shiftKey) setActiveTool('arrow');
+        if (e.key === 'f' || e.key === 'F') setActiveTool('frame');
+        if (e.key === 's' && !e.shiftKey) setActiveTool('section');
+        if (e.key === 'b' || e.key === 'B') setActiveTool('button');
+        if (e.key === 'i' || e.key === 'I') setActiveTool('input');
+        if (e.key === 'c' || e.key === 'C') setActiveTool('sticky');
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -151,6 +166,20 @@ export const App: React.FC = () => {
     isLeftSidebarOpen, isRightSidebarOpen, toggleLeftSidebar, toggleRightSidebar, setEditorMode, editorMode,
     saveCurrentProject, openProjectMenu
   ]);
+
+  // Select the entire value whenever any numeric field gains focus, app-wide.
+  // Without this, clicking into a "0" and typing "456" produces "0456" —
+  // typing always replaces instead of inserting, matching every other design tool.
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target instanceof HTMLInputElement && target.type === 'number') {
+        target.select();
+      }
+    };
+    document.addEventListener('focusin', handleFocusIn);
+    return () => document.removeEventListener('focusin', handleFocusIn);
+  }, []);
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[rgb(20,20,19)] text-[rgb(235,235,236)] overflow-hidden font-sans relative">

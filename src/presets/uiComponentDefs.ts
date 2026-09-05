@@ -218,12 +218,43 @@ export const COMPONENT_TEMPLATES: ComponentTemplate[] = [
         fontFamily: 'Inter, sans-serif'
       },
       semanticProps: {
-        label: 'Type something here...'
+        label: ''
       }
     })
   },
 
   // ---------------- STRUCTURE ----------------
+  {
+    type: 'container',
+    title: 'Container',
+    category: 'Structure',
+    description: 'Plain auto-layout box for grouping elements — no styling opinions, just structure',
+    iconName: 'Frame',
+    defaultWidth: 320,
+    defaultHeight: 200,
+    createDefaultElement: (id, x, y, parentId) => ({
+      id,
+      name: 'Container',
+      type: 'container',
+      parentId,
+      interactions: [],
+      style: {
+        x, y,
+        width: 320,
+        height: 200,
+        fillColor: 'rgba(235, 235, 236, 0.02)',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: 'rgba(235, 235, 236, 0.15)',
+        padding: { top: 16, right: 16, bottom: 16, left: 16 },
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12
+      },
+      semanticProps: {}
+    })
+  },
   {
     type: 'card',
     title: 'Container Card',

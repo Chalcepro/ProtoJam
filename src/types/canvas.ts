@@ -23,7 +23,8 @@ export type ToolMode =
   | 'input' 
   | 'component' 
   | 'connector' 
-  | 'sticky' 
+  | 'sticky'
+  | 'comment'
   | 'prototypeWire';
 
 export interface ViewportTransform {
