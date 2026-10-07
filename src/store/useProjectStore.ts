@@ -13,7 +13,7 @@ import {
   DesignVariable,
   CanvasComment
 } from '../types/components';
-import { ToolMode, ViewportTransform, CanvasSettings, DragState, SnapGuide } from '../types/canvas';
+import { ToolMode, ViewportTransform, CanvasSettings, DragState, SnapGuide, RulerGuide } from '../types/canvas';
 import { PrototypeInteraction, PrototypeFlow } from '../types/prototype';
 import { STARTER_PROJECTS } from '../presets/starterProjects';
 import { DevicePreset, DEVICE_PRESETS } from '../presets/devicePresets';
@@ -80,6 +80,11 @@ export interface ProjectState {
   canvasSettings: CanvasSettings;
   dragState: DragState;
   snapGuides: SnapGuide[];
+  // Guides pulled out of the rulers (saved with the project)
+  guides: RulerGuide[];
+  addGuide: (axis: 'x' | 'y', pos: number) => string;
+  moveGuide: (id: string, pos: number) => void;
+  removeGuide: (id: string) => void;
 
   // Vector / Pen Tool Mode State
   isVectorEditing: boolean;
@@ -179,6 +184,9 @@ export interface ProjectState {
   reparentElement: (elementId: string, newParentId?: string, absCanvasX?: number, absCanvasY?: number) => void;
   bringToFront: (id: string) => void;
   sendToBack: (id: string) => void;
+  // One step at a time, among the things sharing its parent (Ctrl+] / Ctrl+[)
+  bringForward: (id: string) => void;
+  sendBackward: (id: string) => void;
   alignSelectedElements: (alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom' | 'distributeH' | 'distributeV') => void;
 
   // Auto Layout
@@ -354,6 +362,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     currentY: 0
   },
   snapGuides: [],
+  guides: [],
+  addGuide: (axis, pos) => {
+    const id = `guide-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    set((state) => ({ guides: [...state.guides, { id, axis, pos: Math.round(pos) }], isSaved: false }));
+    return id;
+  },
+  moveGuide: (id, pos) => set((state) => ({
+    guides: state.guides.map(g => g.id === id ? { ...g, pos: Math.round(pos) } : g), isSaved: false
+  })),
+  removeGuide: (id) => set((state) => ({ guides: state.guides.filter(g => g.id !== id), isSaved: false })),
 
   // Vector editing
   isVectorEditing: false,
@@ -1125,6 +1143,37 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 
+  bringForward: (id) => {
+    set((state) => {
+      const idx = state.elements.findIndex(e => e.id === id);
+      if (idx === -1) return state;
+      const el = state.elements[idx];
+      // the next thing above it in the same parent - that is what it passes
+      let j = idx + 1;
+      while (j < state.elements.length && state.elements[j].parentId !== el.parentId) j++;
+      if (j >= state.elements.length) return state;          // already on top
+      const out = state.elements.filter(e => e.id !== id);
+      out.splice(j, 0, el);                                  // just after it
+      return { elements: out, isSaved: false };
+    });
+    get().pushHistory();
+  },
+
+  sendBackward: (id) => {
+    set((state) => {
+      const idx = state.elements.findIndex(e => e.id === id);
+      if (idx === -1) return state;
+      const el = state.elements[idx];
+      let j = idx - 1;
+      while (j >= 0 && state.elements[j].parentId !== el.parentId) j--;
+      if (j < 0) return state;                               // already at the back
+      const out = state.elements.filter(e => e.id !== id);
+      out.splice(j, 0, el);                                  // just before it
+      return { elements: out, isSaved: false };
+    });
+    get().pushHistory();
+  },
+
   sendToBack: (id) => {
     set((state) => {
       const idx = state.elements.findIndex(e => e.id === id);
@@ -1739,6 +1788,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       prototypeFlows: [],
       variables: [],
       comments: [],
+      guides: [],
       selectedFrameIds: [],
       selectedSectionIds: [],
       selectedElementIds: [],
@@ -1752,7 +1802,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   saveCurrentProject: (customName) => {
-    const { projectId, projectName, frames, sections, elements, prototypeFlows, variables, comments } = get();
+    const { projectId, projectName, frames, sections, elements, prototypeFlows, variables, comments, guides } = get();
     const finalName = customName || projectName;
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1767,6 +1817,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       frames,
       sections,
       elements,
+      guides,
       prototypeFlows,
       variables,
       comments
@@ -1835,6 +1886,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       prototypeFlows: JSON.parse(JSON.stringify(flows)),
       variables: JSON.parse(JSON.stringify(variables)),
       comments: JSON.parse(JSON.stringify(comments)),
+      guides: JSON.parse(JSON.stringify(projectData.guides || [])),
       selectedFrameIds: [],
       selectedSectionIds: [],
       selectedElementIds: [],
@@ -1880,7 +1932,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   exportProjectData: () => {
-    const { projectId, projectName, frames, sections, elements, prototypeFlows, variables, comments } = get();
+    const { projectId, projectName, frames, sections, elements, prototypeFlows, variables, comments, guides } = get();
     return {
       version: '1.0.0',
       appName: 'ProtoJam Desktop',
@@ -1890,6 +1942,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       frames,
       sections,
       elements,
+      guides,
       prototypeFlows,
       variables,
       comments

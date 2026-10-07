@@ -46,6 +46,14 @@ export interface DragState {
   drawingShapeType?: 'rectangle' | 'ellipse' | 'polygon' | 'star' | 'line' | 'arrow' | 'frame' | 'section';
 }
 
+// A guide line pulled out of a ruler: x is a vertical line at that x, y a
+// horizontal one. Saved with the project; things snap to it while dragging.
+export interface RulerGuide {
+  id: string;
+  axis: 'x' | 'y';
+  pos: number;          // world coordinate
+}
+
 export interface SnapGuide {
   type: 'horizontal' | 'vertical';
   position: number;

@@ -146,7 +146,7 @@ export const App: React.FC = () => {
       // Skipped when a modifier is held so they don't clash with browser/OS shortcuts.
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.key === 'a' || e.key === 'A') setActiveTool('directSelect');
-        if (e.key === 'r' || e.key === 'R') setActiveTool('rectangle');
+        if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) setActiveTool('rectangle');   // Shift+R is the rulers
         if (e.key === 'o' || e.key === 'O') setActiveTool('ellipse');
         if (e.key === 'l' && !e.shiftKey) setActiveTool('line');
         if (e.key === 'L' && e.shiftKey) setActiveTool('arrow');

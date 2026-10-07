@@ -10,6 +10,12 @@ import { BottomToolbar } from '../toolbar/BottomToolbar';
 import { CommentPin } from './CommentPin';
 import { UIElement, UIElementType } from '../../types/components';
 import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
+import { Rulers, RULER } from './Rulers';
+
+type Box = { x0: number; y0: number; x1: number; y1: number };
+// A smart guide drawn while dragging: a line in canvas space, and the gap to
+// the thing it lined up with when there is one.
+type SnapLine = { axis: 'x' | 'y'; at: number; from: number; to: number; gap?: { value: number; mid: number } };
 
 // What Ctrl+C / Ctrl+X last took. Kept outside React state: it is not
 // something anything renders, and it must survive the canvas re-rendering.
@@ -46,6 +52,14 @@ export const InfiniteCanvas: React.FC = () => {
   // of a double-click still reaches the element (double-click to edit text).
   const dragOrigin = useRef<{ x: number; y: number } | null>(null);
   const [dragMoved, setDragMoved] = useState(false);
+  // Where each dragged element started, so a drag places them absolutely
+  // (start + offset) - adding a rounded step per mouse move drifted, and
+  // snapping needs the true offset to work from.
+  const dragOrig = useRef<Map<string, { x: number; y: number }> | null>(null);
+  const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
+  // For the rulers: the pointer in canvas space, and the canvas's size.
+  const [pointerWorld, setPointerWorld] = useState<{ x: number; y: number } | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   // Space held: left-drag pans, the way Figma does it.
   const spaceDown = useRef(false);
   // Where the pointer last was, in world space - where a paste lands.
@@ -100,8 +114,95 @@ export const InfiniteCanvas: React.FC = () => {
     toggleFrameHidden,
     alignSelectedElements,
     groupSelectedIntoAutoLayout,
-    createMasterComponent
+    createMasterComponent,
+    bringForward,
+    sendBackward,
+    guides,
+    updateElementPosition,
+    updateCanvasSettings
   } = useProjectStore();
+
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setCanvasSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ---- smart guides ------------------------------------------------------
+  //
+  // While dragging, the moving selection's left / centre / right and top /
+  // middle / bottom snap to the same lines of every other element, every
+  // frame, and every ruler guide, within 6 screen pixels. Ctrl held: no snap.
+  const boxOf = (el: UIElement, at?: { x: number; y: number }): Box => {
+    const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
+    const x = (f?.x || 0) + (at ? at.x : Number(el.style.x));
+    const y = (f?.y || 0) + (at ? at.y : Number(el.style.y));
+    return { x0: x, y0: y, x1: x + (Number(el.style.width) || 0), y1: y + (Number(el.style.height) || 0) };
+  };
+
+  const computeSnap = (ids: string[], dx: number, dy: number) => {
+    let m: Box | null = null;
+    for (const id of ids) {
+      const el = elements.find(x => x.id === id); const o = dragOrig.current?.get(id);
+      if (!el || !o) continue;
+      const b = boxOf(el, { x: o.x + dx, y: o.y + dy });
+      m = m ? { x0: Math.min(m.x0, b.x0), y0: Math.min(m.y0, b.y0), x1: Math.max(m.x1, b.x1), y1: Math.max(m.y1, b.y1) } : b;
+    }
+    if (!m) return { dx: 0, dy: 0, lines: [] as SnapLine[] };
+    const others: Box[] = [
+      ...elements.filter(el => !ids.includes(el.id) && !el.hidden).map(el => boxOf(el)),
+      ...frames.filter(f => !f.hidden).map(f => ({ x0: f.x, y0: f.y, x1: f.x + f.width, y1: f.y + f.height }))
+    ];
+    const thr = 6 / viewport.zoom;
+    type Hit = { d: number; line: number; box: Box | null };
+    const best = (mine: number[], axis: 'x' | 'y'): Hit | null => {
+      let hit: Hit | null = null;
+      const consider = (line: number, box: Box | null) => {
+        for (const v of mine) {
+          const d = line - v;
+          if (Math.abs(d) <= thr && (!hit || Math.abs(d) < Math.abs(hit.d))) hit = { d, line, box };
+        }
+      };
+      for (const b of others) {
+        const ls = axis === 'x' ? [b.x0, (b.x0 + b.x1) / 2, b.x1] : [b.y0, (b.y0 + b.y1) / 2, b.y1];
+        ls.forEach(l => consider(l, b));
+      }
+      guides.filter(g => g.axis === axis).forEach(g => consider(g.pos, null));
+      return hit;
+    };
+    const hx = best([m.x0, (m.x0 + m.x1) / 2, m.x1], 'x');
+    const hy = best([m.y0, (m.y0 + m.y1) / 2, m.y1], 'y');
+    const sdx = hx ? hx.d : 0, sdy = hy ? hy.d : 0;
+    const s: Box = { x0: m.x0 + sdx, y0: m.y0 + sdy, x1: m.x1 + sdx, y1: m.y1 + sdy };
+    const lines: SnapLine[] = [];
+    const span = 1e5;
+    if (hx) {
+      const b = hx.box;
+      let gap: SnapLine['gap'];
+      if (b && b.y0 >= s.y1) gap = { value: b.y0 - s.y1, mid: (b.y0 + s.y1) / 2 };
+      else if (b && s.y0 >= b.y1) gap = { value: s.y0 - b.y1, mid: (s.y0 + b.y1) / 2 };
+      lines.push({ axis: 'x', at: hx.line, from: b ? Math.min(s.y0, b.y0) : -span, to: b ? Math.max(s.y1, b.y1) : span, gap });
+    }
+    if (hy) {
+      const b = hy.box;
+      let gap: SnapLine['gap'];
+      if (b && b.x0 >= s.x1) gap = { value: b.x0 - s.x1, mid: (b.x0 + s.x1) / 2 };
+      else if (b && s.x0 >= b.x1) gap = { value: s.x0 - b.x1, mid: (s.x0 + b.x1) / 2 };
+      lines.push({ axis: 'y', at: hy.line, from: b ? Math.min(s.x0, b.x0) : -span, to: b ? Math.max(s.x1, b.x1) : span, gap });
+    }
+    return { dx: sdx, dy: sdy, lines };
+  };
+
+  // The selection's extent, for the rulers.
+  const selectionBox = (): Box | null => {
+    let m: Box | null = null;
+    const add = (b: Box) => { m = m ? { x0: Math.min(m.x0, b.x0), y0: Math.min(m.y0, b.y0), x1: Math.max(m.x1, b.x1), y1: Math.max(m.y1, b.y1) } : b; };
+    elements.filter(el => selectedElementIds.includes(el.id)).forEach(el => add(boxOf(el)));
+    frames.filter(f => selectedFrameIds.includes(f.id)).forEach(f => add({ x0: f.x, y0: f.y, x1: f.x + f.width, y1: f.y + f.height }));
+    return m;
+  };
 
   // An element's position on the canvas, whether it is free or in a frame.
   const absOf = (el: UIElement) => {
@@ -146,7 +247,23 @@ export const InfiniteCanvas: React.FC = () => {
       if (isTyping(e.target)) return;
       if (e.code === 'Space') { spaceDown.current = true; e.preventDefault(); return; }
       const mod = e.ctrlKey || e.metaKey;
+      // Shift+R: rulers on / off, as in Figma
+      if (!mod && e.shiftKey && e.code === 'KeyR') {
+        e.preventDefault();
+        updateCanvasSettings({ showRulers: !canvasSettings.showRulers });
+        return;
+      }
       if (!mod) return;
+      // Ctrl+] / Ctrl+[ one step forward / back; with Shift, all the way
+      if (e.code === 'BracketRight' || e.code === 'BracketLeft') {
+        e.preventDefault();
+        const up = e.code === 'BracketRight';
+        // stepping several: front-most first going up, back-most first going down
+        const order = elements.map(el => el.id).filter(id => selectedElementIds.includes(id));
+        (up ? [...order].reverse() : order).forEach(id =>
+          e.shiftKey ? (up ? bringToFront(id) : sendToBack(id)) : (up ? bringForward(id) : sendBackward(id)));
+        return;
+      }
       const k = e.key.toLowerCase();
       if (k === 'c' && selectedElementIds.length) { e.preventDefault(); copySelection(); }
       else if (k === 'x' && selectedElementIds.length) {
@@ -290,6 +407,7 @@ export const InfiniteCanvas: React.FC = () => {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     lastWorld.current = getWorldCoords(e.clientX, e.clientY);
+    if (canvasSettings.showRulers) setPointerWorld(lastWorld.current);
 
     if (marquee) {
       setMarquee({ ...marquee, x1: lastWorld.current.x, y1: lastWorld.current.y });
@@ -314,14 +432,25 @@ export const InfiniteCanvas: React.FC = () => {
         Math.hypot(e.clientX - dragOrigin.current.x, e.clientY - dragOrigin.current.y) > 3)
       setDragMoved(true);
 
-    // Handle element dragging
-    if (draggingElementId) {
-      const deltaX = (e.clientX - dragStartPos.mouseX) / viewport.zoom;
-      const deltaY = (e.clientY - dragStartPos.mouseY) / viewport.zoom;
+    // Handle element dragging: start + offset, snapped to smart guides
+    if (draggingElementId && dragOrigin.current) {
       // everything selected moves together, when the dragged one is part of it
       const ids = selectedElementIds.includes(draggingElementId) ? selectedElementIds : [draggingElementId];
-      ids.forEach(id => moveElement(id, deltaX, deltaY));
-      setDragStartPos(prev => ({ ...prev, mouseX: e.clientX, mouseY: e.clientY }));
+      if (!dragOrig.current) {
+        dragOrig.current = new Map();
+        ids.forEach(id => {
+          const el = elements.find(x => x.id === id);
+          if (el && !el.locked) dragOrig.current!.set(id, { x: Number(el.style.x), y: Number(el.style.y) });
+        });
+      }
+      let dx = (e.clientX - dragOrigin.current.x) / viewport.zoom;
+      let dy = (e.clientY - dragOrigin.current.y) / viewport.zoom;
+      if (dragMoved && !e.ctrlKey && !e.metaKey && canvasSettings.snapToObjects !== false) {
+        const snap = computeSnap(ids, dx, dy);
+        dx += snap.dx; dy += snap.dy;
+        setSnapLines(snap.lines);
+      } else if (snapLines.length) setSnapLines([]);
+      dragOrig.current.forEach((o, id) => updateElementPosition(id, Math.round(o.x + dx), Math.round(o.y + dy)));
       return;
     }
 
@@ -423,6 +552,8 @@ export const InfiniteCanvas: React.FC = () => {
     setDraggingFrameId(null);
     setDragMoved(false);
     dragOrigin.current = null;
+    dragOrig.current = null;
+    if (snapLines.length) setSnapLines([]);
   };
 
   // Places a dropped/uploaded image file onto the canvas at the given world coordinates,
@@ -670,6 +801,34 @@ export const InfiniteCanvas: React.FC = () => {
         />
       )}
 
+      {/* Smart guides while dragging */}
+      {snapLines.map((l, i) => {
+        const z = viewport.zoom;
+        const at = l.axis === 'x' ? l.at * z + viewport.x : l.at * z + viewport.y;
+        const a = l.from * z + (l.axis === 'x' ? viewport.y : viewport.x);
+        const b = l.to * z + (l.axis === 'x' ? viewport.y : viewport.x);
+        const mid = l.gap ? l.gap.mid * z + (l.axis === 'x' ? viewport.y : viewport.x) : 0;
+        return (
+          <React.Fragment key={i}>
+            <div className="absolute pointer-events-none z-[58] bg-[#ff4fa3]"
+                 style={l.axis === 'x'
+                   ? { left: at, top: Math.max(-10, a), width: 1, height: Math.min(1e4, b - a) }
+                   : { top: at, left: Math.max(-10, a), height: 1, width: Math.min(1e4, b - a) }} />
+            {l.gap && l.gap.value > 0.5 && (
+              <span className="absolute pointer-events-none z-[58] text-[10px] font-mono text-white bg-[#ff4fa3] px-1 rounded"
+                    style={l.axis === 'x' ? { left: at + 4, top: mid - 8 } : { top: at + 4, left: mid - 10 }}>
+                {Math.round(l.gap.value)}
+              </span>
+            )}
+          </React.Fragment>
+        );
+      })}
+
+      {/* Rulers and their guides (Shift+R) */}
+      {canvasSettings.showRulers && canvasSize.w > 0 && (
+        <Rulers width={canvasSize.w} height={canvasSize.h} selection={selectionBox()} pointer={pointerWorld} />
+      )}
+
       {/* Box select */}
       {marquee && (
         <div
@@ -708,8 +867,10 @@ export const InfiniteCanvas: React.FC = () => {
               { label: 'Distribute vertically', run: al('distributeV') });
             items.push({ label: 'Align', run: () => {}, children: align });
           }
-          items.push({ label: 'Bring to front', run: () => selectedElementIds.forEach(id => bringToFront(id)) });
-          items.push({ label: 'Send to back', run: () => selectedElementIds.forEach(id => sendToBack(id)) });
+          items.push({ label: 'Bring forward', hint: 'Ctrl+]', run: () => [...selectedElementIds].reverse().forEach(id => bringForward(id)) });
+          items.push({ label: 'Send backward', hint: 'Ctrl+[', run: () => selectedElementIds.forEach(id => sendBackward(id)) });
+          items.push({ label: 'Bring to front', hint: 'Ctrl+Shift+]', run: () => selectedElementIds.forEach(id => bringToFront(id)) });
+          items.push({ label: 'Send to back', hint: 'Ctrl+Shift+[', run: () => selectedElementIds.forEach(id => sendToBack(id)) });
           items.push({ divider: true });
           items.push({ label: 'Add auto layout', hint: 'Shift+A', run: () => groupSelectedIntoAutoLayout() });
           if (n === 1) items.push({ label: 'Create component', run: () => createMasterComponent(selectedElementIds[0]) });
