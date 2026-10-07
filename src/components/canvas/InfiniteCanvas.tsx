@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useProjectStore } from '../../store/useProjectStore';
+import { useProjectStore, toolToElementType } from '../../store/useProjectStore';
 import { ArtboardFrame } from './ArtboardFrame';
 import { SectionFrame } from './SectionFrame';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
@@ -41,6 +41,11 @@ export const InfiniteCanvas: React.FC = () => {
 
   // Box select: left-drag on empty canvas. World coordinates.
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
+  // A press on an element only becomes a drag once the mouse has moved a few
+  // pixels. Until then nothing is laid over the canvas, so the second click
+  // of a double-click still reaches the element (double-click to edit text).
+  const dragOrigin = useRef<{ x: number; y: number } | null>(null);
+  const [dragMoved, setDragMoved] = useState(false);
   // Space held: left-drag pans, the way Figma does it.
   const spaceDown = useRef(false);
   // Where the pointer last was, in world space - where a paste lands.
@@ -305,6 +310,10 @@ export const InfiniteCanvas: React.FC = () => {
       return;
     }
 
+    if ((draggingElementId || draggingFrameId) && !dragMoved && dragOrigin.current &&
+        Math.hypot(e.clientX - dragOrigin.current.x, e.clientY - dragOrigin.current.y) > 3)
+      setDragMoved(true);
+
     // Handle element dragging
     if (draggingElementId) {
       const deltaX = (e.clientX - dragStartPos.mouseX) / viewport.zoom;
@@ -375,7 +384,7 @@ export const InfiniteCanvas: React.FC = () => {
         } else if (activeTool === 'section') {
           finishDrawingShape('section', x, y, x + 800, y + 700);
         } else {
-          dropComponentAt(activeTool as UIElementType, x, y);
+          dropComponentAt(toolToElementType(activeTool), x, y);
         }
         setActiveTool('select');
       }
@@ -412,6 +421,8 @@ export const InfiniteCanvas: React.FC = () => {
     }
 
     setDraggingFrameId(null);
+    setDragMoved(false);
+    dragOrigin.current = null;
   };
 
   // Places a dropped/uploaded image file onto the canvas at the given world coordinates,
@@ -538,10 +549,12 @@ export const InfiniteCanvas: React.FC = () => {
             frame={frame}
             elements={elements}
             onStartDragFrame={(e) => {
+              dragOrigin.current = { x: e.clientX, y: e.clientY };
               setDraggingFrameId(frame.id);
               setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: frame.x, origY: frame.y });
             }}
             onStartDragElement={(el, e) => {
+              dragOrigin.current = { x: e.clientX, y: e.clientY };
               setDraggingElementId(el.id);
               if (e.shiftKey || !selectedElementIds.includes(el.id)) selectElement(el.id, e.shiftKey);
               setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(el.style.x), origY: Number(el.style.y) });
@@ -563,6 +576,7 @@ export const InfiniteCanvas: React.FC = () => {
                 if (activeTool !== 'select' || e.button !== 0) return;
                 e.stopPropagation();
                 if (e.shiftKey || !selectedElementIds.includes(element.id)) selectElement(element.id, e.shiftKey);
+                dragOrigin.current = { x: e.clientX, y: e.clientY };
                 setDraggingElementId(element.id);
                 setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(element.style.x), origY: Number(element.style.y) });
               }}
@@ -645,7 +659,7 @@ export const InfiniteCanvas: React.FC = () => {
       {/* Drag cursor overlay — while actively dragging an element/frame, force a
           consistent grabbing cursor regardless of what's underneath (a text
           element's own cursor-text style would otherwise win mid-drag). */}
-      {(draggingElementId || draggingFrameId) && (
+      {(draggingElementId || draggingFrameId) && dragMoved && (
         <div
           className="fixed inset-0 z-[9999] cursor-grabbing"
           // This overlay sits inside the canvas, so without stopping here each

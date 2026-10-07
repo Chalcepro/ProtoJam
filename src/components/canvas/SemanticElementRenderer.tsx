@@ -36,6 +36,28 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
 
   const isInlineEditing = inlineEditingElementId === element.id;
 
+  // Double-click a field, a search bar or a button in design mode to type its
+  // text right there - the placeholder of a field, the label of a button.
+  // They were drawn disabled with no way in, so their text could only be
+  // changed from the side panel.
+  const inlineText = (which: 'placeholder' | 'label', fallback: string) => (
+    <input
+      autoFocus
+      // focused by hand as it appears: autoFocus alone did not take here, and
+      // an edit box you have to click into again is not much of one
+      ref={(el) => { if (el && document.activeElement !== el) requestAnimationFrame(() => el.focus()); }}
+      onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
+      value={(semanticProps as any)[which] ?? ''}
+      placeholder={fallback}
+      onChange={(e) => updateElementSemanticProps(element.id, { [which]: e.target.value } as any)}
+      onBlur={() => setInlineEditingElementId(null)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setInlineEditingElementId(null); }}
+      onMouseDown={(e) => e.stopPropagation()}
+      className="bg-[rgba(20,20,19,0.9)] border border-[rgb(235,235,236)] rounded px-1 outline-none w-full text-[rgb(235,235,236)] text-sm"
+    />
+  );
+  const editOnDoubleClick = () => { if (!isInteractive) setInlineEditingElementId(element.id); };
+
   // Dynamic Lucide icon helper
   const renderIcon = (name?: string, size = 18, className = '') => {
     if (!name) return null;
@@ -265,6 +287,9 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         return (
           <textarea
             autoFocus
+            // the caret at the end, so typing adds to the text rather than
+            // landing in front of it
+            onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
             value={semanticProps.label || ''}
             onChange={(e) => updateElementSemanticProps(element.id, { label: e.target.value })}
             onBlur={() => setInlineEditingElementId(null)}
@@ -331,12 +356,13 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         <button
           style={getCommonStyles()}
           onClick={handleClick}
+          onDoubleClick={editOnDoubleClick}
           className={`flex items-center justify-center font-bold transition-all ${
             isInteractive ? 'active:scale-95 cursor-pointer hover:brightness-110' : ''
           }`}
         >
           {semanticProps.iconPosition === 'left' && renderIcon(semanticProps.iconName, 18, 'mr-2')}
-          <span>{semanticProps.label || 'Button'}</span>
+          {isInlineEditing && !isInteractive ? inlineText('label', 'Button') : <span>{semanticProps.label || 'Button'}</span>}
           {semanticProps.iconPosition === 'right' && renderIcon(semanticProps.iconName, 18, 'ml-2')}
         </button>
       );
@@ -358,7 +384,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- TEXT INPUT ----------------
     case 'textInput':
       return (
-        <div style={getCommonStyles()} className="flex flex-col justify-center relative">
+        <div style={getCommonStyles()} onDoubleClick={editOnDoubleClick} className="flex flex-col justify-center relative">
           {semanticProps.label && (
             <label className="text-[11px] font-medium text-[rgba(235,235,236,0.55)] mb-1 pointer-events-none">
               {semanticProps.label}
@@ -366,14 +392,15 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           )}
           <div className="flex items-center gap-2 w-full">
             {semanticProps.iconName && renderIcon(semanticProps.iconName, 16, 'text-[rgba(235,235,236,0.5)] shrink-0')}
-            <input
+            {isInlineEditing && !isInteractive ? inlineText('placeholder', 'Enter text...') : <input
               type="text"
               disabled={!isInteractive}
+              style={isInteractive ? undefined : { pointerEvents: 'none' }}
               value={internalValue}
               onChange={(e) => isInteractive && setInternalValue(e.target.value)}
               placeholder={semanticProps.placeholder || 'Enter text...'}
               className="bg-transparent border-none outline-none w-full text-[rgb(235,235,236)] text-sm placeholder-[rgba(235,235,236,0.35)] font-normal"
-            />
+            />}
           </div>
         </div>
       );
@@ -381,7 +408,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- PASSWORD INPUT ----------------
     case 'passwordInput':
       return (
-        <div style={getCommonStyles()} className="flex flex-col justify-center relative">
+        <div style={getCommonStyles()} onDoubleClick={editOnDoubleClick} className="flex flex-col justify-center relative">
           {semanticProps.label && (
             <label className="text-[11px] font-medium text-[rgba(235,235,236,0.55)] mb-1 pointer-events-none">
               {semanticProps.label}
@@ -390,14 +417,15 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           <div className="flex items-center justify-between w-full">
             <div className="flex items-center gap-2 flex-1">
               <Icons.Lock size={15} className="text-[rgba(235,235,236,0.5)] shrink-0" />
-              <input
+              {isInlineEditing && !isInteractive ? inlineText('placeholder', '••••••••') : <input
                 type="password"
                 disabled={!isInteractive}
+              style={isInteractive ? undefined : { pointerEvents: 'none' }}
                 value={internalValue}
                 onChange={(e) => isInteractive && setInternalValue(e.target.value)}
                 placeholder={semanticProps.placeholder || '••••••••'}
                 className="bg-transparent border-none outline-none w-full text-[rgb(235,235,236)] text-sm placeholder-[rgba(235,235,236,0.35)] font-normal"
-              />
+              />}
             </div>
             <Icons.Eye size={16} className="text-[rgba(235,235,236,0.5)] cursor-pointer hover:text-[rgb(235,235,236)]" />
           </div>
@@ -407,16 +435,17 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- SEARCH BAR ----------------
     case 'searchBar':
       return (
-        <div style={getCommonStyles()} className="flex items-center gap-2.5">
+        <div style={getCommonStyles()} onDoubleClick={editOnDoubleClick} className="flex items-center gap-2.5">
           <Icons.Search size={16} className="text-[rgba(235,235,236,0.5)] shrink-0" />
-          <input
+          {isInlineEditing && !isInteractive ? inlineText('placeholder', 'Search...') : <input
             type="text"
             disabled={!isInteractive}
+              style={isInteractive ? undefined : { pointerEvents: 'none' }}
             value={internalValue}
             onChange={(e) => isInteractive && setInternalValue(e.target.value)}
             placeholder={semanticProps.placeholder || 'Search...'}
             className="bg-transparent border-none outline-none w-full text-[rgb(235,235,236)] text-sm placeholder-[rgba(235,235,236,0.35)]"
-          />
+          />}
           {internalValue && (
             <Icons.X 
               size={14} 
@@ -465,6 +494,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             max={semanticProps.max ?? 100}
             value={internalValue || 50}
             disabled={!isInteractive}
+              style={isInteractive ? undefined : { pointerEvents: 'none' }}
             onChange={(e) => isInteractive && setInternalValue(Number(e.target.value))}
             className="w-full accent-[rgb(235,235,236)] cursor-pointer h-1.5 bg-[rgba(235,235,236,0.2)] rounded-lg appearance-none"
           />

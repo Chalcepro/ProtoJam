@@ -19,6 +19,18 @@ import { STARTER_PROJECTS } from '../presets/starterProjects';
 import { DevicePreset, DEVICE_PRESETS } from '../presets/devicePresets';
 import { COMPONENT_TEMPLATES } from '../presets/uiComponentDefs';
 
+// A few tools are named for what they make rather than by the element type
+// they make. Placed straight through, the Input tool made an element of type
+// "input" - which no renderer knows, so a field you could never type into -
+// and the Sticky tool a "sticky". Every tool goes through this first.
+export const toolToElementType = (tool: string): UIElementType => {
+  switch (tool) {
+    case 'input':  return 'textInput';
+    case 'sticky': return 'stickyNote';
+    default:       return tool as UIElementType;
+  }
+};
+
 export interface HistorySnapshot {
   frames: DeviceFrame[];
   sections: SectionFrame[];
@@ -1629,7 +1641,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     } else if (type === 'section') {
       get().addSection(x, y, width, height);
     } else {
-      get().createShapeAt(type as UIElementType, x, y, width, height);
+      get().createShapeAt(toolToElementType(type), x, y, width, height);
     }
   },
 
