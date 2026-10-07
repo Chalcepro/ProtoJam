@@ -1690,7 +1690,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     } else if (type === 'section') {
       get().addSection(x, y, width, height);
     } else {
-      get().createShapeAt(toolToElementType(type), x, y, width, height);
+      // Drawn inside a frame, it belongs to that frame - as in Figma. It used
+      // to float above the frame instead, and anything floating draws above
+      // everything in a frame whatever the layer order says.
+      const f = get().frames.find(fr => !fr.hidden &&
+        x >= fr.x && x <= fr.x + fr.width && y >= fr.y && y <= fr.y + fr.height);
+      if (f) get().createShapeAt(toolToElementType(type), x - f.x, y - f.y, width, height, f.id);
+      else   get().createShapeAt(toolToElementType(type), x, y, width, height);
     }
   },
 

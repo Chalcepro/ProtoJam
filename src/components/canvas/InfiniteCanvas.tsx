@@ -519,9 +519,10 @@ export const InfiniteCanvas: React.FC = () => {
       }
     }
 
-    // Reparenting check on finishing element drag
+    // Reparenting check on finishing element drag - a real drag only: a
+    // plain click used to move whatever was clicked into the frame under it
     if (draggingElementId) {
-      const el = elements.find(item => item.id === draggingElementId);
+      const el = dragMoved ? elements.find(item => item.id === draggingElementId) : undefined;
       if (el) {
         const absX = el.parentId 
           ? (frames.find(f => f.id === el.parentId)?.x || 0) + Number(el.style.x)
@@ -694,7 +695,7 @@ export const InfiniteCanvas: React.FC = () => {
         ))}
 
         {/* 3. Free Canvas Elements (Detached / Outside Frames) */}
-        {freeElements.map(element => {
+        {freeElements.map((element, layer) => {
           const isSelected = selectedElementIds.includes(element.id);
           const isAutoSizeText = (element.type === 'text' || element.type === 'heading') && element.style.autoSize;
           return (
@@ -720,7 +721,8 @@ export const InfiniteCanvas: React.FC = () => {
                 ...(isAutoSizeText
                   ? { width: 'max-content', height: 'max-content', maxWidth: 'none' as const }
                   : { width: Number(element.style.width), height: Number(element.style.height) }),
-                zIndex: isSelected ? 35 : (element.style.zIndex || 5),
+                // strictly by layer order, selected or not (see ArtboardFrame)
+                zIndex: 5 + layer,
                 pointerEvents: activeTool !== 'select' ? 'none' : undefined
               }}
               className="cursor-move group relative"

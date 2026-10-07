@@ -268,7 +268,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
         )}
 
         {/* Child Elements inside Frame */}
-        {frameElements.map(element => {
+        {frameElements.map((element, layer) => {
           const isSelected = selectedElementIds.includes(element.id);
           // Inside an auto-layout frame, children flow in flex order and ignore
           // stored x/y — unless explicitly opted out via "Absolute Position".
@@ -282,14 +282,22 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
                 position: 'relative',
                 ...sizeStyle,
                 flexShrink: 0,
-                zIndex: isSelected ? 35 : (element.style.zIndex || 10)
+                // stacked strictly by layer order - selecting something must
+                // not lift it above what is in front of it (it used to jump
+                // to 35, so a layer sent back still showed on top while
+                // selected, and one brought forward seemed not to move)
+                zIndex: 10 + layer
               }
             : {
                 position: 'absolute',
                 left: Number(element.style.x),
                 top: Number(element.style.y),
                 ...sizeStyle,
-                zIndex: isSelected ? 35 : (element.style.zIndex || 10)
+                // stacked strictly by layer order - selecting something must
+                // not lift it above what is in front of it (it used to jump
+                // to 35, so a layer sent back still showed on top while
+                // selected, and one brought forward seemed not to move)
+                zIndex: 10 + layer
               };
           return (
             <div

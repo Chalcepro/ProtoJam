@@ -276,7 +276,7 @@ export const PrototypePlayerModal: React.FC = () => {
               className={`relative overflow-hidden transition-all duration-300 ${getTransitionStyle()}`}
             >
               {/* Render Interactive Elements */}
-              {frameElements.map(element => {
+              {frameElements.map((element, layer) => {
                 const hasInteractions = element.interactions.length > 0;
                 return (
                   <div
@@ -287,7 +287,7 @@ export const PrototypePlayerModal: React.FC = () => {
                       top: Number(element.style.y),
                       width: Number(element.style.width),
                       height: Number(element.style.height),
-                      zIndex: element.style.zIndex || 10
+                      zIndex: 10 + layer      // the layer order, as on the canvas
                     }}
                     className={`transition-transform ${hasInteractions ? 'cursor-pointer' : ''}`}
                     onMouseEnter={() => setHoveredElementId(element.id)}
