@@ -3,7 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { ArtboardFrame } from './ArtboardFrame';
 import { SectionFrame } from './SectionFrame';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
-import { ShapeSelectionHighlight } from './ShapeSelectionHighlight';
+import { TransformSelectionBox } from './TransformSelectionBox';
 import { FlowConnectorLines } from './FlowConnectorLines';
 import { Minimap } from './Minimap';
 import { BottomToolbar } from '../toolbar/BottomToolbar';
@@ -90,7 +90,12 @@ export const InfiniteCanvas: React.FC = () => {
     zoomToFit,
     selectedFrameIds,
     deleteFrame,
-    duplicateFrame
+    duplicateFrame,
+    toggleFrameLock,
+    toggleFrameHidden,
+    alignSelectedElements,
+    groupSelectedIntoAutoLayout,
+    createMasterComponent
   } = useProjectStore();
 
   // An element's position on the canvas, whether it is free or in a frame.
@@ -480,13 +485,14 @@ export const InfiniteCanvas: React.FC = () => {
         e.preventDefault();
         const rect = canvasContainerRef.current?.getBoundingClientRect();
         if (!rect) return;
-        const hit = (e.target as HTMLElement).closest('[data-el-id]') as HTMLElement | null;
-        const id = hit?.dataset.elId;
-        if (id && !selectedElementIds.includes(id)) setSelection([id]);
-        if (!id && !hit) {
-          // right-click on empty canvas keeps the selection, so "paste here"
-          // and friends act on it
-        }
+        // What was right-clicked becomes the selection (unless it already is
+        // part of it): an element first, else the frame it is in. Empty canvas
+        // keeps the selection, so "paste here" and friends still act on it.
+        const tgt = e.target as HTMLElement;
+        const id = (tgt.closest('[data-el-id]') as HTMLElement | null)?.dataset.elId;
+        const fid = (tgt.closest('[data-frame-id]') as HTMLElement | null)?.dataset.frameId;
+        if (id) { if (!selectedElementIds.includes(id)) setSelection([id]); }
+        else if (fid) { if (!selectedFrameIds.includes(fid)) selectFrame(fid, false); }
         const w = getWorldCoords(e.clientX, e.clientY);
         setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, wx: w.x, wy: w.y, w: rect.width, h: rect.height });
       }}
@@ -575,7 +581,9 @@ export const InfiniteCanvas: React.FC = () => {
               className="cursor-move group relative"
             >
               <SemanticElementRenderer element={element} isInteractive={false} />
-              {isSelected && activeTool === 'select' && <ShapeSelectionHighlight element={element} />}
+              {/* Handles to scale and rotate, the same box elements in a frame
+                  get - free elements had only an outline and could not be resized. */}
+              {isSelected && activeTool === 'select' && <TransformSelectionBox element={element} />}
             </div>
           );
         })}
@@ -674,16 +682,34 @@ export const InfiniteCanvas: React.FC = () => {
         if (n) {
           items.push({ divider: true });
           items.push({ label: n > 1 ? `Duplicate ${n}` : 'Duplicate', hint: 'Ctrl+D', run: () => selectedElementIds.forEach(id => duplicateElement(id)) });
+          if (n > 1) {
+            const al = (a: Parameters<typeof alignSelectedElements>[0]) => () => alignSelectedElements(a);
+            const align: MenuItem[] = [
+              { label: 'Left', run: al('left') }, { label: 'Centre', run: al('center') }, { label: 'Right', run: al('right') },
+              { divider: true },
+              { label: 'Top', run: al('top') }, { label: 'Middle', run: al('middle') }, { label: 'Bottom', run: al('bottom') }
+            ];
+            if (n > 2) align.push({ divider: true },
+              { label: 'Distribute horizontally', run: al('distributeH') },
+              { label: 'Distribute vertically', run: al('distributeV') });
+            items.push({ label: 'Align', run: () => {}, children: align });
+          }
           items.push({ label: 'Bring to front', run: () => selectedElementIds.forEach(id => bringToFront(id)) });
           items.push({ label: 'Send to back', run: () => selectedElementIds.forEach(id => sendToBack(id)) });
+          items.push({ divider: true });
+          items.push({ label: 'Add auto layout', hint: 'Shift+A', run: () => groupSelectedIntoAutoLayout() });
+          if (n === 1) items.push({ label: 'Create component', run: () => createMasterComponent(selectedElementIds[0]) });
           items.push({ label: 'Hide', run: () => selectedElementIds.forEach(id => toggleElementHidden(id)) });
           items.push({ label: 'Lock / unlock', run: () => selectedElementIds.forEach(id => toggleElementLock(id)) });
           items.push({ divider: true });
           items.push({ label: n > 1 ? `Delete ${n}` : 'Delete', hint: 'Del', danger: true, run: () => selectedElementIds.forEach(id => deleteElement(id)) });
         } else if (nf) {
           items.push({ divider: true });
-          items.push({ label: 'Duplicate frame', hint: 'Ctrl+D', run: () => selectedFrameIds.forEach(id => duplicateFrame(id)) });
-          items.push({ label: 'Delete frame', hint: 'Del', danger: true, run: () => selectedFrameIds.forEach(id => deleteFrame(id)) });
+          items.push({ label: nf > 1 ? `Duplicate ${nf} frames` : 'Duplicate frame', hint: 'Ctrl+D', run: () => selectedFrameIds.forEach(id => duplicateFrame(id)) });
+          items.push({ label: 'Lock / unlock', run: () => selectedFrameIds.forEach(id => toggleFrameLock(id)) });
+          items.push({ label: 'Hide', run: () => selectedFrameIds.forEach(id => toggleFrameHidden(id)) });
+          items.push({ divider: true });
+          items.push({ label: nf > 1 ? `Delete ${nf} frames` : 'Delete frame', hint: 'Del', danger: true, run: () => selectedFrameIds.forEach(id => deleteFrame(id)) });
         }
         items.push({ divider: true });
         items.push({ label: 'Select all', hint: 'Ctrl+A', run: selectAll });

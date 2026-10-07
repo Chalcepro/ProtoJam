@@ -68,7 +68,8 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     : {};
 
   const handleFrameBodyPointerDown = (e: React.PointerEvent) => {
-    if (frame.locked) return;
+    // a right-press opens the context menu; it used to start dragging the frame
+    if (frame.locked || e.button !== 0) return;
     e.stopPropagation();
     if (isWiring) {
       finishWiring(frame.id);
@@ -111,6 +112,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
 
   return (
     <div
+      data-frame-id={frame.id}
       style={{
         position: 'absolute',
         left: frame.x,
@@ -125,7 +127,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
       {/* Frame Header Bar with Title & Quick Action Icons */}
       <div
         onPointerDown={(e) => {
-          if (frame.locked) return;
+          if (frame.locked || e.button !== 0) return;
           e.stopPropagation();
           selectFrame(frame.id, e.shiftKey);
           if (onStartDragFrame) onStartDragFrame(e);
