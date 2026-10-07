@@ -9,6 +9,16 @@ import { Minimap } from './Minimap';
 import { BottomToolbar } from '../toolbar/BottomToolbar';
 import { CommentPin } from './CommentPin';
 import { UIElement, UIElementType } from '../../types/components';
+import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
+
+// What Ctrl+C / Ctrl+X last took. Kept outside React state: it is not
+// something anything renders, and it must survive the canvas re-rendering.
+let CLIPBOARD: UIElement[] = [];
+
+const isTyping = (t: EventTarget | null) => {
+  const el = t as HTMLElement | null;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+};
 
 export const InfiniteCanvas: React.FC = () => {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
@@ -28,6 +38,15 @@ export const InfiniteCanvas: React.FC = () => {
 
   // Pending comment pin — a world-space point awaiting its first message
   const [draftCommentPos, setDraftCommentPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Box select: left-drag on empty canvas. World coordinates.
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
+  // Space held: left-drag pans, the way Figma does it.
+  const spaceDown = useRef(false);
+  // Where the pointer last was, in world space - where a paste lands.
+  const lastWorld = useRef<{ x: number; y: number } | null>(null);
+  // The right-click menu, in container coordinates, plus the world point.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; wx: number; wy: number; w: number; h: number } | null>(null);
 
   const {
     frames,
@@ -59,8 +78,108 @@ export const InfiniteCanvas: React.FC = () => {
     addElement,
     addPredefinedElement,
     comments,
-    addComment
+    addComment,
+    setSelection,
+    pasteElements,
+    duplicateElement,
+    deleteElement,
+    bringToFront,
+    sendToBack,
+    toggleElementHidden,
+    toggleElementLock,
+    zoomToFit,
+    selectedFrameIds,
+    deleteFrame,
+    duplicateFrame
   } = useProjectStore();
+
+  // An element's position on the canvas, whether it is free or in a frame.
+  const absOf = (el: UIElement) => {
+    const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
+    return { x: (f?.x || 0) + Number(el.style.x), y: (f?.y || 0) + Number(el.style.y) };
+  };
+
+  // ---- clipboard -----------------------------------------------------------
+
+  const copySelection = () => {
+    CLIPBOARD = elements.filter(el => selectedElementIds.includes(el.id))
+                        .map(el => JSON.parse(JSON.stringify(el)));
+    return CLIPBOARD.length;
+  };
+
+  // Paste: with no point, beside the originals (same parent, +20,+20); with a
+  // point (right-click > paste here), as free elements with their group's
+  // top-left at that point.
+  const pasteClipboard = (at?: { x: number; y: number }) => {
+    if (!CLIPBOARD.length) return;
+    if (!at) {
+      pasteElements(CLIPBOARD.map(el => ({
+        ...el, style: { ...el.style, x: Number(el.style.x) + 20, y: Number(el.style.y) + 20 }
+      })));
+      CLIPBOARD = CLIPBOARD.map(el => ({ ...el, style: { ...el.style, x: Number(el.style.x) + 20, y: Number(el.style.y) + 20 } }));
+      return;
+    }
+    const abs = CLIPBOARD.map(absOf);
+    const minX = Math.min(...abs.map(a => a.x)), minY = Math.min(...abs.map(a => a.y));
+    pasteElements(CLIPBOARD.map((el, i) => ({
+      ...el, parentId: undefined,
+      style: { ...el.style, x: Math.round(at.x + abs[i].x - minX), y: Math.round(at.y + abs[i].y - minY) }
+    })));
+  };
+
+  const selectAll = () => setSelection(elements.filter(el => !el.hidden).map(el => el.id));
+
+  // Keys the canvas owns: space to pan, and the clipboard. Skipped while
+  // typing in a field, so Ctrl+C in a text box still copies text.
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (isTyping(e.target)) return;
+      if (e.code === 'Space') { spaceDown.current = true; e.preventDefault(); return; }
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === 'c' && selectedElementIds.length) { e.preventDefault(); copySelection(); }
+      else if (k === 'x' && selectedElementIds.length) {
+        e.preventDefault();
+        copySelection();
+        selectedElementIds.forEach(id => deleteElement(id));
+      }
+      else if (k === 'a') { e.preventDefault(); selectAll(); }
+      // Ctrl+V is the 'paste' event below, so a copied image can win
+    };
+    const up = (e: KeyboardEvent) => { if (e.code === 'Space') spaceDown.current = false; };
+
+    // Paste: an image on the system clipboard (a screenshot, an image copied
+    // from a browser) lands at the pointer, inside whatever frame is there.
+    // Otherwise, whatever Ctrl+C took.
+    const paste = (e: ClipboardEvent) => {
+      if (isTyping(e.target)) return;
+      const items = Array.from(e.clipboardData?.items || []);
+      const images = items.filter(it => it.kind === 'file' && it.type.startsWith('image/'))
+                          .map(it => it.getAsFile()).filter((f): f is File => !!f);
+      if (images.length) {
+        e.preventDefault();
+        const at = lastWorld.current || centreWorld();
+        images.forEach((file, i) => placeImageFileAt(file, at.x + i * 32, at.y + i * 32));
+        return;
+      }
+      if (CLIPBOARD.length) { e.preventDefault(); pasteClipboard(); }
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('paste', paste);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('paste', paste);
+    };
+  });
+
+  const centreWorld = () => {
+    const rect = canvasContainerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return { x: (rect.width / 2 - viewport.x) / viewport.zoom, y: (rect.height / 2 - viewport.y) / viewport.zoom };
+  };
 
   const freeElements = elements.filter(el => !el.parentId && !el.hidden);
 
@@ -116,8 +235,10 @@ export const InfiniteCanvas: React.FC = () => {
       return;
     }
 
-    // Hand tool or middle mouse button
-    if (e.button === 1 || activeTool === 'hand') {
+    if (ctxMenu) setCtxMenu(null);
+
+    // Hand tool, middle mouse button, or space held
+    if (e.button === 1 || activeTool === 'hand' || (e.button === 0 && spaceDown.current)) {
       setIsPanning(true);
       setPanStart({ x: e.clientX - viewport.x, y: e.clientY - viewport.y });
       return;
@@ -147,14 +268,24 @@ export const InfiniteCanvas: React.FC = () => {
     // stop propagation before this handler ever sees the click) — clears
     // whatever was selected or being edited.
     if (e.button === 0 && (e.target === canvasContainerRef.current || e.target === stageRef.current)) {
-      clearSelection();
+      // A box, as in Figma: left-drag on empty canvas selects what it touches.
+      // Shift keeps what was already selected. (It used to pan; panning is
+      // space+drag, the middle button, or the hand tool.)
+      if (!e.shiftKey) clearSelection();
       setInlineEditingElementId(null);
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - viewport.x, y: e.clientY - viewport.y });
+      const { x, y } = getWorldCoords(e.clientX, e.clientY);
+      setMarquee({ x0: x, y0: y, x1: x, y1: y, add: e.shiftKey });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    lastWorld.current = getWorldCoords(e.clientX, e.clientY);
+
+    if (marquee) {
+      setMarquee({ ...marquee, x1: lastWorld.current.x, y1: lastWorld.current.y });
+      return;
+    }
+
     if (isPanning) {
       setViewport({
         x: e.clientX - panStart.x,
@@ -173,7 +304,9 @@ export const InfiniteCanvas: React.FC = () => {
     if (draggingElementId) {
       const deltaX = (e.clientX - dragStartPos.mouseX) / viewport.zoom;
       const deltaY = (e.clientY - dragStartPos.mouseY) / viewport.zoom;
-      moveElement(draggingElementId, deltaX, deltaY);
+      // everything selected moves together, when the dragged one is part of it
+      const ids = selectedElementIds.includes(draggingElementId) ? selectedElementIds : [draggingElementId];
+      ids.forEach(id => moveElement(id, deltaX, deltaY));
       setDragStartPos(prev => ({ ...prev, mouseX: e.clientX, mouseY: e.clientY }));
       return;
     }
@@ -197,6 +330,27 @@ export const InfiniteCanvas: React.FC = () => {
   const handleMouseUp = (e: React.MouseEvent) => {
     if (isPanning) {
       setIsPanning(false);
+    }
+
+    if (marquee) {
+      const x0 = Math.min(marquee.x0, marquee.x1), x1 = Math.max(marquee.x0, marquee.x1);
+      const y0 = Math.min(marquee.y0, marquee.y1), y1 = Math.max(marquee.y0, marquee.y1);
+      if (x1 - x0 > 3 || y1 - y0 > 3) {
+        const touches = (ax: number, ay: number, w: number, h: number) =>
+          ax < x1 && ax + w > x0 && ay < y1 && ay + h > y0;
+        const hitEls = elements.filter(el => {
+          if (el.hidden || el.locked) return false;
+          const a = absOf(el);
+          return touches(a.x, a.y, Number(el.style.width) || 0, Number(el.style.height) || 0);
+        }).map(el => el.id);
+        // elements first; only when the box holds none does it pick frames
+        const hitFrames = hitEls.length ? [] :
+          frames.filter(f => !f.hidden && touches(f.x, f.y, f.width, f.height)).map(f => f.id);
+        const keepEls = marquee.add ? selectedElementIds : [];
+        const keepFrames = marquee.add ? selectedFrameIds : [];
+        setSelection(Array.from(new Set([...keepEls, ...hitEls])), Array.from(new Set([...keepFrames, ...hitFrames])));
+      }
+      setMarquee(null);
     }
 
     if (isDrawing) {
@@ -321,6 +475,21 @@ export const InfiniteCanvas: React.FC = () => {
       onMouseUp={handleMouseUp}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onContextMenu={(e) => {
+        // ProtoJam's own menu, never the browser's
+        e.preventDefault();
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const hit = (e.target as HTMLElement).closest('[data-el-id]') as HTMLElement | null;
+        const id = hit?.dataset.elId;
+        if (id && !selectedElementIds.includes(id)) setSelection([id]);
+        if (!id && !hit) {
+          // right-click on empty canvas keeps the selection, so "paste here"
+          // and friends act on it
+        }
+        const w = getWorldCoords(e.clientX, e.clientY);
+        setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, wx: w.x, wy: w.y, w: rect.width, h: rect.height });
+      }}
       className={`w-full h-full relative overflow-hidden select-none bg-[rgb(20,20,19)] ${
         activeTool === 'hand' || isPanning ? 'cursor-grab active:cursor-grabbing' : 
         activeTool === 'pen' ? 'cursor-crosshair' :
@@ -368,7 +537,7 @@ export const InfiniteCanvas: React.FC = () => {
             }}
             onStartDragElement={(el, e) => {
               setDraggingElementId(el.id);
-              selectElement(el.id, e.shiftKey);
+              if (e.shiftKey || !selectedElementIds.includes(el.id)) selectElement(el.id, e.shiftKey);
               setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(el.style.x), origY: Number(el.style.y) });
             }}
           />
@@ -385,13 +554,14 @@ export const InfiniteCanvas: React.FC = () => {
                 // Let a drawing/placement tool pass straight through to the canvas
                 // instead of this existing element hijacking the click as a move —
                 // otherwise you can never draw or place something on top of it.
-                if (activeTool !== 'select') return;
+                if (activeTool !== 'select' || e.button !== 0) return;
                 e.stopPropagation();
-                selectElement(element.id, e.shiftKey);
+                if (e.shiftKey || !selectedElementIds.includes(element.id)) selectElement(element.id, e.shiftKey);
                 setDraggingElementId(element.id);
                 setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(element.style.x), origY: Number(element.style.y) });
               }}
               onClick={(e) => { if (activeTool === 'select') e.stopPropagation(); }}
+              data-el-id={element.id}
               style={{
                 position: 'absolute',
                 left: Number(element.style.x),
@@ -470,10 +640,57 @@ export const InfiniteCanvas: React.FC = () => {
       {(draggingElementId || draggingFrameId) && (
         <div
           className="fixed inset-0 z-[9999] cursor-grabbing"
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
+          // This overlay sits inside the canvas, so without stopping here each
+          // move also bubbled to the canvas's own handler and every drag went
+          // twice as far as the mouse did.
+          onMouseMove={(e) => { e.stopPropagation(); handleMouseMove(e); }}
+          onMouseUp={(e) => { e.stopPropagation(); handleMouseUp(e); }}
         />
       )}
+
+      {/* Box select */}
+      {marquee && (
+        <div
+          className="absolute pointer-events-none border border-[#ff6b4a] bg-[rgba(255,107,74,0.08)] z-[60]"
+          style={{
+            left: Math.min(marquee.x0, marquee.x1) * viewport.zoom + viewport.x,
+            top: Math.min(marquee.y0, marquee.y1) * viewport.zoom + viewport.y,
+            width: Math.abs(marquee.x1 - marquee.x0) * viewport.zoom,
+            height: Math.abs(marquee.y1 - marquee.y0) * viewport.zoom
+          }}
+        />
+      )}
+
+      {/* Right-click menu */}
+      {ctxMenu && (() => {
+        const n = selectedElementIds.length, nf = selectedFrameIds.length;
+        const items: MenuItem[] = [];
+        if (n) {
+          items.push({ label: 'Copy', hint: 'Ctrl+C', run: () => copySelection() });
+          items.push({ label: 'Cut', hint: 'Ctrl+X', run: () => { copySelection(); selectedElementIds.forEach(id => deleteElement(id)); } });
+        }
+        items.push({ label: 'Paste here', hint: 'Ctrl+V', disabled: !CLIPBOARD.length,
+                     run: () => pasteClipboard({ x: ctxMenu.wx, y: ctxMenu.wy }) });
+        if (n) {
+          items.push({ divider: true });
+          items.push({ label: n > 1 ? `Duplicate ${n}` : 'Duplicate', hint: 'Ctrl+D', run: () => selectedElementIds.forEach(id => duplicateElement(id)) });
+          items.push({ label: 'Bring to front', run: () => selectedElementIds.forEach(id => bringToFront(id)) });
+          items.push({ label: 'Send to back', run: () => selectedElementIds.forEach(id => sendToBack(id)) });
+          items.push({ label: 'Hide', run: () => selectedElementIds.forEach(id => toggleElementHidden(id)) });
+          items.push({ label: 'Lock / unlock', run: () => selectedElementIds.forEach(id => toggleElementLock(id)) });
+          items.push({ divider: true });
+          items.push({ label: n > 1 ? `Delete ${n}` : 'Delete', hint: 'Del', danger: true, run: () => selectedElementIds.forEach(id => deleteElement(id)) });
+        } else if (nf) {
+          items.push({ divider: true });
+          items.push({ label: 'Duplicate frame', hint: 'Ctrl+D', run: () => selectedFrameIds.forEach(id => duplicateFrame(id)) });
+          items.push({ label: 'Delete frame', hint: 'Del', danger: true, run: () => selectedFrameIds.forEach(id => deleteFrame(id)) });
+        }
+        items.push({ divider: true });
+        items.push({ label: 'Select all', hint: 'Ctrl+A', run: selectAll });
+        items.push({ label: 'Zoom to fit', hint: 'Ctrl+1', run: () => zoomToFit() });
+        return <CanvasContextMenu x={ctxMenu.x} y={ctxMenu.y} roomW={ctxMenu.w} roomH={ctxMenu.h}
+                                  items={items} onClose={() => setCtxMenu(null)} />;
+      })()}
 
       {/* Floating Centered Bottom Toolbar */}
       <BottomToolbar />

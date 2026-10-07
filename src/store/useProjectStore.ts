@@ -116,6 +116,11 @@ export interface ProjectState {
   selectSection: (id: string, multi?: boolean) => void;
   selectVectorPoint: (id: string, multi?: boolean) => void;
   clearSelection: () => void;
+  // Replace the selection wholesale - a box select picks many at once.
+  setSelection: (elementIds: string[], frameIds?: string[]) => void;
+  // Paste copies of elements (from copy/cut): new ids, each placed by the
+  // caller (parent and x/y already set), all selected afterwards.
+  pasteElements: (elements: UIElement[]) => void;
   setHoveredElement: (id: string | null) => void;
   setHoveredFrame: (id: string | null) => void;
 
@@ -353,7 +358,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   wireMousePos: null,
 
   isPlaying: false,
-  currentPlayingFrameId: initialProject.frames.find(f => f.isStartingFrame)?.id ?? initialProject.frames[0]?.id ?? null,
+  currentPlayingFrameId: initialProject.frames.find((f: DeviceFrame) => f.isStartingFrame)?.id ?? initialProject.frames[0]?.id ?? null,
   activeOverlays: [],
   prototypeNavigationHistory: initialProject.frames[0] ? [initialProject.frames[0].id] : [],
 
@@ -470,6 +475,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   })),
 
   clearSelection: () => set({ selectedElementIds: [], selectedFrameIds: [], selectedSectionIds: [], selectedVectorPointIds: [] }),
+  setSelection: (elementIds, frameIds = []) => set({
+    selectedElementIds: elementIds, selectedFrameIds: frameIds,
+    selectedSectionIds: [], selectedVectorPointIds: []
+  }),
+  pasteElements: (pasted) => {
+    if (!pasted.length) return;
+    const { pushHistory } = get();
+    set((state) => {
+      const fresh = pasted.map((el, i) => ({
+        ...JSON.parse(JSON.stringify(el)),
+        id: `el-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 5)}`,
+        interactions: []                       // a copy does not inherit navigation wiring
+      })) as UIElement[];
+      const frames = state.frames.map(f => {
+        const add = fresh.filter(el => el.parentId === f.id).map(el => el.id);
+        return add.length ? { ...f, elementIds: [...f.elementIds, ...add] } : f;
+      });
+      return {
+        elements: [...state.elements, ...fresh],
+        frames,
+        selectedElementIds: fresh.map(el => el.id),
+        selectedFrameIds: []
+      };
+    });
+    pushHistory();
+  },
   setHoveredElement: (id) => set({ hoveredElementId: id }),
   setHoveredFrame: (id) => set({ hoveredFrameId: id }),
   setInlineEditingElementId: (id) => set({ inlineEditingElementId: id }),

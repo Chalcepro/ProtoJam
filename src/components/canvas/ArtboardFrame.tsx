@@ -292,12 +292,13 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           return (
             <div
               key={element.id}
+              data-el-id={element.id}
               onPointerDown={(e) => {
                 // Let a drawing/placement tool pass straight through to the frame
                 // body beneath instead of this existing element hijacking the
                 // click as a select/drag — otherwise you can never draw or place
-                // something on top of it.
-                if (activeTool !== 'select') return;
+                // something on top of it. A right-click is the context menu's.
+                if (activeTool !== 'select' || e.button !== 0) return;
                 e.stopPropagation();
                 if (isWiring) {
                   finishWiring(frame.id);
