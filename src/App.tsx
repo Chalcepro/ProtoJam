@@ -5,6 +5,7 @@ import { RightInspector } from './components/inspector/RightInspector';
 import { InfiniteCanvas } from './components/canvas/InfiniteCanvas';
 import { PrototypePlayerModal } from './components/player/PrototypePlayerModal';
 import { useProjectStore } from './store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -30,7 +31,7 @@ export const App: React.FC = () => {
     editorMode,
     saveCurrentProject,
     openProjectMenu
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ undo: s.undo, redo: s.redo, deleteElement: s.deleteElement, deleteFrame: s.deleteFrame, selectedElementIds: s.selectedElementIds, selectedFrameIds: s.selectedFrameIds, duplicateElement: s.duplicateElement, duplicateFrame: s.duplicateFrame, startPlaying: s.startPlaying, isPlaying: s.isPlaying, stopPlaying: s.stopPlaying, zoomToFit: s.zoomToFit, setActiveTool: s.setActiveTool, isLeftSidebarOpen: s.isLeftSidebarOpen, isRightSidebarOpen: s.isRightSidebarOpen, toggleLeftSidebar: s.toggleLeftSidebar, toggleRightSidebar: s.toggleRightSidebar, setEditorMode: s.setEditorMode, editorMode: s.editorMode, saveCurrentProject: s.saveCurrentProject, openProjectMenu: s.openProjectMenu })));
 
   // Global Keyboard Shortcuts
   useEffect(() => {

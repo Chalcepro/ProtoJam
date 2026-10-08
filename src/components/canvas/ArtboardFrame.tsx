@@ -3,6 +3,7 @@ import { DeviceFrame, UIElement } from '../../types/components';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { TransformSelectionBox } from './TransformSelectionBox';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 interface ArtboardFrameProps {
@@ -38,7 +39,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     viewport,
     pushHistory,
     activeTool
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateFrameDimensions: s.updateFrameDimensions, viewport: s.viewport, pushHistory: s.pushHistory, activeTool: s.activeTool })));
 
   const isFrameSelected = selectedFrameIds.includes(frame.id);
   const frameElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
@@ -328,7 +329,10 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
               {/* Interactive Transform, Scale & Rotate Box — hidden while a drawing
                   tool is active so its handles can't intercept clicks meant to
                   place a new object on top of this one. */}
-              {isSelected && activeTool === 'select' && (
+              {/* Drawn here only for a child laid out by auto layout, whose
+                  place on the canvas only the layout knows; every other
+                  selection box is drawn above everything by the canvas. */}
+              {isSelected && activeTool === 'select' && participatesInFlow && (
                 <TransformSelectionBox
                   element={element}
                   parentFrameOffset={{ x: frame.x, y: frame.y }}

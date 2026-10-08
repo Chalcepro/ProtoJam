@@ -1,13 +1,14 @@
 import React from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 
 interface SemanticPropsEditorProps {
   element: UIElement;
 }
 
 export const SemanticPropsEditor: React.FC<SemanticPropsEditorProps> = ({ element }) => {
-  const { updateElementSemanticProps } = useProjectStore();
+  const { updateElementSemanticProps } = useProjectStore(useShallow((s) => ({ updateElementSemanticProps: s.updateElementSemanticProps })));
   const { semanticProps, type } = element;
 
   return (

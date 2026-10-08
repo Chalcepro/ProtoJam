@@ -1,6 +1,7 @@
 import React from 'react';
 import { DeviceFrame, UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 
 interface FlowConnectorLinesProps {
   frames: DeviceFrame[];
@@ -8,7 +9,7 @@ interface FlowConnectorLinesProps {
 }
 
 export const FlowConnectorLines: React.FC<FlowConnectorLinesProps> = ({ frames, elements }) => {
-  const { isWiring, wireSourceElementId, wireMousePos, selectedElementIds } = useProjectStore();
+  const { isWiring, wireSourceElementId, wireMousePos, selectedElementIds } = useProjectStore(useShallow((s) => ({ isWiring: s.isWiring, wireSourceElementId: s.wireSourceElementId, wireMousePos: s.wireMousePos, selectedElementIds: s.selectedElementIds })));
 
   // Helper to find frame and element absolute canvas bounding box
   const getElementCanvasRect = (element: UIElement) => {

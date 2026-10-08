@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 export const LayersPanel: React.FC = () => {
@@ -26,7 +27,7 @@ export const LayersPanel: React.FC = () => {
     toggleElementHidden,
     bringToFront,
     sendToBack
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedFrameIds: s.selectedFrameIds, selectedSectionIds: s.selectedSectionIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectSection: s.selectSection, selectElement: s.selectElement, deleteFrame: s.deleteFrame, deleteSection: s.deleteSection, deleteElement: s.deleteElement, duplicateFrame: s.duplicateFrame, duplicateElement: s.duplicateElement, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, toggleFrameCollapsed: s.toggleFrameCollapsed, toggleSectionCollapsed: s.toggleSectionCollapsed, toggleElementLock: s.toggleElementLock, toggleElementHidden: s.toggleElementHidden, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
 
   const [searchQuery, setSearchQuery] = useState('');
 

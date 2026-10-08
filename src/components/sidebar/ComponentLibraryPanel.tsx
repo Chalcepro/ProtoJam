@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { COMPONENT_TEMPLATES } from '../../presets/uiComponentDefs';
 import * as Icons from 'lucide-react';
 
 export const ComponentLibraryPanel: React.FC = () => {
-  const { addElement, frames, selectedFrameIds } = useProjectStore();
+  const { addElement, frames, selectedFrameIds } = useProjectStore(useShallow((s) => ({ addElement: s.addElement, frames: s.frames, selectedFrameIds: s.selectedFrameIds })));
   const [activeCategory, setActiveCategory] = useState<string>('All');
 
   const categories = ['All', 'Structure', 'Navigation', 'Forms & Inputs', 'Actions', 'Content & Media', 'FigJam Tools'];

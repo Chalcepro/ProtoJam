@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
 import { UIElement } from '../../types/components';
 import confetti from 'canvas-confetti';
@@ -15,7 +16,7 @@ export const PrototypePlayerModal: React.FC = () => {
     navigateInPlayer,
     navigateBackInPlayer,
     prototypeNavigationHistory
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ isPlaying: s.isPlaying, stopPlaying: s.stopPlaying, frames: s.frames, elements: s.elements, currentPlayingFrameId: s.currentPlayingFrameId, navigateInPlayer: s.navigateInPlayer, navigateBackInPlayer: s.navigateBackInPlayer, prototypeNavigationHistory: s.prototypeNavigationHistory })));
 
   const [showHintFlash, setShowHintFlash] = useState(false);
   const [activeTransition, setActiveTransition] = useState<string>('none');

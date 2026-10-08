@@ -1,6 +1,8 @@
+import { NumberInput } from './NumberInput';
 import React, { useState, useRef } from 'react';
 import { UIElement, DeviceFrame, SectionFrame } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 interface DesignPropertiesProps {
@@ -72,7 +74,7 @@ const VariableBindButton: React.FC<{
   styleKey: 'fillColor' | 'textColor' | 'borderColor';
   boundVariableId?: string;
 }> = ({ elementId, styleKey, boundVariableId }) => {
-  const { variables, bindStyleToVariable, unbindStyleVariable } = useProjectStore();
+  const { variables, bindStyleToVariable, unbindStyleVariable } = useProjectStore(useShallow((s) => ({ variables: s.variables, bindStyleToVariable: s.bindStyleToVariable, unbindStyleVariable: s.unbindStyleVariable })));
   const [open, setOpen] = useState(false);
   const colorVars = variables.filter(v => v.type === 'color');
   const boundVar = boundVariableId ? variables.find(v => v.id === boundVariableId) : undefined;
@@ -139,7 +141,7 @@ const VariableBindButton: React.FC<{
 // Compact editor for hover/pressed style overrides on the selected element.
 // These apply automatically in the Prototype player — no wiring required.
 const InteractiveStatesSection: React.FC<{ element: UIElement }> = ({ element }) => {
-  const { updateElementState, clearElementState } = useProjectStore();
+  const { updateElementState, clearElementState } = useProjectStore(useShallow((s) => ({ updateElementState: s.updateElementState, clearElementState: s.clearElementState })));
   const [openState, setOpenState] = useState<'hover' | 'pressed' | null>(null);
 
   const renderStateEditor = (key: 'hover' | 'pressed') => {
@@ -167,8 +169,7 @@ const InteractiveStatesSection: React.FC<{ element: UIElement }> = ({ element })
         </div>
         <div className="flex items-center justify-between">
           <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Opacity</span>
-          <input
-            type="number"
+          <NumberInput
             min="0"
             max="100"
             value={Math.round((override.opacity ?? base.opacity ?? 1) * 100)}
@@ -232,7 +233,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     detachInstance,
     bringToFront,
     sendToBack
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
 
   const [fillType, setFillType] = useState<'solid' | 'gradient' | 'image'>('solid');
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
@@ -277,8 +278,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <div className="grid grid-cols-2 gap-2">
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">X</span>
-              <input
-                type="number"
+              <NumberInput
                 value={frame.x}
                 onChange={(e) => updateFrame(frame.id, { x: Number(e.target.value) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -286,8 +286,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">Y</span>
-              <input
-                type="number"
+              <NumberInput
                 value={frame.y}
                 onChange={(e) => updateFrame(frame.id, { y: Number(e.target.value) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -295,8 +294,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">W</span>
-              <input
-                type="number"
+              <NumberInput
                 value={frame.width}
                 onChange={(e) => updateFrame(frame.id, { width: Number(e.target.value) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -304,8 +302,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">H</span>
-              <input
-                type="number"
+              <NumberInput
                 value={frame.height}
                 onChange={(e) => updateFrame(frame.id, { height: Number(e.target.value) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -355,8 +352,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Item Gap</span>
-                <input
-                  type="number"
+                <NumberInput
                   value={frame.autoLayout.gap}
                   onChange={(e) => updateAutoLayout(frame.id, { gap: Number(e.target.value) })}
                   className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
@@ -460,8 +456,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         <div className="grid grid-cols-2 gap-2 pt-2">
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono">W</span>
-            <input
-              type="number"
+            <NumberInput
               value={section.width}
               onChange={(e) => updateSection(section.id, { width: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -469,8 +464,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono">H</span>
-            <input
-              type="number"
+            <NumberInput
               value={section.height}
               onChange={(e) => updateSection(section.id, { height: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -674,8 +668,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">X</span>
-            <input
-              type="number"
+            <NumberInput
               value={Number(style.x)}
               onChange={(e) => updateElementStyle(element!.id, { x: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -683,8 +676,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">Y</span>
-            <input
-              type="number"
+            <NumberInput
               value={Number(style.y)}
               onChange={(e) => updateElementStyle(element!.id, { y: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -692,8 +684,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">W</span>
-            <input
-              type="number"
+            <NumberInput
               value={Number(style.width)}
               onChange={(e) => updateElementStyle(element!.id, { width: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -701,8 +692,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">H</span>
-            <input
-              type="number"
+            <NumberInput
               value={Number(style.height)}
               onChange={(e) => updateElementStyle(element!.id, { height: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -710,8 +700,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">∠</span>
-            <input
-              type="number"
+            <NumberInput
               value={style.rotation || 0}
               onChange={(e) => updateElementStyle(element!.id, { rotation: Number(e.target.value) })}
               placeholder="0°"
@@ -720,8 +709,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">Opacity</span>
-            <input
-              type="number"
+            <NumberInput
               min="0"
               max="100"
               value={Math.round((style.opacity ?? 1) * 100)}
@@ -792,8 +780,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           {!isIndividualCorners ? (
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <Icons.CornerUpRight size={12} className="text-[rgba(235,235,236,0.4)] mr-2" />
-              <input
-                type="number"
+              <NumberInput
+                min={0}
                 value={typeof style.borderRadius === 'number' ? style.borderRadius : cornerRadiusObj.tl}
                 onChange={(e) => updateElementStyle(element!.id, { borderRadius: Number(e.target.value) })}
                 placeholder="Radius px"
@@ -805,8 +793,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               {(['tl', 'tr', 'br', 'bl'] as const).map(corner => (
                 <div key={corner} className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-md px-1.5 py-1 border border-[rgba(235,235,236,0.08)]">
                   <span className="text-[9px] font-mono text-[rgba(235,235,236,0.3)] uppercase mr-1">{corner}</span>
-                  <input
-                    type="number"
+                  <NumberInput
+                    min={0}
                     value={cornerRadiusObj[corner]}
                     onChange={(e) => updateElementStyle(element!.id, {
                       borderRadius: {
@@ -865,8 +853,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
             <div className="flex items-center justify-between">
               <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Gap Spacing</span>
-              <input
-                type="number"
+              <NumberInput
                 value={style.autoLayout.gap}
                 onChange={(e) => updateAutoLayout(element!.id, { gap: Number(e.target.value) })}
                 className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
@@ -891,8 +878,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               {!isIndividualPadding ? (
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-[rgba(235,235,236,0.4)]">All Sides</span>
-                  <input
-                    type="number"
+                  <NumberInput
                     value={paddingObj.top}
                     onChange={(e) => {
                       const v = Number(e.target.value);
@@ -906,8 +892,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                   {(['top', 'right', 'bottom', 'left'] as const).map(side => (
                     <div key={side} className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-md px-1.5 py-1 border border-[rgba(235,235,236,0.08)]">
                       <span className="text-[9px] font-mono text-[rgba(235,235,236,0.3)] uppercase mr-1">{side[0]}</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         value={paddingObj[side]}
                         onChange={(e) => updateAutoLayout(element!.id, {
                           padding: {
@@ -1111,8 +1096,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             color={style.borderColor}
             onChange={(next) => updateElementStyle(element!.id, { borderColor: next })}
           />
-          <input
-            type="number"
+          <NumberInput
             value={style.borderWidth || 0}
             onChange={(e) => updateElementStyle(element!.id, { borderWidth: Number(e.target.value) })}
             placeholder="Width"
@@ -1156,8 +1140,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
           <div className="flex items-center justify-between">
             <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Backdrop Blur (Glass)</span>
-            <input
-              type="number"
+            <NumberInput
               min="0"
               max="40"
               value={style.backdropBlur || 0}
@@ -1192,8 +1175,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
                 <span className="text-[rgba(235,235,236,0.4)] mr-1.5 text-[10px]">Size</span>
-                <input
-                  type="number"
+                <NumberInput
                   value={style.fontSize || 16}
                   onChange={(e) => updateElementStyle(element!.id, { fontSize: Number(e.target.value) })}
                   className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"

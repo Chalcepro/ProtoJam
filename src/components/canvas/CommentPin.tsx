@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { CanvasComment } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 interface CommentPinProps {
@@ -8,7 +9,7 @@ interface CommentPinProps {
 }
 
 export const CommentPin: React.FC<CommentPinProps> = ({ comment }) => {
-  const { activeCommentId, setActiveCommentId, addCommentReply, toggleCommentResolved, deleteComment } = useProjectStore();
+  const { activeCommentId, setActiveCommentId, addCommentReply, toggleCommentResolved, deleteComment } = useProjectStore(useShallow((s) => ({ activeCommentId: s.activeCommentId, setActiveCommentId: s.setActiveCommentId, addCommentReply: s.addCommentReply, toggleCommentResolved: s.toggleCommentResolved, deleteComment: s.deleteComment })));
   const [replyText, setReplyText] = useState('');
   const isOpen = activeCommentId === comment.id;
 

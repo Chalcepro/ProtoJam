@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ProjectMenuModal } from './ProjectMenuModal';
 import * as Icons from 'lucide-react';
 
@@ -24,7 +25,7 @@ export const Topbar: React.FC = () => {
     saveCurrentProject,
     isSaved,
     lastSavedAt
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ projectName: s.projectName, setProjectName: s.setProjectName, viewport: s.viewport, setZoom: s.setZoom, resetZoom: s.resetZoom, zoomToFit: s.zoomToFit, undo: s.undo, redo: s.redo, historyIndex: s.historyIndex, history: s.history, startPlaying: s.startPlaying, canvasSettings: s.canvasSettings, updateCanvasSettings: s.updateCanvasSettings, editorMode: s.editorMode, setEditorMode: s.setEditorMode, openProjectMenu: s.openProjectMenu, saveCurrentProject: s.saveCurrentProject, isSaved: s.isSaved, lastSavedAt: s.lastSavedAt })));
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
 
@@ -145,6 +146,17 @@ export const Topbar: React.FC = () => {
             title={`Grid: ${canvasSettings.gridType}`}
           >
             <Icons.Grid3X3 size={13} />
+          </button>
+
+          {/* Rulers on / off (also Shift+R) */}
+          <button
+            onClick={() => updateCanvasSettings({ showRulers: !canvasSettings.showRulers })}
+            className={`p-1.5 rounded-lg hover:bg-[rgba(235,235,236,0.08)] hover:text-[rgb(235,235,236)] transition-all duration-150 ${
+              canvasSettings.showRulers ? 'text-[rgb(235,235,236)] bg-[rgba(235,235,236,0.08)]' : 'text-[rgba(235,235,236,0.4)]'
+            }`}
+            title={`Rulers: ${canvasSettings.showRulers ? 'on' : 'off'} (Shift+R)`}
+          >
+            <Icons.Ruler size={13} />
           </button>
 
           {/* Zoom Controls */}

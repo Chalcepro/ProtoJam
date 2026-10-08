@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { DesignProperties } from './DesignProperties';
 import { SemanticPropsEditor } from './SemanticPropsEditor';
 import { PrototypeInteractionEditor } from './PrototypeInteractionEditor';
@@ -7,7 +8,7 @@ import * as Icons from 'lucide-react';
 
 export const RightInspector: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'design' | 'semantic' | 'prototype'>('design');
-  const { elements, frames, selectedElementIds, selectedFrameIds } = useProjectStore();
+  const { elements, frames, selectedElementIds, selectedFrameIds } = useProjectStore(useShallow((s) => ({ elements: s.elements, frames: s.frames, selectedElementIds: s.selectedElementIds, selectedFrameIds: s.selectedFrameIds })));
 
   const selectedElement = elements.find(el => selectedElementIds.includes(el.id));
   const selectedFrame = frames.find(f => selectedFrameIds.includes(f.id));

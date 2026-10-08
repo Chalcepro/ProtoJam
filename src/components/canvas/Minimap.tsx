@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export const Minimap: React.FC = () => {
-  const { frames, sections, viewport, setViewport, canvasSettings } = useProjectStore();
+  const { frames, sections, viewport, setViewport, canvasSettings } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, viewport: s.viewport, setViewport: s.setViewport, canvasSettings: s.canvasSettings })));
   const [isVisible, setIsVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevViewportRef = useRef(viewport);

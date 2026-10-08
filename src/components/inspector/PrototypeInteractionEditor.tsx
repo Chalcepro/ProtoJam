@@ -1,7 +1,9 @@
+import { NumberInput } from './NumberInput';
 import React from 'react';
 import { UIElement } from '../../types/components';
 import { PrototypeInteraction, InteractionTrigger, InteractionActionType, TransitionType } from '../../types/prototype';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 interface PrototypeInteractionEditorProps {
@@ -9,7 +11,7 @@ interface PrototypeInteractionEditorProps {
 }
 
 export const PrototypeInteractionEditor: React.FC<PrototypeInteractionEditorProps> = ({ element }) => {
-  const { frames, addInteraction, removeInteraction, startWiring, startPlaying } = useProjectStore();
+  const { frames, addInteraction, removeInteraction, startWiring, startPlaying } = useProjectStore(useShallow((s) => ({ frames: s.frames, addInteraction: s.addInteraction, removeInteraction: s.removeInteraction, startWiring: s.startWiring, startPlaying: s.startPlaying })));
 
   const handleAddNewInteraction = () => {
     const defaultTarget = frames.find(f => f.id !== element.parentId)?.id || frames[0]?.id;
@@ -124,8 +126,7 @@ export const PrototypeInteractionEditor: React.FC<PrototypeInteractionEditorProp
               <div className="flex items-center justify-between bg-[rgba(235,235,236,0.04)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)]">
                 <span className="text-[10px] text-[rgba(235,235,236,0.5)]">Delay Timeout</span>
                 <div className="flex items-center gap-1">
-                  <input
-                    type="number"
+                  <NumberInput
                     value={interaction.delayMs || 1000}
                     onChange={(e) => handleUpdateInteraction(interaction.id, { delayMs: Number(e.target.value) })}
                     className="w-16 bg-transparent text-[rgb(235,235,236)] outline-none text-right font-mono text-xs"
@@ -190,8 +191,7 @@ export const PrototypeInteractionEditor: React.FC<PrototypeInteractionEditorProp
                 </select>
 
                 <div className="flex items-center bg-[rgba(235,235,236,0.04)] px-2 py-1 rounded-lg border border-[rgba(235,235,236,0.12)]">
-                  <input
-                    type="number"
+                  <NumberInput
                     value={interaction.durationMs || 300}
                     onChange={(e) => handleUpdateInteraction(interaction.id, { durationMs: Number(e.target.value) })}
                     className="bg-transparent text-[rgb(235,235,236)] outline-none w-full text-xs font-mono"

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { STARTER_PROJECTS } from '../../presets/starterProjects';
 import * as Icons from 'lucide-react';
 
@@ -21,7 +22,7 @@ export const ProjectMenuModal: React.FC = () => {
     elements,
     isSaved,
     lastSavedAt
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ isProjectMenuOpen: s.isProjectMenuOpen, closeProjectMenu: s.closeProjectMenu, projectName: s.projectName, setProjectName: s.setProjectName, saveCurrentProject: s.saveCurrentProject, saveAsFile: s.saveAsFile, createNewProject: s.createNewProject, loadProjectFromData: s.loadProjectFromData, loadSavedProjectById: s.loadSavedProjectById, deleteSavedProjectById: s.deleteSavedProjectById, savedProjects: s.savedProjects, loadStarterProject: s.loadStarterProject, frames: s.frames, elements: s.elements, isSaved: s.isSaved, lastSavedAt: s.lastSavedAt })));
 
   const [activeTab, setActiveTab] = useState<'files' | 'saved' | 'templates' | 'export'>('files');
   const [newProjectTitle, setNewProjectTitle] = useState('');

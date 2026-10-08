@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 interface SemanticElementRendererProps {
@@ -28,7 +29,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         ...(isPressed ? element.states.pressed : null)
       }
     : element.style;
-  const { inlineEditingElementId, setInlineEditingElementId, updateElementSemanticProps } = useProjectStore();
+  const { inlineEditingElementId, setInlineEditingElementId, updateElementSemanticProps } = useProjectStore(useShallow((s) => ({ inlineEditingElementId: s.inlineEditingElementId, setInlineEditingElementId: s.setInlineEditingElementId, updateElementSemanticProps: s.updateElementSemanticProps })));
 
   const [internalValue, setInternalValue] = useState<any>(semanticProps.value ?? '');
   const [internalChecked, setInternalChecked] = useState<boolean>(!!semanticProps.checked);

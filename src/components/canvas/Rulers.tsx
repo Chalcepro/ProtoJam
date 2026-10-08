@@ -1,5 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export const RULER = 20;                // thickness, px
 const GUIDE = '#ff4fa3';               // guides and their labels
@@ -14,12 +15,27 @@ const STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 export const Rulers: React.FC<{
   width: number; height: number;
   selection: { x0: number; y0: number; x1: number; y1: number } | null;
-  pointer: { x: number; y: number } | null;
-}> = ({ width, height, selection, pointer }) => {
-  const { viewport, guides, addGuide, moveGuide, removeGuide } = useProjectStore();
+}> = ({ width, height, selection }) => {
+  const { viewport, guides, addGuide, moveGuide, removeGuide } = useProjectStore(useShallow((s) => ({ viewport: s.viewport, guides: s.guides, addGuide: s.addGuide, moveGuide: s.moveGuide, removeGuide: s.removeGuide })));
   const [dragging, setDragging] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const { x: vx, y: vy, zoom } = viewport;
+
+  // The pointer hairlines. Tracked here, at most once a frame, so moving the
+  // mouse redraws two rulers - not the whole canvas, as it did when the
+  // canvas held the pointer position and handed it down.
+  const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    let raf = 0, last: { x: number; y: number } | null = null;
+    const move = (e: MouseEvent) => {
+      const r = rootRef.current?.getBoundingClientRect();
+      if (!r) return;
+      last = { x: e.clientX - r.left, y: e.clientY - r.top };
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; setPointer(last); });
+    };
+    window.addEventListener('mousemove', move);
+    return () => { window.removeEventListener('mousemove', move); if (raf) cancelAnimationFrame(raf); };
+  }, []);
 
   const sx = (wx: number) => wx * zoom + vx;          // canvas -> screen
   const sy = (wy: number) => wy * zoom + vy;
@@ -114,7 +130,7 @@ export const Rulers: React.FC<{
           {label(String(Math.round(selection.x0)), { left: sx(selection.x0) - RULER + 2, top: 2, color: '#ff8a70', background: 'rgb(26,26,25)' })}
           {label(String(Math.round(selection.x1)), { left: sx(selection.x1) - RULER + 2, top: 2, color: '#ff8a70', background: 'rgb(26,26,25)' })}
         </>}
-        {pointer && <div className="absolute top-0 bottom-0 bg-[rgba(235,235,236,0.8)]" style={{ left: sx(pointer.x) - RULER, width: 1 }} />}
+        {pointer && <div className="absolute top-0 bottom-0 bg-[rgba(235,235,236,0.8)]" style={{ left: pointer.x - RULER, width: 1 }} />}
       </div>
 
       {/* left ruler */}
@@ -135,7 +151,7 @@ export const Rulers: React.FC<{
             })}
           </React.Fragment>
         ))}
-        {pointer && <div className="absolute left-0 right-0 bg-[rgba(235,235,236,0.8)]" style={{ top: sy(pointer.y) - RULER, height: 1 }} />}
+        {pointer && <div className="absolute left-0 right-0 bg-[rgba(235,235,236,0.8)]" style={{ top: pointer.y - RULER, height: 1 }} />}
       </div>
 
       {/* the corner */}

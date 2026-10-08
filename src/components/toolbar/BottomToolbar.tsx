@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ToolMode } from '../../types/canvas';
 import * as Icons from 'lucide-react';
 
@@ -20,7 +21,7 @@ export const BottomToolbar: React.FC = () => {
     frames,
     viewport,
     addPredefinedElement
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, fillVectorFace: s.fillVectorFace, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, frames: s.frames, viewport: s.viewport, addPredefinedElement: s.addPredefinedElement })));
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);

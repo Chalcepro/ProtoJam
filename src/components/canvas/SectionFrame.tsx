@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SectionFrame as ISectionFrame } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 interface SectionFrameProps {
@@ -16,7 +17,7 @@ export const SectionFrame: React.FC<SectionFrameProps> = ({ section }) => {
     activeTool,
     viewport,
     pushHistory
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ selectedSectionIds: s.selectedSectionIds, selectSection: s.selectSection, updateSection: s.updateSection, deleteSection: s.deleteSection, activeTool: s.activeTool, viewport: s.viewport, pushHistory: s.pushHistory })));
 
   const isSelected = selectedSectionIds.includes(section.id);
   const [isEditingName, setIsEditingName] = useState(false);

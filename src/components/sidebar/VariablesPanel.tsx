@@ -1,9 +1,11 @@
+import { NumberInput } from '../inspector/NumberInput';
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
 export const VariablesPanel: React.FC = () => {
-  const { variables, addVariable, updateVariable, deleteVariable } = useProjectStore();
+  const { variables, addVariable, updateVariable, deleteVariable } = useProjectStore(useShallow((s) => ({ variables: s.variables, addVariable: s.addVariable, updateVariable: s.updateVariable, deleteVariable: s.deleteVariable })));
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const colorVars = variables.filter(v => v.type === 'color');
@@ -137,8 +139,7 @@ export const VariablesPanel: React.FC = () => {
                       {v.name}
                     </span>
                   )}
-                  <input
-                    type="number"
+                  <NumberInput
                     value={v.value as number}
                     onChange={(e) => updateVariable(v.id, { value: Number(e.target.value) })}
                     className="w-14 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-1.5 py-0.5 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-[11px] shrink-0"

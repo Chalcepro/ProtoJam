@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useProjectStore, toolToElementType } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ArtboardFrame } from './ArtboardFrame';
 import { SectionFrame } from './SectionFrame';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
@@ -58,7 +59,6 @@ export const InfiniteCanvas: React.FC = () => {
   const dragOrig = useRef<Map<string, { x: number; y: number }> | null>(null);
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
   // For the rulers: the pointer in canvas space, and the canvas's size.
-  const [pointerWorld, setPointerWorld] = useState<{ x: number; y: number } | null>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   // Space held: left-drag pans, the way Figma does it.
   const spaceDown = useRef(false);
@@ -120,7 +120,7 @@ export const InfiniteCanvas: React.FC = () => {
     guides,
     updateElementPosition,
     updateCanvasSettings
-  } = useProjectStore();
+  } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedElementIds: s.selectedElementIds, viewport: s.viewport, setViewport: s.setViewport, panBy: s.panBy, activeTool: s.activeTool, setActiveTool: s.setActiveTool, clearSelection: s.clearSelection, isWiring: s.isWiring, updateWireMousePos: s.updateWireMousePos, cancelWiring: s.cancelWiring, canvasSettings: s.canvasSettings, dropComponentAt: s.dropComponentAt, moveElement: s.moveElement, moveFrame: s.moveFrame, selectElement: s.selectElement, selectFrame: s.selectFrame, editorMode: s.editorMode, finishDrawingShape: s.finishDrawingShape, reparentElement: s.reparentElement, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, addVectorPoint: s.addVectorPoint, setInlineEditingElementId: s.setInlineEditingElementId, addElement: s.addElement, addPredefinedElement: s.addPredefinedElement, comments: s.comments, addComment: s.addComment, setSelection: s.setSelection, pasteElements: s.pasteElements, duplicateElement: s.duplicateElement, deleteElement: s.deleteElement, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleElementHidden: s.toggleElementHidden, toggleElementLock: s.toggleElementLock, zoomToFit: s.zoomToFit, selectedFrameIds: s.selectedFrameIds, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, alignSelectedElements: s.alignSelectedElements, groupSelectedIntoAutoLayout: s.groupSelectedIntoAutoLayout, createMasterComponent: s.createMasterComponent, bringForward: s.bringForward, sendBackward: s.sendBackward, guides: s.guides, updateElementPosition: s.updateElementPosition, updateCanvasSettings: s.updateCanvasSettings })));
 
   useEffect(() => {
     const el = canvasContainerRef.current;
@@ -407,7 +407,6 @@ export const InfiniteCanvas: React.FC = () => {
 
   const handleMouseMove = (e: React.MouseEvent) => {
     lastWorld.current = getWorldCoords(e.clientX, e.clientY);
-    if (canvasSettings.showRulers) setPointerWorld(lastWorld.current);
 
     if (marquee) {
       setMarquee({ ...marquee, x1: lastWorld.current.x, y1: lastWorld.current.y });
@@ -623,6 +622,20 @@ export const InfiniteCanvas: React.FC = () => {
       onMouseUp={handleMouseUp}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      // Ctrl+click: select the shape under the pointer itself, however deep
+      // it sits - through any frame, group or section around it - as in
+      // Figma. Ctrl+Shift+click adds it to the selection. Caught on the way
+      // down so nothing in between gets the click first.
+      onPointerDownCapture={(e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0 || activeTool !== 'select') return;
+        const hit = document.elementsFromPoint(e.clientX, e.clientY)
+          .find(n => (n as HTMLElement).dataset?.elId) as HTMLElement | undefined;
+        if (!hit) return;
+        e.stopPropagation(); e.preventDefault();
+        const id = hit.dataset.elId!;
+        if (e.shiftKey) selectElement(id, true);
+        else setSelection([id]);
+      }}
       onContextMenu={(e) => {
         // ProtoJam's own menu, never the browser's
         e.preventDefault();
@@ -728,12 +741,26 @@ export const InfiniteCanvas: React.FC = () => {
               className="cursor-move group relative"
             >
               <SemanticElementRenderer element={element} isInteractive={false} />
-              {/* Handles to scale and rotate, the same box elements in a frame
-                  get - free elements had only an outline and could not be resized. */}
-              {isSelected && activeTool === 'select' && <TransformSelectionBox element={element} />}
             </div>
           );
         })}
+
+        {/* 3b. Selection handles, above everything (as in Figma): a selected
+            shape under another keeps its handles visible and grabbable, and
+            frames do not clip them. */}
+        {activeTool === 'select' && !isVectorEditing && elements
+          .filter(el => selectedElementIds.includes(el.id) && !el.hidden)
+          .map(el => {
+            const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
+            if (f?.autoLayout?.enabled && !el.style.absolutePosition) return null;   // drawn by its frame
+            const b = boxOf(el);
+            return (
+              <div key={`sel-${el.id}`} className="pointer-events-none"
+                   style={{ position: 'absolute', left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, zIndex: 1000 }}>
+                <TransformSelectionBox element={el} parentFrameOffset={{ x: f?.x || 0, y: f?.y || 0 }} />
+              </div>
+            );
+          })}
 
         {/* 4. Prototype Wire Connecting Lines */}
         {(editorMode === 'prototype' || isWiring) && (
@@ -828,7 +855,7 @@ export const InfiniteCanvas: React.FC = () => {
 
       {/* Rulers and their guides (Shift+R) */}
       {canvasSettings.showRulers && canvasSize.w > 0 && (
-        <Rulers width={canvasSize.w} height={canvasSize.h} selection={selectionBox()} pointer={pointerWorld} />
+        <Rulers width={canvasSize.w} height={canvasSize.h} selection={selectionBox()} />
       )}
 
       {/* Box select */}

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
 import { DEVICE_PRESETS, DevicePreset } from '../../presets/devicePresets';
 import * as Icons from 'lucide-react';
 
 export const FramePresetsPanel: React.FC = () => {
-  const { addFrame } = useProjectStore();
+  const { addFrame } = useProjectStore(useShallow((s) => ({ addFrame: s.addFrame })));
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'mobile' | 'tablet' | 'desktop' | 'watch'>('all');
 
   const categories = [
