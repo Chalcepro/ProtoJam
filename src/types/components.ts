@@ -150,6 +150,11 @@ export interface StrokeLayer {
   visible: boolean;
 }
 
+export type BlendMode =
+  | 'normal' | 'darken' | 'multiply' | 'color-burn' | 'lighten' | 'screen' | 'color-dodge'
+  | 'overlay' | 'soft-light' | 'hard-light' | 'difference' | 'exclusion'
+  | 'hue' | 'saturation' | 'color' | 'luminosity';
+
 export interface EffectLayer {
   id: string;
   type: 'dropShadow' | 'innerShadow' | 'layerBlur' | 'backgroundBlur';
@@ -206,7 +211,14 @@ export interface ElementStyle {
 
   // Text sizing behaviour: true = hug content (single-click creation), false =
   // fixed box that content can overflow (drag-to-size creation). Text/heading only.
+  // Superseded by textResize when that is set; kept so old projects still load.
   autoSize?: boolean;
+  // As in Figma: 'auto' grows both ways with the text, 'autoHeight' keeps the
+  // width and grows down, 'fixed' keeps both. See textResizeOf().
+  textResize?: 'auto' | 'autoHeight' | 'fixed';
+  // Vertical trim: the box is exactly the height of the capitals/baseline,
+  // with the line spacing above and below removed.
+  trimText?: boolean;
   // When true on a fixed-size (non-autoSize) element, overflowing content is
   // clipped and scrollable instead of spilling past the boundary.
   clipContent?: boolean;
@@ -216,6 +228,9 @@ export interface ElementStyle {
   // When true, this child opts out of its parent frame's auto-layout flow and
   // reverts to free x/y positioning (Figma's "Absolute position" toggle).
   absolutePosition?: boolean;
+  // How this child sizes inside an auto-layout parent, per axis.
+  layoutSizingH?: 'fixed' | 'hug' | 'fill';
+  layoutSizingV?: 'fixed' | 'hug' | 'fill';
   display?: 'block' | 'flex' | 'grid';
   flexDirection?: 'row' | 'column';
   justifyContent?: 'flex-start' | 'center' | 'flex-end' | 'space-between' | 'space-around';
@@ -228,6 +243,7 @@ export interface ElementStyle {
   backdropBlur?: number;
   blur?: number;
   effects?: EffectLayer[];
+  blendMode?: BlendMode;
 
   // Vector / Pen tool data
   vectorData?: VectorData;
