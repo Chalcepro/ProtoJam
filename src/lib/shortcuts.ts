@@ -297,7 +297,11 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
    ],
    [
     "Ctrl+J",
-    "Join the two selected end points"
+    "Join the selected points (two loose ends join; otherwise a new line between them)"
+   ],
+   [
+    "Ctrl (moving points / pen)",
+    "No snapping to other points' alignment"
    ],
    [
     "Delete or Backspace",

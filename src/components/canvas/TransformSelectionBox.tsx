@@ -73,13 +73,13 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
 
     const onPointerUp = () => {
       setActiveHandle(null);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
       pushHistory();
     };
 
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
   };
 
   // ---------------- INTERACTIVE ROTATION HANDLER ----------------
@@ -121,13 +121,13 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
     const onPointerUp = () => {
       setActiveHandle(null);
       setRotationAngle(null);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointermove', onPointerMove, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
       pushHistory();
     };
 
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointermove', onPointerMove, true);
+    window.addEventListener('pointerup', onPointerUp, true);
   };
 
   // ---------------- SIZES IN SCREEN PIXELS ----------------

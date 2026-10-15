@@ -57,6 +57,24 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     }
     return null;
   };
+  // the pen lines up with other points across / down (guides shown)
+  const penAlign = (w: { x: number; y: number }) => {
+    const thr = 6 / z, g: { x?: number; y?: number } = {};
+    const nx = allPoints.map(p => p.x).sort((a, b) => Math.abs(a - w.x) - Math.abs(b - w.x))[0];
+    const ny = allPoints.map(p => p.y).sort((a, b) => Math.abs(a - w.y) - Math.abs(b - w.y))[0];
+    let { x, y } = w;
+    if (nx !== undefined && Math.abs(nx - w.x) <= thr) { x = nx; g.x = nx; }
+    if (ny !== undefined && Math.abs(ny - w.y) <= thr) { y = ny; g.y = ny; }
+    return { x, y, g };
+  };
+  // alignment guides while moving points (canvas units): a line at x / at y
+  const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
+  // Points sitting on the very same spot are one point to the eye (where
+  // lines were joined): they move together.
+  const welded = (ids: string[]) => {
+    const pick = allPoints.filter(p => ids.includes(p.id));
+    return Array.from(new Set([...ids, ...allPoints.filter(q => pick.some(p => Math.abs(p.x - q.x) < 0.01 && Math.abs(p.y - q.y) < 0.01)).map(q => q.id)]));
+  };
   const [penTarget, setPenTarget] = useState<{ x: number; y: number; point?: VectorPoint } | null>(null);
   // Edit: what the pointer is over, for the cursor (a line or a shape can be dragged)
   const [overMovable, setOverMovable] = useState(false);
@@ -126,7 +144,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
           return;
         }
       }
-      const p = tgt ? { x: tgt.x, y: tgt.y } : snap(w, e.shiftKey);
+      const p = tgt ? { x: tgt.x, y: tgt.y } : e.shiftKey ? snap(w, true) : (e.ctrlKey || e.metaKey) ? w : penAlign(w);
       addVectorPoint(p.x, p.y);
       const id = useProjectStore.getState().selectedVectorPointIds[0];
       drag.current = { kind: 'new', id, ox: p.x, oy: p.y, alt: false };
@@ -199,8 +217,8 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     if (vectorTool === 'bend') { toggleSmooth(hit); return; }
     // every selected point moves together
     const ids = selectedVectorPointIds.includes(hit.id) ? selectedVectorPointIds : [hit.id];
-    drag.current = { kind: 'point', id: hit.id, ox: w.x, oy: w.y, alt: false,
-                     orig: new Map(allPoints.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }])) };
+    dragPoints(ids, w);
+    if (drag.current) drag.current.id = hit.id;
   };
 
   // a point between sharp (no handles) and smooth (handles along the line
@@ -216,8 +234,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   };
   // start moving these points together from the pointer at w
   const dragPoints = (ids: string[], w: { x: number; y: number }) => {
+    const all = welded(ids);
     drag.current = { kind: 'point', id: ids[0], ox: w.x, oy: w.y, alt: false,
-                     orig: new Map(allPoints.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }])) };
+                     orig: new Map(allPoints.filter(p => all.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }])) };
   };
   const segsOfPath = (pi: number) => {
     const p = paths[pi];
@@ -229,7 +248,12 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   const move = (e: React.PointerEvent) => {
     const w = toWorld(e.clientX, e.clientY);
     const ps = !drag.current ? penSnap(w) : null;
-    setCursor(ps ? { x: ps.x, y: ps.y } : snap(w, e.shiftKey && vectorTool === 'pen' && !drag.current));
+    if (vectorTool === 'pen' && !drag.current && !ps && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      const a = penAlign(w); setCursor({ x: a.x, y: a.y }); setGuides(a.g);
+    } else {
+      setCursor(ps ? { x: ps.x, y: ps.y } : snap(w, e.shiftKey && vectorTool === 'pen' && !drag.current));
+      if (!drag.current) setGuides({});
+    }
     setPenTarget(ps);
     if (box) { setBox({ ...box, x1: w.x, y1: w.y }); return; }
     const d = drag.current;
@@ -246,7 +270,20 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       return;
     }
     if (d.kind === 'point') {
-      d.orig?.forEach((o, id) => updateVectorPoint(id, { x: Math.round(o.x + w.x - d.ox), y: Math.round(o.y + w.y - d.oy) }));
+      let dx = w.x - d.ox, dy = w.y - d.oy;
+      const g: { x?: number; y?: number } = {};
+      const lead = d.orig?.get(d.id);
+      if (lead && !(e.ctrlKey || e.metaKey)) {
+        // line up with any other point, across or down, within 6px (Ctrl: off)
+        const others = allPoints.filter(p => !d.orig!.has(p.id));
+        const thr = 6 / z;
+        const nx = others.map(p => p.x).sort((a, b) => Math.abs(a - (lead.x + dx)) - Math.abs(b - (lead.x + dx)))[0];
+        const ny = others.map(p => p.y).sort((a, b) => Math.abs(a - (lead.y + dy)) - Math.abs(b - (lead.y + dy)))[0];
+        if (nx !== undefined && Math.abs(nx - (lead.x + dx)) <= thr) { dx = nx - lead.x; g.x = nx; }
+        if (ny !== undefined && Math.abs(ny - (lead.y + dy)) <= thr) { dy = ny - lead.y; g.y = ny; }
+      }
+      setGuides(g);
+      d.orig?.forEach((o, id) => updateVectorPoint(id, { x: Math.round(o.x + dx), y: Math.round(o.y + dy) }));
       return;
     }
     const hx = w.x - d.ox, hy = w.y - d.oy;
@@ -309,7 +346,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       useProjectStore.setState({ selectedVectorPointIds: Array.from(new Set([...cur, ...inside])) });
       setBox(null);
     }
-    drag.current = null; setSnapped(false);
+    drag.current = null; setSnapped(false); setGuides({});
   };
 
   const segSelRef = useRef(segSel);
@@ -325,9 +362,18 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       if (e.ctrlKey || e.metaKey) {
         const k2 = e.key.toLowerCase();
         // Ctrl+J: join the two picked end points; Ctrl+A: pick every point
-        if (k2 === 'j' && vdNow && s.selectedVectorPointIds.length === 2) {
-          const j = joinPoints(vdNow, s.selectedVectorPointIds[0], s.selectedVectorPointIds[1]);
+        if (k2 === 'j' && vdNow && s.selectedVectorPointIds.length >= 2) {
+          const sel = s.selectedVectorPointIds;
+          const j = sel.length === 2 ? joinPoints(vdNow, sel[0], sel[1]) : null;
           if (j) s.setVectorData(j);
+          else {
+            // not two loose ends: a new line through the picked points, in the
+            // order they were picked; its ends sit on them and move with them
+            const pts = sel.map(id => allNow.find(p => p.id === id)!).filter(Boolean)
+              .map((p, i) => ({ id: `pt-${Date.now()}-j${i}`, x: p.x, y: p.y, isCorner: true }));
+            const paths = vectorPaths(vdNow);
+            s.setVectorData({ ...vdNow, subpaths: [...paths, { points: pts, isClosed: false }], points: [], isClosed: false });
+          }
         } else if (k2 === 'a') {
           useProjectStore.setState({ selectedVectorPointIds: allNow.map(p => p.id), vectorTool: 'select' });
         } else return;     // Ctrl+Z and the rest go on to the app
@@ -338,7 +384,10 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       if (e.key.startsWith('Arrow') && s.selectedVectorPointIds.length) {
         const d = e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
-        allNow.filter(p => s.selectedVectorPointIds.includes(p.id)).forEach(p => s.updateVectorPoint(p.id, { x: p.x + dx, y: p.y + dy }));
+        // points on the same spot as a picked one go with it
+        const pick = allNow.filter(p => s.selectedVectorPointIds.includes(p.id));
+        allNow.filter(q => pick.some(p => Math.abs(p.x - q.x) < 0.01 && Math.abs(p.y - q.y) < 0.01))
+          .forEach(p => s.updateVectorPoint(p.id, { x: p.x + dx, y: p.y + dy }));
         e.preventDefault(); e.stopImmediatePropagation();
         return;
       }
@@ -347,7 +396,14 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       if (e.key === 'Enter' || e.key === 'Escape') s.finishVectorEditing();
       else if ((e.key === 'Backspace' || e.key === 'Delete') && segSelRef.current) {
         const vd2 = s.elements.find(x => x.id === s.editingVectorId)?.style.vectorData;
-        if (vd2) s.setVectorData(deleteSegment(vd2, segSelRef.current.a, segSelRef.current.b));
+        if (vd2) {
+          s.setVectorData(deleteSegment(vd2, segSelRef.current.a, segSelRef.current.b));
+          // an opened shape loses its fill; with no stroke its lines would
+          // vanish too - give it a stroke in its fill colour so they stay
+          const el = s.elements.find(x => x.id === s.editingVectorId)!;
+          const stroked = (el.style.strokes || []).some(x => x.visible && x.width > 0) || (!el.style.strokes && (el.style.borderWidth ?? 2) > 0);
+          if (!stroked) s.updateElementStyle(el.id, { borderWidth: 2, borderColor: el.style.fillColor && el.style.fillColor !== 'transparent' ? el.style.fillColor : '#ebebec', strokes: undefined });
+        }
         setSegSel(null);
       }
       else if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -412,6 +468,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
           <rect x={sx(Math.min(box.x0, box.x1))} y={sy(Math.min(box.y0, box.y1))} width={Math.abs(box.x1 - box.x0) * z} height={Math.abs(box.y1 - box.y0) * z}
                 fill="rgba(255,107,74,0.08)" stroke={ACCENT} strokeWidth={1} />
         )}
+        {/* alignment guides */}
+        {guides.x !== undefined && <line x1={sx(guides.x)} x2={sx(guides.x)} y1={-1e5} y2={1e5} stroke="#ff4fa3" strokeWidth={1} />}
+        {guides.y !== undefined && <line y1={sy(guides.y)} y2={sy(guides.y)} x1={-1e5} x2={1e5} stroke="#ff4fa3" strokeWidth={1} />}
         {/* where the pen will land: a point, or onto a line */}
         {vectorTool === 'pen' && penTarget && (
           <circle cx={sx(penTarget.x)} cy={sy(penTarget.y)} r={penTarget.point ? 8 : 5} fill="none" stroke={SNAP} strokeWidth={2} />

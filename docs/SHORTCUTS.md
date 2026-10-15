@@ -105,7 +105,8 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Click a line | Select the line (Delete removes it) |
 | Drag a line / inside a shape | Move the line / the shape (or its selected points) |
 | Arrow keys / Shift+Arrow keys | Nudge selected points 1px / 10px |
-| Ctrl+J | Join the two selected end points |
+| Ctrl+J | Join the selected points (two loose ends join; otherwise a new line between them) |
+| Ctrl (moving points / pen) | No snapping to other points' alignment |
 | Delete or Backspace | Delete selected points (or the selected line) |
 | Enter or Esc / double-click | Done |
 

@@ -44,13 +44,13 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
       onChange?.({ target: { value: String(n) }, currentTarget: { value: String(n) } } as unknown as React.ChangeEvent<HTMLInputElement>);
     };
     const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointermove', move, true);
+      window.removeEventListener('pointerup', up, true);
       document.body.style.cursor = '';
       if (!moved) { input.focus(); input.select(); }
     };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    window.addEventListener('pointermove', move, true);
+    window.addEventListener('pointerup', up, true);
   };
 
   return (

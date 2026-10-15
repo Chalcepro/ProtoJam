@@ -72,8 +72,10 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       data-flow-child={flow ? '' : undefined}
       // hover: outline what a click here would pick (drawn by the canvas)
       onPointerMove={(e) => {
-        if (activeTool !== 'select') return;
-        e.stopPropagation();
+        // the deepest element under the pointer decides; the event itself goes
+        // on (stopping it starved drags that listen on the window - resizing)
+        if (activeTool !== 'select' || (e.nativeEvent as any).__hoverDone) return;
+        (e.nativeEvent as any).__hoverDone = true;
         const st = useProjectStore.getState();
         const id = (e.ctrlKey || e.metaKey) ? element.id : pickTarget(element.id, st.elements, st.selectedElementIds);
         if (st.hoveredElementId !== id) st.setHoveredElement(id);
