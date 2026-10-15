@@ -1,6 +1,8 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { effectsCss, textResizeOf } from '../../lib/styleCss';
 import { VideoView } from './VideoView';
+import { SvgPaint } from './SvgPaint';
+import { fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
 import { vectorAllD, vectorRegions } from '../../lib/boolean';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -141,9 +143,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       gap: style.gap
     };
 
-    if (style.fillGradient) {
+    // (plain text paints its letters instead - see the text case)
+    if (paintsLetters(element)) { /* no box paint */ }
+    else if (style.fillGradient) {
       const stops = style.fillGradient.stops.map(s => `${s.color} ${s.offset}%`).join(', ');
-      css.background = style.fillGradient.type === 'linear' 
+      css.backgroundImage = style.fillGradient.type === 'linear' 
         ? `linear-gradient(${style.fillGradient.angle ?? 90}deg, ${stops})`
         : `radial-gradient(circle, ${stops})`;
     } else if (style.fillColor) {
@@ -159,8 +163,34 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       css.borderBottomLeftRadius = style.borderRadius.bl;
     }
 
+    // Figma-style Fill / Stroke lists (once edited): layered backgrounds, and
+    // strokes as rings that never change the box's size
+    if (style.fills && !paintsLetters(element)) { delete css.background; Object.assign(css, fillsCss(style.fills)); }
+    if (style.strokes) {
+      const sc = strokesCss(style.strokes);
+      css.borderWidth = 0; css.borderStyle = undefined;
+      css.boxShadow = [sc.boxShadow, css.boxShadow].filter(Boolean).join(', ') || undefined;
+      css.outline = sc.outline; css.outlineOffset = sc.outlineOffset;
+    }
+
     return css;
   };
+
+  // A box whose fills include a video: each fill its own layer (a video
+  // cannot be a CSS background), stacked bottom up, each with its blend.
+  const videoFills = (style.fills || []).some(f => f.visible && f.type === 'video');
+  const fillStack = () => !videoFills ? null : (style.fills || []).filter(f => f.visible).slice().reverse().map(f => (
+    <div key={f.id} className="absolute inset-0 overflow-hidden pointer-events-none"
+         style={{ borderRadius: 'inherit', opacity: f.type === 'video' || f.type === 'image' ? f.opacity : undefined,
+                  mixBlendMode: f.blendMode && f.blendMode !== 'normal' ? f.blendMode : undefined, ...(f.type === 'video' ? {} : fillsCss([f])) }}>
+      {f.type === 'video' && <VideoView element={{ ...element, semanticProps: { videoSrc: f.videoSrc } }}
+                                        style={{ width: '100%', height: '100%', objectFit: f.fit === 'fit' ? 'contain' : 'cover' }} />}
+    </div>
+  ));
+  const boxStyle = (extra?: React.CSSProperties): React.CSSProperties => ({
+    ...getCommonStyles(), ...extra,
+    ...(videoFills ? { backgroundImage: 'none', backgroundColor: 'transparent', position: 'relative', isolation: 'isolate' } : null)
+  });
 
   const handleClick = (e: React.MouseEvent) => {
     if (isInteractive && onTriggerInteraction) {
@@ -174,11 +204,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- RECTANGLE SHAPE ----------------
     case 'rectangle':
       return (
-        <div
-          style={getCommonStyles()}
-          onClick={handleClick}
-          className=""
-        />
+        <div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>
       );
 
     // ---------------- DIVIDER ----------------
@@ -193,24 +219,13 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- CONTAINER (plain auto-layout grouping box) ----------------
     case 'container':
       return (
-        <div
-          style={getCommonStyles()}
-          onClick={handleClick}
-          className=""
-        />
+        <div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>
       );
 
     // ---------------- ELLIPSE / CIRCLE SHAPE ----------------
     case 'ellipse':
       return (
-        <div
-          style={{
-            ...getCommonStyles(),
-            borderRadius: '9999px'
-          }}
-          onClick={handleClick}
-          className="overflow-hidden"
-        />
+        <div style={boxStyle({ borderRadius: '9999px' })} onClick={handleClick} className="overflow-hidden">{fillStack()}</div>
       );
 
     // ---------------- LINE SHAPE ----------------
@@ -248,26 +263,30 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- POLYGON / TRIANGLE ----------------
     case 'polygon':
       return (
-        <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible" onClick={handleClick}>
-          <polygon
-            points="50,5 95,95 5,95"
-            fill={style.fillColor || '#ebebec'}
-            stroke={style.borderColor || 'none'}
-            strokeWidth={style.borderWidth || 0}
-          />
+        <svg viewBox="0 0 100 100" preserveAspectRatio={hasLayeredPaint(style) ? 'none' : undefined} className="w-full h-full overflow-visible" onClick={handleClick}>
+          {hasLayeredPaint(style)
+            ? <SvgPaint d="M 50,5 L 95,95 L 5,95 Z" fills={fillsOf(element)} strokes={strokesOf(element)} nonScaling />
+            : <polygon
+                points="50,5 95,95 5,95"
+                fill={style.fillColor || '#ebebec'}
+                stroke={style.borderColor || 'none'}
+                strokeWidth={style.borderWidth || 0}
+              />}
         </svg>
       );
 
     // ---------------- STAR ----------------
     case 'star':
       return (
-        <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible" onClick={handleClick}>
-          <polygon
-            points="50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36"
-            fill={style.fillColor || '#ebebec'}
-            stroke={style.borderColor || 'none'}
-            strokeWidth={style.borderWidth || 0}
-          />
+        <svg viewBox="0 0 100 100" preserveAspectRatio={hasLayeredPaint(style) ? 'none' : undefined} className="w-full h-full overflow-visible" onClick={handleClick}>
+          {hasLayeredPaint(style)
+            ? <SvgPaint d="M 50,5 L 64,36 L 98,38 L 72,60 L 80,94 L 50,75 L 20,94 L 28,60 L 2,38 L 36,36 Z" fills={fillsOf(element)} strokes={strokesOf(element)} nonScaling />
+            : <polygon
+                points="50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36"
+                fill={style.fillColor || '#ebebec'}
+                stroke={style.borderColor || 'none'}
+                strokeWidth={style.borderWidth || 0}
+              />}
         </svg>
       );
 
@@ -293,7 +312,9 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
              style={{ display: 'block', opacity: style.opacity ?? 1, transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined, ...effectsCss(style, false), boxShadow: undefined }}>
           {/* regions filled one by one (paint bucket), each its own colour */}
           {regions.map(r => <path key={r.key} d={r.d} fill={vd.regions![r.key]} stroke="none" />)}
-          <path
+          {hasLayeredPaint(style) ? (
+            <SvgPaint d={vectorAllD(vd)} fills={fillsOf(element)} strokes={strokesOf(element)} fillable={anyClosed && !regions.length} nonScaling />
+          ) : <path
             d={vectorAllD(vd)}
             fill={filled && !regions.length ? style.fillColor : 'none'}
             stroke={style.borderWidth === 0 ? 'none' : (style.borderColor || '#ebebec')}
@@ -302,7 +323,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             strokeLinejoin={style.strokeJoin || 'round'}
             strokeDasharray={style.borderStyle === 'dashed' ? '6 4' : style.borderStyle === 'dotted' ? '1 4' : undefined}
             vectorEffect="non-scaling-stroke"
-          />
+          />}
         </svg>
       );
     }
@@ -327,8 +348,13 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         ...getCommonStyles(),
         ...(boxed
           ? { paddingTop: pad?.top, paddingRight: pad?.right, paddingBottom: pad?.bottom, paddingLeft: pad?.left, display: 'block' }
-          : { background: undefined, backgroundColor: undefined,
-              ...(grad ? { backgroundImage: grad, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' } : null) }),
+          : { backgroundColor: undefined,
+              ...(style.fills ? lettersCss(style.fills)
+                  : grad ? { backgroundImage: grad, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' } : null) }),
+        ...(() => {
+          const st = style.strokes?.find(x => x.visible && x.width > 0);
+          return st && !boxed ? { WebkitTextStroke: `${st.width}px ${paintRgba(st.color, st.opacity)}`, paintOrder: 'stroke fill', boxShadow: undefined, outline: undefined } : null;
+        })(),
         ...(mode === 'auto'
           ? { width: 'max-content', height: 'max-content', whiteSpace: 'pre', minWidth: 2 }
           : mode === 'autoHeight'

@@ -4,6 +4,8 @@ import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { BooleanShape } from './BooleanShape';
 import { shapeD } from '../../lib/boolean';
 import { effectsCss } from '../../lib/styleCss';
+import { fillsOf, hasLayeredPaint, strokesOf } from '../../lib/paint';
+import { SvgPaint } from './SvgPaint';
 
 // The outline of a frame made from a shape, in its own 0,0 space.
 export const frameOutline = (el: UIElement) =>
@@ -27,8 +29,10 @@ export const ContainerBox: React.FC<{ el: UIElement; elements: UIElement[]; inte
     return (
       <svg width="100%" height="100%" overflow="visible" className="absolute inset-0 pointer-events-none"
            style={{ opacity: hidden ? 0 : s.opacity ?? 1, ...effectsCss(s, false), boxShadow: undefined }}>
-        <path d={frameOutline(el)} fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : 'none'}
-              stroke={s.borderWidth ? (s.borderColor || '#ebebec') : 'none'} strokeWidth={s.borderWidth || 0} />
+        {hasLayeredPaint(s)
+          ? <SvgPaint d={frameOutline(el)} fills={fillsOf(el)} strokes={strokesOf(el)} />
+          : <path d={frameOutline(el)} fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : 'none'}
+                  stroke={s.borderWidth ? (s.borderColor || '#ebebec') : 'none'} strokeWidth={s.borderWidth || 0} />}
       </svg>
     );
   }

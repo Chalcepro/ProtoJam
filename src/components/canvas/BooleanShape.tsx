@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import { UIElement } from '../../types/components';
 import { booleanD, shapeD } from '../../lib/boolean';
 import { effectsCss } from '../../lib/styleCss';
+import { fillsOf, hasLayeredPaint, strokesOf } from '../../lib/paint';
+import { SvgPaint } from './SvgPaint';
 
 // A boolean group drawn as its result: the shapes inside it, united /
 // subtracted / intersected / excluded, in the group's own fill and stroke.
@@ -18,9 +20,11 @@ export const BooleanShape: React.FC<{ group: UIElement; elements: UIElement[] }>
   return (
     <svg width="100%" height="100%" overflow="visible" className="absolute inset-0 pointer-events-none"
          style={{ opacity: s.opacity ?? 1, ...effectsCss(s, false), boxShadow: undefined }}>
-      <path d={d} fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : 'none'} fillRule="evenodd"
-            stroke={s.borderWidth ? (s.borderColor || '#ebebec') : 'none'} strokeWidth={s.borderWidth || 0}
-            style={{ pointerEvents: 'visiblePainted' }} />
+      {hasLayeredPaint(s)
+        ? <SvgPaint d={d} fills={fillsOf(group)} strokes={strokesOf(group)} fillRule="evenodd" />
+        : <path d={d} fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : 'none'} fillRule="evenodd"
+                stroke={s.borderWidth ? (s.borderColor || '#ebebec') : 'none'} strokeWidth={s.borderWidth || 0}
+                style={{ pointerEvents: 'visiblePainted' }} />}
     </svg>
   );
 };

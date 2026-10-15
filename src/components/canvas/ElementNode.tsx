@@ -117,7 +117,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       )}
 
       {isSelected && activeTool === 'select' && (boxInside || flow) && (
-        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000, visibility: 'visible' }}>
+        <div data-export-skip className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000, visibility: 'visible' }}>
           <TransformSelectionBox element={element} parentFrameOffset={frameOffset} />
         </div>
       )}
@@ -125,6 +125,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       {/* wire a prototype link from here */}
       {isSelected && frameId && (editorMode === 'prototype' || isWiring) && (
         <div
+          data-export-skip
           title="Drag to wire interaction"
           onPointerDown={(e) => { e.stopPropagation(); startWiring(element.id, frameId); }}
           className="absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 bg-[#ff6b4a] rounded-full border-2 border-[rgb(20,20,19)] shadow-lg cursor-crosshair flex items-center justify-center hotspot-handle z-50 hover:scale-125 transition-transform"

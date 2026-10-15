@@ -136,18 +136,23 @@ export interface AutoLayoutSettings {
   sizingV: 'fixed' | 'hug' | 'fill';
 }
 
+// One paint in a layer's Fill list (top of the list paints on top), as in
+// Figma: each with its own type, opacity, blend mode and eye.
 export interface FillLayer {
   id: string;
-  type: 'solid' | 'linear' | 'radial' | 'image' | 'video';
+  type: 'solid' | 'linear' | 'radial' | 'angular' | 'diamond' | 'image' | 'video';
   color?: string;
   opacity: number;
   visible: boolean;
+  blendMode?: BlendMode;
   gradient?: {
     angle?: number;
     stops: { offset: number; color: string }[];
   };
   imageSrc?: string;
   videoSrc?: string;
+  // how an image / video sits in the box
+  fit?: 'fill' | 'fit' | 'tile';
 }
 
 export interface StrokeLayer {
@@ -158,6 +163,14 @@ export interface StrokeLayer {
   style: 'solid' | 'dashed' | 'dotted';
   opacity: number;
   visible: boolean;
+}
+
+// One row of a layer's Export list: what to save it as.
+export interface ExportSetting {
+  id: string;
+  scale: number;              // 0.5, 1, 2, 3, 4 (PDF / SVG: 1)
+  suffix: string;             // added to the file name, e.g. "@2x"
+  format: 'PNG' | 'JPG' | 'SVG' | 'PDF';
 }
 
 export type BlendMode =
@@ -254,6 +267,7 @@ export interface ElementStyle {
   blur?: number;
   effects?: EffectLayer[];
   blendMode?: BlendMode;
+  exports?: ExportSetting[];
   // A frame made from a shape keeps the shape's outline: drawn as it, and
   // with Clip content on, what is inside is cut to it.
   frameShape?: 'ellipse' | 'polygon' | 'star' | 'vectorPath';
@@ -348,6 +362,7 @@ export interface DeviceFrame {
   // true (matches prior hardcoded behavior) when unset.
   clipContent?: boolean;
   autoLayout?: AutoLayoutSettings;
+  exports?: ExportSetting[];
   // Made by Shift+A around a selection: it behaves as one object - a click
   // picks the group, a double-click (or Ctrl+click) the thing inside.
   isGroup?: boolean;

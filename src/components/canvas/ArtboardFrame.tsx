@@ -247,6 +247,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
 
       {/* Frame Artboard Body */}
       <div
+        data-frame-body={frame.id}
         onPointerDown={handleFrameBodyPointerDown}
         style={{
           width: '100%',
@@ -264,7 +265,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
       >
         {/* Dynamic Island / Notch Mockup for Mobile */}
         {frame.deviceType === 'mobile' && (
-          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-28 h-7 bg-[rgb(20,20,19)] rounded-full z-40 flex items-center justify-between px-2.5 border border-[rgba(235,235,236,0.15)] pointer-events-none">
+          <div data-export-skip className="absolute top-2.5 left-1/2 -translate-x-1/2 w-28 h-7 bg-[rgb(20,20,19)] rounded-full z-40 flex items-center justify-between px-2.5 border border-[rgba(235,235,236,0.15)] pointer-events-none">
             <div className="w-2.5 h-2.5 rounded-full bg-[rgba(235,235,236,0.1)]" />
             <div className="w-2.5 h-2.5 rounded-full bg-[rgba(235,235,236,0.05)] flex items-center justify-center">
               <div className="w-1 h-1 rounded-full bg-[rgb(235,235,236)] animate-pulse" />
@@ -274,7 +275,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
 
         {/* Desktop Top Bezel Header */}
         {frame.deviceType === 'desktop' && (
-          <div className="h-7 w-full bg-[rgba(235,235,236,0.04)] border-b border-[rgba(235,235,236,0.1)] flex items-center px-3 gap-1.5 pointer-events-none z-40">
+          <div data-export-skip className="h-7 w-full bg-[rgba(235,235,236,0.04)] border-b border-[rgba(235,235,236,0.1)] flex items-center px-3 gap-1.5 pointer-events-none z-40">
             <div className="w-2.5 h-2.5 rounded-full bg-[rgba(235,235,236,0.2)]" />
             <div className="w-2.5 h-2.5 rounded-full bg-[rgba(235,235,236,0.2)]" />
             <div className="w-2.5 h-2.5 rounded-full bg-[rgba(235,235,236,0.2)]" />
@@ -309,7 +310,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
 
         {/* Mobile Bottom Home Indicator */}
         {frame.deviceType === 'mobile' && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1 bg-[rgba(235,235,236,0.3)] rounded-full z-40 pointer-events-none" />
+          <div data-export-skip className="absolute bottom-2 left-1/2 -translate-x-1/2 w-32 h-1 bg-[rgba(235,235,236,0.3)] rounded-full z-40 pointer-events-none" />
         )}
       </div>
 

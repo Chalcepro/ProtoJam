@@ -5,6 +5,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { FontPicker, WeightPicker } from './FontPicker';
+import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { BLEND_MODES, textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
@@ -332,7 +333,6 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     booleanSelection
   } = useProjectStore(useShallow((s) => ({ booleanSelection: s.booleanSelection, frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
 
-  const [fillType, setFillType] = useState<'solid' | 'gradient' | 'image'>('solid');
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
   const [isIndividualPadding, setIsIndividualPadding] = useState(false);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
@@ -514,6 +514,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
         </div>
 
+        <ExportSection name={frame.name} exports={frame.exports} onChange={(ex) => updateFrame(frame.id, { exports: ex })}
+                       node={() => document.querySelector(`[data-frame-body="${frame.id}"]`)} background={frame.backgroundColor} />
+
         {/* Screen Background Color */}
         <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
           <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
@@ -660,8 +663,6 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
   const textFill = (element!.type === 'text' || element!.type === 'heading') && !style.autoLayout?.enabled;
   const fillKey: 'fillColor' | 'textColor' = textFill ? 'textColor' : 'fillColor';
-  const fillValue = textFill ? style.textColor : style.fillColor;
-  const setFill = (c: string) => updateElementStyle(element!.id, { [fillKey]: c, fillGradient: undefined });
 
   // In an auto-layout frame, W and H each say Fixed, Hug (text) or Fill.
   const elements = useProjectStore.getState().elements;
@@ -1112,207 +1113,33 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
       {/* 4b. INTERACTIVE STATES (hover / pressed overrides, live in Play mode) */}
       {element && <InteractiveStatesSection element={element} />}
 
-      {/* 5. FILLS & COLORS (SOLID, GRADIENT, IMAGE) */}
-      <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider">Fill</span>
-          <div className="flex bg-[rgba(235,235,236,0.06)] rounded p-0.5 border border-[rgba(235,235,236,0.08)]">
-            <button
-              onClick={() => setFillType('solid')}
-              className={`px-2 py-0.5 rounded text-[10px] ${
-                fillType === 'solid' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-              }`}
-            >
-              Solid
-            </button>
-            <button
-              onClick={() => setFillType('gradient')}
-              className={`px-2 py-0.5 rounded text-[10px] ${
-                fillType === 'gradient' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-              }`}
-            >
-              Gradient
-            </button>
-            {!textFill && <button
-              onClick={() => setFillType('image')}
-              className={`px-2 py-0.5 rounded text-[10px] ${
-                fillType === 'image' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-              }`}
-            >
-              Image
-            </button>}
-          </div>
+      {/* 5. FILL - a list of paints, as in Figma */}
+      <FillsSection element={element!} update={(st) => updateElementStyle(element!.id, st)}
+                    extra={<VariableBindButton elementId={element!.id} styleKey={fillKey} boundVariableId={style.boundVariables?.[fillKey]} />} />
+
+      {/* an image element's own picture */}
+      {element!.type === 'image' && (
+        <div className="space-y-1.5">
+          <button onClick={() => imageUploadInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-1.5 bg-[rgba(235,235,236,0.06)] hover:bg-[rgba(235,235,236,0.12)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.1)] text-xs font-semibold">
+            <Icons.Upload size={13} /> Replace image
+          </button>
+          <input ref={imageUploadInputRef} type="file" accept="image/*" onChange={handleImageFillUpload} className="hidden" />
+          <input type="text" placeholder="or paste an image URL" value={element!.semanticProps.src?.startsWith('data:') ? '' : element!.semanticProps.src || ''}
+                 onChange={(e) => updateElementSemanticProps(element!.id, { src: e.target.value })}
+                 className="w-full bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] text-xs font-mono" />
         </div>
+      )}
 
-        {fillType === 'solid' && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={toHex(parseColorToRgba(fillValue || '#ebebec'))}
-                onChange={(e) => {
-                  const { a } = parseColorToRgba(fillValue);
-                  setFill(toRgbaString({ ...parseColorToRgba(e.target.value), a }));
-                }}
-                className="w-7 h-7 rounded border-none cursor-pointer bg-transparent"
-              />
-              <input
-                type="text"
-                value={fillValue || '#ebebec'}
-                onChange={(e) => setFill(e.target.value)}
-                className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] font-mono text-xs flex-1 outline-none min-w-0"
-              />
-              <ColorAlphaSlider
-                color={fillValue}
-                onChange={setFill}
-              />
-              <VariableBindButton elementId={element!.id} styleKey={fillKey} boundVariableId={style.boundVariables?.[fillKey]} />
-            </div>
-
-            {/* Quick Monochrome Palette Swatches */}
-            <div className="flex items-center gap-1.5 pt-1">
-              {[
-                { hex: '#141413', label: 'Black (Base)' },
-                { hex: '#242423', label: 'Dark Charcoal' },
-                { hex: '#3d3d3c', label: 'Medium Charcoal' },
-                { hex: '#7f7f7f', label: 'Mid Grey' },
-                { hex: '#b4b4b5', label: 'Light Grey' },
-                { hex: '#ebebec', label: 'White (Inverted)' }
-              ].map(swatch => (
-                <button
-                  key={swatch.hex}
-                  onClick={() => setFill(swatch.hex)}
-                  style={{ backgroundColor: swatch.hex }}
-                  className="flex-1 h-5 rounded border border-[rgba(235,235,236,0.15)] hover:scale-105 transition-transform"
-                  title={swatch.label}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {fillType === 'gradient' && (
-          <div className="space-y-2 bg-[rgba(235,235,236,0.02)] p-2.5 rounded-xl border border-[rgba(235,235,236,0.08)]">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[rgba(235,235,236,0.5)]">Start Color</span>
-              <input
-                type="color"
-                value="#ebebec"
-                onChange={(e) => updateElementStyle(element!.id, {
-                  fillGradient: {
-                    type: 'linear',
-                    angle: 135,
-                    stops: [{ offset: 0, color: e.target.value }, { offset: 100, color: '#141413' }]
-                  }
-                })}
-                className="w-6 h-6 rounded cursor-pointer bg-transparent"
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] text-[rgba(235,235,236,0.5)]">End Color</span>
-              <input
-                type="color"
-                value="#141413"
-                onChange={(e) => updateElementStyle(element!.id, {
-                  fillGradient: {
-                    type: 'linear',
-                    angle: 135,
-                    stops: [{ offset: 0, color: '#ebebec' }, { offset: 100, color: e.target.value }]
-                  }
-                })}
-                className="w-6 h-6 rounded cursor-pointer bg-transparent"
-              />
-            </div>
-          </div>
-        )}
-
-        {fillType === 'image' && !textFill && (
-          <div className="space-y-2">
-            <button
-              onClick={() => imageUploadInputRef.current?.click()}
-              className="w-full flex items-center justify-center gap-1.5 bg-[rgba(235,235,236,0.06)] hover:bg-[rgba(235,235,236,0.12)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.1)] text-xs font-semibold transition-colors"
-            >
-              <Icons.Upload size={13} />
-              Upload from Device
-            </button>
-            <input
-              ref={imageUploadInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageFillUpload}
-              className="hidden"
-            />
-            <div className="flex items-center gap-2 text-[10px] text-[rgba(235,235,236,0.35)]">
-              <div className="flex-1 h-px bg-[rgba(235,235,236,0.08)]" />
-              or paste a URL
-              <div className="flex-1 h-px bg-[rgba(235,235,236,0.08)]" />
-            </div>
-            <input
-              type="text"
-              placeholder="https://images.unsplash.com/..."
-              value={element?.semanticProps.src || ''}
-              onChange={(e) => updateElementSemanticProps(element!.id, { src: e.target.value })}
-              className="w-full bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] text-xs font-mono"
-            />
-            {/* Quick preset images */}
-            <div className="grid grid-cols-3 gap-1 pt-1">
-              {[
-                { label: 'Avatar 1', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80' },
-                { label: 'Avatar 2', url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80' },
-                { label: 'Minimal', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80' }
-              ].map(img => (
-                <button
-                  key={img.label}
-                  onClick={() => updateElementSemanticProps(element!.id, { src: img.url })}
-                  className="text-[10px] py-1 bg-[rgba(235,235,236,0.06)] hover:bg-[rgba(235,235,236,0.12)] rounded text-[rgba(235,235,236,0.7)]"
-                >
-                  {img.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 6. STROKE & BORDER */}
-      <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
-        <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
-          Stroke
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={toHex(parseColorToRgba(style.borderColor || '#ebebec'))}
-            onChange={(e) => {
-              const { a } = parseColorToRgba(style.borderColor);
-              updateElementStyle(element!.id, { borderColor: toRgbaString({ ...parseColorToRgba(e.target.value), a }) });
-            }}
-            className="w-7 h-7 rounded border-none cursor-pointer bg-transparent"
-          />
-          <ColorAlphaSlider
-            color={style.borderColor}
-            onChange={(next) => updateElementStyle(element!.id, { borderColor: next })}
-          />
-          <NumberInput
-            value={style.borderWidth || 0}
-            onChange={(e) => updateElementStyle(element!.id, { borderWidth: Number(e.target.value) })}
-            placeholder="Width"
-            className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] font-mono text-xs text-right outline-none"
-          />
-          <select
-            value={style.borderStyle || 'solid'}
-            onChange={(e) => updateElementStyle(element!.id, { borderStyle: e.target.value as any })}
-            className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] text-xs flex-1 outline-none"
-          >
-            <option value="solid" className="bg-[rgb(20,20,19)]">Solid</option>
-            <option value="dashed" className="bg-[rgb(20,20,19)]">Dashed</option>
-            <option value="dotted" className="bg-[rgb(20,20,19)]">Dotted</option>
-          </select>
-        </div>
-      </div>
+      {/* 6. STROKE - a list too */}
+      <StrokesSection element={element!} update={(st) => updateElementStyle(element!.id, st)} />
 
       {/* 7. EFFECTS */}
       {element && <EffectsSection element={element} />}
+
+      {/* 7b. EXPORT */}
+      <ExportSection name={element!.name} exports={style.exports} onChange={(ex) => updateElementStyle(element!.id, { exports: ex })}
+                     node={() => document.querySelector(`[data-el-id="${element!.id}"]`)} />
 
       {/* 8. TYPOGRAPHY (IF TEXT-ENABLED) */}
       {element?.semanticProps.label !== undefined && (
