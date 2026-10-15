@@ -14,6 +14,7 @@ import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
 import { Rulers, RULER } from './Rulers';
 import { wrapperSize, isTextEl } from '../../lib/styleCss';
 import { putAsset } from '../../lib/assets';
+import { PenOverlay } from './PenOverlay';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -98,8 +99,6 @@ export const InfiniteCanvas: React.FC = () => {
     finishDrawingShape,
     reparentElement,
     isVectorEditing,
-    vectorTool,
-    addVectorPoint,
     setInlineEditingElementId,
     addElement,
     addPredefinedElement,
@@ -127,7 +126,7 @@ export const InfiniteCanvas: React.FC = () => {
     guides,
     updateElementPosition,
     updateCanvasSettings
-  } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedElementIds: s.selectedElementIds, viewport: s.viewport, setViewport: s.setViewport, panBy: s.panBy, activeTool: s.activeTool, setActiveTool: s.setActiveTool, clearSelection: s.clearSelection, isWiring: s.isWiring, updateWireMousePos: s.updateWireMousePos, cancelWiring: s.cancelWiring, canvasSettings: s.canvasSettings, dropComponentAt: s.dropComponentAt, moveElement: s.moveElement, moveFrame: s.moveFrame, selectElement: s.selectElement, selectFrame: s.selectFrame, editorMode: s.editorMode, finishDrawingShape: s.finishDrawingShape, reparentElement: s.reparentElement, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, addVectorPoint: s.addVectorPoint, setInlineEditingElementId: s.setInlineEditingElementId, addElement: s.addElement, addPredefinedElement: s.addPredefinedElement, comments: s.comments, addComment: s.addComment, setSelection: s.setSelection, pasteElements: s.pasteElements, duplicateElement: s.duplicateElement, deleteElement: s.deleteElement, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleElementHidden: s.toggleElementHidden, toggleElementLock: s.toggleElementLock, zoomToFit: s.zoomToFit, selectedFrameIds: s.selectedFrameIds, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, alignSelectedElements: s.alignSelectedElements, groupSelectedIntoAutoLayout: s.groupSelectedIntoAutoLayout, createMasterComponent: s.createMasterComponent, bringForward: s.bringForward, sendBackward: s.sendBackward, guides: s.guides, updateElementPosition: s.updateElementPosition, updateCanvasSettings: s.updateCanvasSettings })));
+  } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedElementIds: s.selectedElementIds, viewport: s.viewport, setViewport: s.setViewport, panBy: s.panBy, activeTool: s.activeTool, setActiveTool: s.setActiveTool, clearSelection: s.clearSelection, isWiring: s.isWiring, updateWireMousePos: s.updateWireMousePos, cancelWiring: s.cancelWiring, canvasSettings: s.canvasSettings, dropComponentAt: s.dropComponentAt, moveElement: s.moveElement, moveFrame: s.moveFrame, selectElement: s.selectElement, selectFrame: s.selectFrame, editorMode: s.editorMode, finishDrawingShape: s.finishDrawingShape, reparentElement: s.reparentElement, isVectorEditing: s.isVectorEditing, setInlineEditingElementId: s.setInlineEditingElementId, addElement: s.addElement, addPredefinedElement: s.addPredefinedElement, comments: s.comments, addComment: s.addComment, setSelection: s.setSelection, pasteElements: s.pasteElements, duplicateElement: s.duplicateElement, deleteElement: s.deleteElement, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleElementHidden: s.toggleElementHidden, toggleElementLock: s.toggleElementLock, zoomToFit: s.zoomToFit, selectedFrameIds: s.selectedFrameIds, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, alignSelectedElements: s.alignSelectedElements, groupSelectedIntoAutoLayout: s.groupSelectedIntoAutoLayout, createMasterComponent: s.createMasterComponent, bringForward: s.bringForward, sendBackward: s.sendBackward, guides: s.guides, updateElementPosition: s.updateElementPosition, updateCanvasSettings: s.updateCanvasSettings })));
 
   useEffect(() => {
     const el = canvasContainerRef.current;
@@ -370,13 +369,6 @@ export const InfiniteCanvas: React.FC = () => {
 
   // Mouse pan / draw handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    // Vector Pen tool point adding
-    if (isVectorEditing && vectorTool === 'pen') {
-      const { x, y } = getWorldCoords(e.clientX, e.clientY);
-      addVectorPoint(x, y);
-      return;
-    }
-
     if (ctxMenu) setCtxMenu(null);
 
     // Hand tool, middle mouse button, or space held
@@ -957,6 +949,9 @@ export const InfiniteCanvas: React.FC = () => {
         return <CanvasContextMenu x={ctxMenu.x} y={ctxMenu.y} roomW={ctxMenu.w} roomH={ctxMenu.h}
                                   items={items} onClose={() => setCtxMenu(null)} />;
       })()}
+
+      {/* The pen: over the canvas, under the toolbar */}
+      {isVectorEditing && <PenOverlay toWorld={getWorldCoords} spaceDown={spaceDown} />}
 
       {/* Floating Centered Bottom Toolbar */}
       <BottomToolbar />

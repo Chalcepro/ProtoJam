@@ -113,6 +113,10 @@ export interface VectorData {
   points: VectorPoint[];
   faces: VectorFace[];
   isClosed: boolean;
+  // The size the points were drawn at; the path is scaled from this to the
+  // element's width/height, so resizing a finished path stretches it.
+  w?: number;
+  h?: number;
 }
 
 export interface AutoLayoutSettings {

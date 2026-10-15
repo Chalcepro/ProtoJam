@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
+import { vectorPathD } from '../../lib/vector';
 
 interface TransformSelectionBoxProps {
   element: UIElement;
@@ -154,11 +155,10 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
     if (type === 'vectorPath') {
       const vectorData = style.vectorData;
       if (vectorData && vectorData.points.length > 0) {
-        let pathD = '';
-        vectorData.points.forEach((pt, i) => { pathD += (i === 0 ? 'M ' : 'L ') + `${pt.x} ${pt.y} `; });
-        if (vectorData.isClosed) pathD += 'Z';
+        const pathD = vectorPathD(vectorData);
         return (
-          <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
+          <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
+               viewBox={vectorData.w ? `0 0 ${vectorData.w} ${vectorData.h}` : undefined} preserveAspectRatio="none">
             <path d={pathD} fill="none" stroke={SELECTION_COLOR} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
           </svg>
         );

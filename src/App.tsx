@@ -40,6 +40,8 @@ export const App: React.FC = () => {
       const k = e.key.toLowerCase();
       const done = () => e.preventDefault();
 
+      // the pen owns the plain keys while it is out (see PenOverlay)
+      if (s.isVectorEditing && !mod) return;
       if (s.isPlaying) {
         if (e.key === 'Escape' || (!mod && k === 'p')) { done(); s.stopPlaying(); }
         return;

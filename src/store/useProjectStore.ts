@@ -1,3 +1,4 @@
+import { vectorBounds } from '../lib/vector';
 import { create } from 'zustand';
 import {
   DeviceFrame,
@@ -91,6 +92,9 @@ export interface ProjectState {
   editingVectorId: string | null;
   vectorTool: 'pen' | 'select' | 'bucket' | 'bend';
   activeVectorData: VectorData | null;
+  // The path as it was before editing started (null for a new one), so
+  // cancelling puts it back.
+  vectorOriginal: UIElement | null;
 
   // Direct Inline Text Editing
   inlineEditingElementId: string | null;
@@ -203,6 +207,7 @@ export interface ProjectState {
   startVectorEditing: (elementId?: string, initialX?: number, initialY?: number) => void;
   setVectorTool: (tool: 'pen' | 'select' | 'bucket' | 'bend') => void;
   addVectorPoint: (x: number, y: number) => void;
+  removeVectorPoint: (pointId: string) => void;
   updateVectorPoint: (pointId: string, updates: Partial<VectorPoint>) => void;
   closeVectorPath: () => void;
   fillVectorFace: (pointIds?: string[], color?: string) => void;
@@ -379,6 +384,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   editingVectorId: null,
   vectorTool: 'pen',
   activeVectorData: null,
+  vectorOriginal: null,
 
   // Inline text
   inlineEditingElementId: null,
@@ -1372,184 +1378,141 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   // Vector / Pen Tool Mode
-  startVectorEditing: (elementId, initialX, initialY) => {
-    const { elements, viewport } = get();
-    let existingVector = elementId ? elements.find(e => e.id === elementId && e.type === 'vectorPath') : null;
+  //
+  // While a path is edited it sits loose on the canvas at 0,0 with its points
+  // in canvas coordinates, so the pen works in one space. Done fits the
+  // element round the points and drops it into the frame it was drawn in.
+  startVectorEditing: (elementId) => {
+    const { elements, frames } = get();
+    const existing = elementId ? elements.find(e => e.id === elementId && e.type === 'vectorPath') : undefined;
 
-    if (!existingVector) {
-      // Create new vector element
+    if (!existing) {
       const id = `vector-${Date.now()}`;
-      const defaultPt: VectorPoint = {
-        id: 'pt-1',
-        x: initialX ?? 100,
-        y: initialY ?? 100,
-        isCorner: true
-      };
-
-      const initialData: VectorData = {
-        points: [defaultPt],
-        faces: [],
-        isClosed: false
-      };
-
+      const data: VectorData = { points: [], faces: [], isClosed: false };
       const newEl: UIElement = {
-        id,
-        name: 'Vector Path',
-        type: 'vectorPath',
-        interactions: [],
-        style: {
-          x: 0,
-          y: 0,
-          width: 800,
-          height: 600,
-          borderColor: '#ebebec',
-          borderWidth: 2,
-          fillColor: 'transparent',
-          vectorData: initialData
-        },
+        id, name: 'Vector', type: 'vectorPath', interactions: [],
+        style: { x: 0, y: 0, width: 1, height: 1, borderColor: '#ebebec', borderWidth: 2, fillColor: 'transparent', vectorData: data },
         semanticProps: {}
       };
-
       set((state) => ({
         elements: [...state.elements, newEl],
-        isVectorEditing: true,
-        editingVectorId: id,
-        vectorTool: 'pen',
-        activeVectorData: initialData,
-        selectedElementIds: [id],
-        selectedVectorPointIds: ['pt-1'],
-        activeTool: 'pen'
+        isVectorEditing: true, editingVectorId: id, vectorTool: 'pen', activeVectorData: data,
+        vectorOriginal: null, selectedElementIds: [id], selectedFrameIds: [], selectedVectorPointIds: [], activeTool: 'pen'
       }));
-    } else {
-      set({
-        isVectorEditing: true,
-        editingVectorId: elementId!,
-        vectorTool: 'select',
-        activeVectorData: existingVector.style.vectorData || { points: [], faces: [], isClosed: false },
-        selectedElementIds: [elementId!],
-        activeTool: 'pen'
-      });
+      return;
     }
+
+    // back into canvas coordinates: undo the fit and the scaling
+    const vd = existing.style.vectorData || { points: [], faces: [], isClosed: false };
+    const f = frames.find(fr => fr.id === existing.parentId);
+    const ox = (f?.x || 0) + Number(existing.style.x), oy = (f?.y || 0) + Number(existing.style.y);
+    const sx = vd.w ? Number(existing.style.width) / vd.w : 1, sy = vd.h ? Number(existing.style.height) / vd.h : 1;
+    const scaleH = (h?: { x: number; y: number }) => h && { x: h.x * sx, y: h.y * sy };
+    const data: VectorData = {
+      ...vd, w: undefined, h: undefined,
+      points: vd.points.map(p => ({ ...p, x: ox + p.x * sx, y: oy + p.y * sy, handleIn: scaleH(p.handleIn), handleOut: scaleH(p.handleOut) }))
+    };
+    set((state) => ({
+      elements: state.elements.map(e => e.id === existing.id
+        ? { ...e, parentId: undefined, style: { ...e.style, x: 0, y: 0, width: 1, height: 1, vectorData: data } } : e),
+      frames: state.frames.map(fr => fr.elementIds.includes(existing.id) ? { ...fr, elementIds: fr.elementIds.filter(i => i !== existing.id) } : fr),
+      isVectorEditing: true, editingVectorId: existing.id, vectorTool: 'select', activeVectorData: data,
+      vectorOriginal: existing, selectedElementIds: [existing.id], selectedVectorPointIds: [], activeTool: 'pen'
+    }));
   },
 
   setVectorTool: (tool) => set({ vectorTool: tool }),
 
   addVectorPoint: (x, y) => {
-    const { editingVectorId, activeVectorData, updateElementStyle } = get();
-    if (!editingVectorId || !activeVectorData) return;
-
-    const newPtId = `pt-${Date.now()}`;
-    const newPt: VectorPoint = {
-      id: newPtId,
-      x: Math.round(x),
-      y: Math.round(y),
-      isCorner: true
-    };
-
-    const updatedData: VectorData = {
-      ...activeVectorData,
-      points: [...activeVectorData.points, newPt]
-    };
-
-    set({
-      activeVectorData: updatedData,
-      selectedVectorPointIds: [newPtId]
-    });
-
-    updateElementStyle(editingVectorId, { vectorData: updatedData });
+    const id = get().editingVectorId;
+    const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
+    if (!id || !vd) return;
+    const pt: VectorPoint = { id: `pt-${Date.now()}-${vd.points.length}`, x: Math.round(x), y: Math.round(y), isCorner: true };
+    const data: VectorData = { ...vd, points: [...vd.points, pt] };
+    set({ activeVectorData: data, selectedVectorPointIds: [pt.id] });
+    get().updateElementStyle(id, { vectorData: data });
   },
 
   updateVectorPoint: (pointId, updates) => {
-    const { editingVectorId, activeVectorData, updateElementStyle } = get();
-    if (!editingVectorId || !activeVectorData) return;
-
-    const updatedData: VectorData = {
-      ...activeVectorData,
-      points: activeVectorData.points.map(p => p.id === pointId ? { ...p, ...updates } : p)
-    };
-
-    set({ activeVectorData: updatedData });
-    updateElementStyle(editingVectorId, { vectorData: updatedData });
+    const id = get().editingVectorId;
+    const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
+    if (!id || !vd) return;
+    const data: VectorData = { ...vd, points: vd.points.map(p => p.id === pointId ? { ...p, ...updates } : p) };
+    set({ activeVectorData: data });
+    get().updateElementStyle(id, { vectorData: data });
   },
 
+  removeVectorPoint: (pointId) => {
+    const id = get().editingVectorId;
+    const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
+    if (!id || !vd) return;
+    const points = vd.points.filter(p => p.id !== pointId);
+    const data: VectorData = { ...vd, points, isClosed: vd.isClosed && points.length > 2 };
+    set({ activeVectorData: data, selectedVectorPointIds: points.length ? [points[points.length - 1].id] : [] });
+    get().updateElementStyle(id, { vectorData: data });
+  },
+
+  // Joins the last point back to the first. No fill is added: as in Figma,
+  // a closed path gets a fill from the Fill panel (or the paint bucket).
   closeVectorPath: () => {
-    const { editingVectorId, activeVectorData, updateElementStyle } = get();
-    if (!editingVectorId || !activeVectorData || activeVectorData.points.length < 3) return;
-
-    // Auto-create closed face
-    const faceId = `face-${Date.now()}`;
-    const newFace: VectorFace = {
-      id: faceId,
-      pointIds: activeVectorData.points.map(p => p.id),
-      filled: true,
-      fillColor: '#ebebec'
-    };
-
-    const updatedData: VectorData = {
-      ...activeVectorData,
-      isClosed: true,
-      faces: [...activeVectorData.faces, newFace]
-    };
-
-    set({ activeVectorData: updatedData });
-    updateElementStyle(editingVectorId, { vectorData: updatedData, fillColor: '#ebebec' });
+    const id = get().editingVectorId;
+    const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
+    if (!id || !vd || vd.points.length < 3) return;
+    const data: VectorData = { ...vd, isClosed: true };
+    set({ activeVectorData: data });
+    get().updateElementStyle(id, { vectorData: data });
   },
 
-  fillVectorFace: (pointIds, color = '#ebebec') => {
-    const { editingVectorId, activeVectorData, updateElementStyle } = get();
-    if (!editingVectorId || !activeVectorData) return;
-
-    const targetPoints = pointIds || activeVectorData.points.map(p => p.id);
-    const faceId = `face-${Date.now()}`;
-    const newFace: VectorFace = {
-      id: faceId,
-      pointIds: targetPoints,
-      filled: true,
-      fillColor: color
-    };
-
-    const updatedData: VectorData = {
-      ...activeVectorData,
-      isClosed: true,
-      faces: [...activeVectorData.faces, newFace]
-    };
-
-    set({ activeVectorData: updatedData });
-    updateElementStyle(editingVectorId, { vectorData: updatedData, fillColor: color });
+  fillVectorFace: (_pointIds, color = '#ebebec') => {
+    const id = get().editingVectorId;
+    const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
+    if (!id || !vd || vd.points.length < 3) return;
+    const data: VectorData = { ...vd, isClosed: true };
+    set({ activeVectorData: data });
+    get().updateElementStyle(id, { vectorData: data, fillColor: color });
   },
 
-  toggleFaceFill: (faceId) => {
-    const { editingVectorId, activeVectorData, updateElementStyle } = get();
-    if (!editingVectorId || !activeVectorData) return;
-
-    const updatedData: VectorData = {
-      ...activeVectorData,
-      faces: activeVectorData.faces.map(f => !faceId || f.id === faceId ? { ...f, filled: !f.filled } : f)
-    };
-
-    set({ activeVectorData: updatedData });
-    updateElementStyle(editingVectorId, { vectorData: updatedData });
+  toggleFaceFill: () => {
+    const id = get().editingVectorId;
+    const el = id && get().elements.find(e => e.id === id);
+    if (!el) return;
+    const filled = el.style.fillColor && el.style.fillColor !== 'transparent';
+    get().updateElementStyle(el.id, { fillColor: filled ? 'transparent' : '#ebebec' });
   },
 
   finishVectorEditing: () => {
-    set({
-      isVectorEditing: false,
-      editingVectorId: null,
-      activeVectorData: null,
-      selectedVectorPointIds: [],
-      activeTool: 'select'
-    });
-    get().pushHistory();
+    const { editingVectorId: id, elements, frames } = get();
+    const el = id ? elements.find(e => e.id === id) : undefined;
+    const vd = el?.style.vectorData;
+    const end = { isVectorEditing: false, editingVectorId: null, activeVectorData: null, vectorOriginal: null, selectedVectorPointIds: [], activeTool: 'select' as const };
+    if (!el || !vd || vd.points.length < 2) {
+      // nothing drawn worth keeping
+      set((state) => ({ ...end, elements: state.elements.filter(e => e.id !== id), selectedElementIds: [] }));
+      return;
+    }
+    const b = vectorBounds(vd);
+    const f = frames.find(fr => !fr.hidden && !fr.isGroup && b.x0 >= fr.x && b.y0 >= fr.y && b.x0 <= fr.x + fr.width && b.y0 <= fr.y + fr.height);
+    const data: VectorData = { ...vd, w: b.w, h: b.h, points: vd.points.map(p => ({ ...p, x: p.x - b.x0, y: p.y - b.y0 })) };
+    set((state) => ({
+      ...end,
+      elements: state.elements.map(e => e.id === id ? {
+        ...e, parentId: f?.id,
+        style: { ...e.style, x: Math.round(b.x0 - (f?.x || 0)), y: Math.round(b.y0 - (f?.y || 0)), width: Math.round(b.w), height: Math.round(b.h), vectorData: data }
+      } : e),
+      frames: f ? state.frames.map(fr => fr.id === f.id ? { ...fr, elementIds: [...fr.elementIds, id!] } : fr) : state.frames,
+      selectedElementIds: [id!]
+    }));
   },
 
   cancelVectorEditing: () => {
-    set({
-      isVectorEditing: false,
-      editingVectorId: null,
-      activeVectorData: null,
-      selectedVectorPointIds: [],
-      activeTool: 'select'
-    });
+    const { editingVectorId: id, vectorOriginal: orig } = get();
+    set((state) => ({
+      isVectorEditing: false, editingVectorId: null, activeVectorData: null, vectorOriginal: null,
+      selectedVectorPointIds: [], activeTool: 'select',
+      elements: orig ? state.elements.map(e => e.id === id ? orig : e) : state.elements.filter(e => e.id !== id),
+      frames: orig?.parentId ? state.frames.map(fr => fr.id === orig.parentId && !fr.elementIds.includes(orig.id) ? { ...fr, elementIds: [...fr.elementIds, orig.id] } : fr) : state.frames,
+      selectedElementIds: orig ? [orig.id] : []
+    }));
   },
 
   // Prototype Actions

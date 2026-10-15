@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { effectsCss, textResizeOf } from '../../lib/styleCss';
 import { VideoView } from './VideoView';
+import { vectorPathD } from '../../lib/vector';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -266,60 +267,35 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       );
 
     // ---------------- VECTOR PATH (PEN TOOL) ----------------
-    case 'vectorPath':
-      const vectorData = style.vectorData;
-      if (!vectorData || vectorData.points.length === 0) {
-        return <div style={getCommonStyles()} />;
-      }
-
-      // Generate SVG path string
-      let pathD = '';
-      vectorData.points.forEach((pt, i) => {
-        if (i === 0) {
-          pathD += `M ${pt.x} ${pt.y} `;
-        } else {
-          pathD += `L ${pt.x} ${pt.y} `;
-        }
-      });
-      if (vectorData.isClosed) {
-        pathD += 'Z';
-      }
-
+    // Drawn at the size it was made (vectorData.w/h) and stretched to the
+    // element's box, the stroke staying its own width. Points and handles are
+    // drawn by the pen overlay while editing, never here.
+    case 'vectorPath': {
+      const vd = style.vectorData;
+      if (!vd || !vd.points.length) return <div />;
+      const filled = vd.isClosed && style.fillColor && style.fillColor !== 'transparent';
       return (
-        <svg className="w-full h-full overflow-visible pointer-events-none" onClick={handleClick}>
-          {/* Faces */}
-          {vectorData.faces.map(face => (
-            <path
-              key={face.id}
-              d={pathD}
-              fill={face.filled ? (face.fillColor || style.fillColor || '#ebebec') : 'none'}
-              opacity={face.fillOpacity || 1}
-            />
-          ))}
-
-          {/* Stroke Path */}
+        <svg width="100%" height="100%" overflow="visible" onClick={handleClick}
+             // double-click a selected path to edit its points
+             onDoubleClick={() => {
+               const st = useProjectStore.getState();
+               if (!isInteractive && st.selectedElementIds.includes(element.id)) st.startVectorEditing(element.id);
+             }}
+             viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none"
+             style={{ display: 'block', opacity: style.opacity ?? 1, transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined, ...effectsCss(style, false), boxShadow: undefined }}>
           <path
-            d={pathD}
-            fill={vectorData.faces.length > 0 ? 'none' : (style.fillColor || 'none')}
-            stroke={style.borderColor || '#ebebec'}
-            strokeWidth={style.borderWidth || 2}
-            strokeDasharray={style.borderStyle === 'dashed' ? '6 4' : undefined}
+            d={vectorPathD(vd)}
+            fill={filled ? style.fillColor : 'none'}
+            stroke={style.borderWidth === 0 ? 'none' : (style.borderColor || '#ebebec')}
+            strokeWidth={style.borderWidth ?? 2}
+            strokeLinecap={style.strokeCap || 'round'}
+            strokeLinejoin={style.strokeJoin || 'round'}
+            strokeDasharray={style.borderStyle === 'dashed' ? '6 4' : style.borderStyle === 'dotted' ? '1 4' : undefined}
+            vectorEffect="non-scaling-stroke"
           />
-
-          {/* Points */}
-          {vectorData.points.map((pt, i) => (
-            <circle
-              key={pt.id}
-              cx={pt.x}
-              cy={pt.y}
-              r="4"
-              fill="rgb(235, 235, 236)"
-              stroke="rgb(20, 20, 19)"
-              strokeWidth="1.5"
-            />
-          ))}
         </svg>
       );
+    }
 
     // ---------------- TEXT / HEADING ----------------
     // Edited in place, in its own font and size - the box you see is the box
