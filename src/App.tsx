@@ -134,7 +134,11 @@ export const App: React.FC = () => {
       };
       if (k === 'p') { done(); s.startPlaying(); }
       else if (k === 'w') s.setEditorMode(s.editorMode === 'prototype' ? 'design' : 'prototype');
-      else if (e.key === 'Enter' && !s.selectedElementIds.length) return;
+      else if (e.key === 'Enter') {
+        // Enter on one shape or vector: edit its points
+        const one = s.selectedElementIds.length === 1 ? s.elements.find(x => x.id === s.selectedElementIds[0]) : undefined;
+        if (one && ['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(one.type)) { done(); s.editShapePoints(one.id); }
+      }
       else if (tools[k]) s.setActiveTool(tools[k]);
     };
 

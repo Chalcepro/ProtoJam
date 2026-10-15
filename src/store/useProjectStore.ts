@@ -224,6 +224,9 @@ export interface ProjectState {
   booleanSelection: (op: 'union' | 'subtract' | 'intersect' | 'exclude') => void;
   // Ctrl+E: the selected shapes / boolean groups as one plain vector.
   flattenSelection: () => void;
+  // Double-click / Enter on a shape: its points, ready to edit (a rectangle,
+  // circle, triangle or star becomes a vector first, as in Figma).
+  editShapePoints: (id: string) => void;
   // The selected shapes become frames (things can go inside; Clip content on).
   convertToFrame: () => void;
   // Put an element into an auto-layout parent at a place in its row / column.
@@ -1612,6 +1615,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }),
       isSaved: false
     }));
+  },
+
+  editShapePoints: (id) => {
+    const el = get().elements.find(e => e.id === id);
+    if (!el) return;
+    if (el.type === 'vectorPath') { get().startVectorEditing(id); return; }
+    if (!['rectangle', 'ellipse', 'polygon', 'star'].includes(el.type)) return;
+    set({ selectedElementIds: [id], selectedFrameIds: [] });
+    get().flattenSelection();
+    const vid = get().selectedElementIds[0];
+    // keep its name
+    get().updateElement(vid, { name: el.name });
+    get().startVectorEditing(vid);
   },
 
   flattenSelection: () => {

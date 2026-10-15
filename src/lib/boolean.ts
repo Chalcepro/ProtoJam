@@ -156,3 +156,18 @@ export const dToVectorData = (d: string): VectorData => {
   const last = paths.pop() || { points: [], isClosed: false };
   return { points: last.points, isClosed: last.isClosed, subpaths: paths, faces: [] };
 };
+
+// The closed path of a vector under a point (the smallest, when they nest),
+// as the ids of its points - for dragging a shape by its inside.
+export const closedPathAt = (vd: VectorData, x: number, y: number): string[] | null => {
+  setup();
+  let best: { ids: string[]; area: number } | null = null;
+  for (const p of vectorPaths(vd)) {
+    if (!p.isClosed || p.points.length < 3) continue;
+    const item = new paper.Path(vectorPathD({ points: p.points, isClosed: true, faces: [] }));
+    const inside = item.contains(new paper.Point(x, y)), area = Math.abs(item.area);
+    item.remove();
+    if (inside && (!best || area < best.area)) best = { ids: p.points.map(q => q.id), area };
+  }
+  return best?.ids ?? null;
+};
