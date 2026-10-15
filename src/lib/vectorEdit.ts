@@ -115,3 +115,55 @@ const bez = (P0: { x: number; y: number }, P1: { x: number; y: number }, P2: { x
     y: u * u * u * P0.y + 3 * u * u * t * P1.y + 3 * u * t * t * P2.y + t * t * t * P3.y
   };
 };
+
+// ---- segments (the lines between two points) -------------------------------
+
+export type Segment = { a: VectorPoint; b: VectorPoint };
+
+// Every line of the vector, each named by its two end points.
+export const segmentsOf = (vd: VectorData): Segment[] =>
+  pathsOf(vd).flatMap(p => {
+    const n = p.points.length, out: Segment[] = [];
+    for (let i = 0; i < (p.isClosed ? n : n - 1) && n > 1; i++) out.push({ a: p.points[i], b: p.points[(i + 1) % n] });
+    return out;
+  });
+
+export const segmentMid = (s: Segment) => {
+  const [P0, P1, P2, P3] = ctrl(s.a, s.b);
+  return bez(P0, P1, P2, P3, 0.5);
+};
+
+export const segmentD = (s: Segment, map: (x: number, y: number) => [number, number] = (x, y) => [x, y]) => {
+  const [P0, P1, P2, P3] = ctrl(s.a, s.b).map(p => map(p.x, p.y));
+  return `M ${P0[0]} ${P0[1]} C ${P1[0]} ${P1[1]} ${P2[0]} ${P2[1]} ${P3[0]} ${P3[1]}`;
+};
+
+// Take one line out, as Figma does: the path splits there (a closed one
+// opens), the end points stay while another line still uses them, and a
+// point left with no line at all goes.
+export const deleteSegment = (vd: VectorData, aId: string, bId: string): VectorData => {
+  const out: Path[] = [];
+  for (const p of pathsOf(vd)) {
+    const n = p.points.length;
+    const i = p.points.findIndex((q, k) => q.id === aId && p.points[(k + 1) % n]?.id === bId && (p.isClosed || k < n - 1));
+    if (i < 0) { out.push(p); continue; }
+    // the line leaving the end loses its handle there
+    const cut = (q: VectorPoint, side: 'handleIn' | 'handleOut') => ({ ...q, [side]: undefined });
+    if (p.isClosed) {
+      // open it at the line: from b round to a
+      const pts = [...p.points.slice(i + 1), ...p.points.slice(0, i + 1)];
+      pts[0] = cut(pts[0], 'handleIn'); pts[pts.length - 1] = cut(pts[pts.length - 1], 'handleOut');
+      out.push({ points: pts, isClosed: false });
+    } else {
+      const left = p.points.slice(0, i + 1), right = p.points.slice(i + 1);
+      left[left.length - 1] = cut(left[left.length - 1], 'handleOut');
+      right[0] = cut(right[0], 'handleIn');
+      out.push({ points: left, isClosed: false }, { points: right, isClosed: false });
+    }
+  }
+  // a point on its own is not a line any more
+  const kept = out.filter(p => p.points.length > 1);
+  const last = kept[kept.length - 1];
+  // the last path is the one the pen would carry on; keep it open-ended
+  return { ...vd, subpaths: kept.slice(0, -1), points: last ? last.points : [], isClosed: last ? last.isClosed : false, regions: {} };
+};

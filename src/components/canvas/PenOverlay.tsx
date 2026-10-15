@@ -3,7 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
 import { regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
-import { insertPoint, segmentAt } from '../../lib/vectorEdit';
+import { deleteSegment, insertPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
 const ACCENT = '#ff6b4a';
 const SNAP = '#3ddc97';     // a handle that just snapped into line / length
@@ -13,8 +13,10 @@ const HIT = 8;   // px on screen
 // above it, so their clicks never land as points).
 //   Pen:  click = corner point, click-drag = curve, click the first point =
 //         close, Shift = 45 degree steps.
-//   Edit: drag points (Shift-click picks several), click a line to add a
-//         point there, drag curve handles. The two handles stay in line (lengths
+//   Edit: click a point to pick and move it, Shift-click or drag a box for
+//         several. Ctrl-click a point: sharp <-> smooth; Ctrl-drag: pull out
+//         its curve. The dot mid-line adds a point; click a line to pick it,
+//         Delete takes it out (the path splits there). The two handles stay in line (lengths
 //         free); Alt-drag moves one alone; a broken pair snaps back into line
 //         within 3 degrees, and lengths snap equal within 4px (shown green).
 //   Bend: click a point to switch it between sharp and smooth.
@@ -30,11 +32,16 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   const paths = vd ? vectorPaths(vd) : [];   // every path, finished ones too
   const allPoints = paths.flatMap(p => p.points);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean;
+  const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out' | 'pull'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean;
                        // moving points: where each selected one started
                        orig?: Map<string, { x: number; y: number }> } | null>(null);
   // what the last handle move snapped to, so the handles can show it
   const [snapped, setSnapped] = useState(false);
+  // a line picked in Edit (to delete), named by its two end points
+  const [segSel, setSegSel] = useState<{ a: string; b: string } | null>(null);
+  // box select of points, canvas units
+  const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
+  const segs = vd && vectorTool === 'select' ? segmentsOf(vd) : [];
   const z = viewport.zoom;
   const sx = (x: number) => x * z + viewport.x, sy = (y: number) => y * z + viewport.y;
   const selected = allPoints.find(p => p.id === selectedVectorPointIds[0]);
@@ -97,14 +104,38 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     const hit = pointAt(w);
     if (!hit) {
       if (vectorTool !== 'select' || !vd) return;
-      // on a line: a new point there (the curve keeps its shape), ready to drag
-      const seg = segmentAt(vd, w.x, w.y, HIT / z);
-      if (!seg) { useProjectStore.setState({ selectedVectorPointIds: [] }); return; }
-      const r = insertPoint(vd, seg.path, seg.seg, seg.t);
-      useProjectStore.getState().setVectorData(r.vd);
-      setSelected(r.id);
-      const np = vectorPaths(r.vd).flatMap(p => p.points).find(p => p.id === r.id)!;
-      drag.current = { kind: 'point', id: r.id, ox: w.x, oy: w.y, alt: false, orig: new Map([[r.id, { x: np.x, y: np.y }]]) };
+      // the dot at the middle of a line: a new point there, ready to drag
+      const midSeg = segs.find(sg => near(w, segmentMid(sg)));
+      if (midSeg) {
+        const at = segmentAt(vd, segmentMid(midSeg).x, segmentMid(midSeg).y, 0.5);
+        if (at) {
+          const r = insertPoint(vd, at.path, at.seg, 0.5);
+          useProjectStore.getState().setVectorData(r.vd);
+          setSelected(r.id); setSegSel(null);
+          const np = vectorPaths(r.vd).flatMap(p => p.points).find(p => p.id === r.id)!;
+          drag.current = { kind: 'point', id: r.id, ox: w.x, oy: w.y, alt: false, orig: new Map([[r.id, { x: np.x, y: np.y }]]) };
+        }
+        return;
+      }
+      // elsewhere on a line: pick that line (Delete takes it out)
+      const on = segmentAt(vd, w.x, w.y, HIT / z);
+      if (on) {
+        const sg = segsOfPath(on.path)[on.seg];
+        if (sg) { setSegSel({ a: sg.a.id, b: sg.b.id }); useProjectStore.setState({ selectedVectorPointIds: [] }); }
+        return;
+      }
+      // empty: a box picks the points inside it (Shift keeps the ones picked)
+      setSegSel(null);
+      if (!e.shiftKey) useProjectStore.setState({ selectedVectorPointIds: [] });
+      setBox({ x0: w.x, y0: w.y, x1: w.x, y1: w.y, add: e.shiftKey });
+      return;
+    }
+    setSegSel(null);
+    // Ctrl on a point: the curve tool - click switches sharp / smooth, drag
+    // pulls the curve handles out of it
+    if ((e.ctrlKey || e.metaKey) && vectorTool === 'select') {
+      setSelected(hit.id);
+      drag.current = { kind: 'pull', id: hit.id, ox: hit.x, oy: hit.y, alt: false };
       return;
     }
     // Shift-click adds a point to the selection (or takes it out)
@@ -114,30 +145,45 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       return;
     }
     if (!selectedVectorPointIds.includes(hit.id)) setSelected(hit.id);
-    if (vectorTool === 'bend') {
-      if (hit.handleIn || hit.handleOut) updateVectorPoint(hit.id, { handleIn: undefined, handleOut: undefined, isCorner: true });
-      else {
-        // smooth: handles along the line from the previous to the next point
-        const path = paths.find(p => p.points.includes(hit))!;
-        const pts = path.points, i = pts.indexOf(hit);
-        const prev = pts[i - 1] || (path.isClosed ? pts[pts.length - 1] : hit);
-        const next = pts[i + 1] || (path.isClosed ? pts[0] : hit);
-        const dx = (next.x - prev.x) / 6, dy = (next.y - prev.y) / 6;
-        updateVectorPoint(hit.id, { handleIn: { x: -dx, y: -dy }, handleOut: { x: dx, y: dy }, isCorner: false });
-      }
-      return;
-    }
+    if (vectorTool === 'bend') { toggleSmooth(hit); return; }
     // every selected point moves together
     const ids = selectedVectorPointIds.includes(hit.id) ? selectedVectorPointIds : [hit.id];
     drag.current = { kind: 'point', id: hit.id, ox: w.x, oy: w.y, alt: false,
                      orig: new Map(allPoints.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }])) };
   };
 
+  // a point between sharp (no handles) and smooth (handles along the line
+  // from the point before to the point after)
+  const toggleSmooth = (hit: VectorPoint) => {
+    if (hit.handleIn || hit.handleOut) { updateVectorPoint(hit.id, { handleIn: undefined, handleOut: undefined, isCorner: true }); return; }
+    const path = paths.find(p => p.points.includes(hit))!;
+    const pts = path.points, i = pts.indexOf(hit);
+    const prev = pts[i - 1] || (path.isClosed ? pts[pts.length - 1] : hit);
+    const next = pts[i + 1] || (path.isClosed ? pts[0] : hit);
+    const dx = (next.x - prev.x) / 6, dy = (next.y - prev.y) / 6;
+    updateVectorPoint(hit.id, { handleIn: { x: -dx, y: -dy }, handleOut: { x: dx, y: dy }, isCorner: false });
+  };
+  const segsOfPath = (pi: number) => {
+    const p = paths[pi];
+    if (!p) return [];
+    const n = p.points.length;
+    return Array.from({ length: p.isClosed ? n : n - 1 }, (_, i) => ({ a: p.points[i], b: p.points[(i + 1) % n] }));
+  };
+
   const move = (e: React.PointerEvent) => {
     const w = toWorld(e.clientX, e.clientY);
     setCursor(snap(w, e.shiftKey && vectorTool === 'pen' && !drag.current));
+    if (box) { setBox({ ...box, x1: w.x, y1: w.y }); return; }
     const d = drag.current;
     if (!d) return;
+    if (d.kind === 'pull') {
+      // Ctrl-drag from a point: pull its curve handles out, both sides
+      const hx = w.x - d.ox, hy = w.y - d.oy;
+      if (Math.hypot(hx, hy) * z < 3) return;
+      d.alt = true;   // marks it as a drag, not a click
+      updateVectorPoint(d.id, { handleOut: { x: hx, y: hy }, handleIn: { x: -hx, y: -hy }, isCorner: false });
+      return;
+    }
     if (d.kind === 'point') {
       d.orig?.forEach((o, id) => updateVectorPoint(id, { x: Math.round(o.x + w.x - d.ox), y: Math.round(o.y + w.y - d.oy) }));
       return;
@@ -191,8 +237,22 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     return Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < (0.5 * Math.PI) / 180;
   };
 
-  const up = () => { drag.current = null; setSnapped(false); };
+  const up = () => {
+    const d = drag.current;
+    // Ctrl-click without a drag: sharp <-> smooth
+    if (d?.kind === 'pull' && !d.alt) { const pt = allPoints.find(p => p.id === d.id); if (pt) toggleSmooth(pt); }
+    if (box) {
+      const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
+      const inside = allPoints.filter(p => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1).map(p => p.id);
+      const cur = box.add ? useProjectStore.getState().selectedVectorPointIds : [];
+      useProjectStore.setState({ selectedVectorPointIds: Array.from(new Set([...cur, ...inside])) });
+      setBox(null);
+    }
+    drag.current = null; setSnapped(false);
+  };
 
+  const segSelRef = useRef(segSel);
+  segSelRef.current = segSel;
   // keys while the pen is out; caught first so Delete does not delete the path
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -202,6 +262,11 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       const k = e.key.toLowerCase();
       let handled = true;
       if (e.key === 'Enter' || e.key === 'Escape') s.finishVectorEditing();
+      else if ((e.key === 'Backspace' || e.key === 'Delete') && segSelRef.current) {
+        const vd2 = s.elements.find(x => x.id === s.editingVectorId)?.style.vectorData;
+        if (vd2) s.setVectorData(deleteSegment(vd2, segSelRef.current.a, segSelRef.current.b));
+        setSegSel(null);
+      }
       else if (e.key === 'Backspace' || e.key === 'Delete') {
         const pts = s.elements.find(x => x.id === s.editingVectorId)?.style.vectorData?.points || [];
         const ids = s.selectedVectorPointIds.length ? s.selectedVectorPointIds : pts.length ? [pts[pts.length - 1].id] : [];
@@ -250,6 +315,19 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
               ? `M ${sx(last.x)} ${sy(last.y)} Q ${sx(last.x + last.handleOut.x)} ${sy(last.y + last.handleOut.y)} ${sx(cursor.x)} ${sy(cursor.y)}`
               : `M ${sx(last.x)} ${sy(last.y)} L ${sx(cursor.x)} ${sy(cursor.y)}`}
             fill="none" stroke={ACCENT} strokeWidth={1} strokeDasharray="4 3" />
+        )}
+        {/* Edit: a dot at the middle of each line - click it for a new point */}
+        {segs.map(sg => {
+          const m = segmentMid(sg);
+          return <circle key={sg.a.id + sg.b.id} cx={sx(m.x)} cy={sy(m.y)} r={2.5} fill="rgb(20,20,19)" stroke={ACCENT} strokeWidth={1} opacity={0.85} />;
+        })}
+        {segSel && (() => {
+          const sg = segs.find(x => x.a.id === segSel.a && x.b.id === segSel.b);
+          return sg ? <path d={segmentD(sg, (x, y) => [sx(x), sy(y)])} fill="none" stroke={ACCENT} strokeWidth={3} /> : null;
+        })()}
+        {box && (
+          <rect x={sx(Math.min(box.x0, box.x1))} y={sy(Math.min(box.y0, box.y1))} width={Math.abs(box.x1 - box.x0) * z} height={Math.abs(box.y1 - box.y0) * z}
+                fill="rgba(255,107,74,0.08)" stroke={ACCENT} strokeWidth={1} />
         )}
         {selected && handleLines(selected)}
         {vectorTool === 'pen' && last && last !== selected && handleLines(last)}
