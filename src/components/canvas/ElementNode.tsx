@@ -53,6 +53,8 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
     if ((fillW || hugW) && Math.abs(n.offsetWidth - Number(s.width)) >= 1) upd.width = n.offsetWidth;
     if ((fillH || hugH) && Math.abs(n.offsetHeight - Number(s.height)) >= 1) upd.height = n.offsetHeight;
     if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(element.id, upd);
+    // a group's box follows what is in it
+    if (s.isGroup) useProjectStore.getState().fitGroup(element.id);
   });
 
   if (element.hidden) return null;

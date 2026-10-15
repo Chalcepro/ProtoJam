@@ -61,6 +61,9 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Ctrl+[ | Send backward |
 | Ctrl+Shift+] | Bring to front |
 | Ctrl+Shift+[ | Send to back |
+| Ctrl+G | Group the selection (its box always fits what is in it) |
+| Ctrl+Shift+G | Ungroup (also takes things out of a frame) |
+| Ctrl+Alt+G | Wrap the selection in a frame |
 | Shift+A | Auto layout: wrap the selection in a frame (or turn it on for one frame) |
 | Ctrl+Alt+F | Convert the selected shape(s) to a frame |
 

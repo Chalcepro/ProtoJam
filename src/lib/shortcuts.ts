@@ -165,6 +165,18 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     "Send to back"
    ],
    [
+    "Ctrl+G",
+    "Group the selection (its box always fits what is in it)"
+   ],
+   [
+    "Ctrl+Shift+G",
+    "Ungroup (also takes things out of a frame)"
+   ],
+   [
+    "Ctrl+Alt+G",
+    "Wrap the selection in a frame"
+   ],
+   [
     "Shift+A",
     "Auto layout: wrap the selection in a frame (or turn it on for one frame)"
    ],

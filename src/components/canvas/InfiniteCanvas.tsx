@@ -1065,6 +1065,10 @@ export const InfiniteCanvas: React.FC = () => {
           items.push({ label: 'Bring to front', hint: 'Ctrl+Shift+]', run: () => selectedElementIds.forEach(id => bringToFront(id)) });
           items.push({ label: 'Send to back', hint: 'Ctrl+Shift+[', run: () => selectedElementIds.forEach(id => sendToBack(id)) });
           items.push({ divider: true });
+          items.push({ label: 'Group', hint: 'Ctrl+G', run: () => useProjectStore.getState().wrapSelection('group') });
+          items.push({ label: 'Frame selection', hint: 'Ctrl+Alt+G', run: () => useProjectStore.getState().wrapSelection('frame') });
+          if (elements.some(e => selectedElementIds.includes(e.id) && e.type === 'container' && !e.style.booleanOp))
+            items.push({ label: 'Ungroup', hint: 'Ctrl+Shift+G', run: () => useProjectStore.getState().ungroupSelection() });
           items.push({ label: 'Add auto layout', hint: 'Shift+A', run: () => groupSelectedIntoAutoLayout() });
           if (n > 1) {
             const b = (op: 'union' | 'subtract' | 'intersect' | 'exclude') => () => useProjectStore.getState().booleanSelection(op);

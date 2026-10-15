@@ -57,6 +57,8 @@ export const App: React.FC = () => {
       if (e.key === '?' || (mod && e.key === '/')) { done(); window.dispatchEvent(new Event('protojam:shortcuts')); return; }
       if (mod) {
         // Ctrl+Alt+U / S / I / X: union, subtract, intersect, exclude
+        // Ctrl+G group, Ctrl+Alt+G frame, Ctrl+Shift+G ungroup
+        if (k === 'g') { done(); if (e.shiftKey) s.ungroupSelection(); else s.wrapSelection(e.altKey ? 'frame' : 'group'); return; }
         if (e.altKey && k === 'f') { done(); s.convertToFrame(); return; }   // Ctrl+Alt+F: shape -> frame
         if (e.altKey && ({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']) {
           done(); s.booleanSelection(({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']);

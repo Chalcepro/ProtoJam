@@ -272,6 +272,8 @@ export interface ElementStyle {
   effects?: EffectLayer[];
   blendMode?: BlendMode;
   exports?: ExportSetting[];
+  // A group (Ctrl+G): a container whose box always fits what is in it.
+  isGroup?: boolean;
   // A frame made from a shape keeps the shape's outline: drawn as it, and
   // with Clip content on, what is inside is cut to it.
   frameShape?: 'ellipse' | 'polygon' | 'star' | 'vectorPath';

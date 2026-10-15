@@ -229,6 +229,11 @@ export interface ProjectState {
   editShapePoints: (id: string) => void;
   // The selected shapes become frames (things can go inside; Clip content on).
   convertToFrame: () => void;
+  // Ctrl+G group / Ctrl+Alt+G frame the selection; Ctrl+Shift+G ungroup.
+  wrapSelection: (as: 'group' | 'frame') => void;
+  ungroupSelection: () => void;
+  // A group's box made to fit what is in it again (its contents stay put).
+  fitGroup: (id: string) => void;
   // Put an element into an auto-layout parent at a place in its row / column.
   moveToFlow: (id: string, parentId: string, index: number) => void;
   updateVectorPoint: (pointId: string, updates: Partial<VectorPoint>) => void;
@@ -1593,6 +1598,79 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         isSaved: false
       };
     });
+  },
+
+  wrapSelection: (as) => {
+    const { elements, frames, selectedElementIds } = get();
+    const sel = elements.filter(e => selectedElementIds.includes(e.id));
+    if (!sel.length) return;
+    const parentId = sel[0].parentId;
+    const boxes = sel.map(e => absBoxOf(e, elements, frames));
+    const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+    const x1 = Math.max(...boxes.map(b => b.x + b.w)), y1 = Math.max(...boxes.map(b => b.y + b.h));
+    const o = originOf(parentId, elements, frames);
+    const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const box: UIElement = {
+      id, name: as === 'group' ? 'Group' : 'Frame', type: 'container', parentId, interactions: [], semanticProps: {},
+      style: {
+        x: Math.round(x0 - o.x), y: Math.round(y0 - o.y), width: Math.round(x1 - x0), height: Math.round(y1 - y0),
+        fillColor: as === 'frame' ? '#ffffff' : 'transparent', clipContent: as === 'frame', isGroup: as === 'group' || undefined
+      }
+    };
+    const moved = new Set(sel.map(e => e.id));
+    set((state) => {
+      // the group takes the place of the topmost of them; they keep their order
+      const top = Math.max(...state.elements.map((e, i) => moved.has(e.id) ? i : -1));
+      const before = state.elements.slice(0, top + 1).filter(e => !moved.has(e.id));
+      const after = state.elements.slice(top + 1);
+      const kids = state.elements.filter(e => moved.has(e.id)).map(e => {
+        const b = boxes[sel.findIndex(x => x.id === e.id)];
+        return { ...e, parentId: id, style: { ...e.style, x: Math.round(b.x - x0), y: Math.round(b.y - y0) } };
+      });
+      return {
+        elements: [...before, box, ...kids, ...after],
+        frames: state.frames.map(f => ({ ...f, elementIds: [...f.elementIds.filter(e => !moved.has(e)), ...(f.id === parentId ? [id] : [])] })),
+        selectedElementIds: [id], selectedFrameIds: [], isSaved: false
+      };
+    });
+  },
+
+  ungroupSelection: () => {
+    const { elements, frames, selectedElementIds } = get();
+    const boxes = elements.filter(e => selectedElementIds.includes(e.id) && e.type === 'container' && !e.style.booleanOp);
+    if (!boxes.length) return;
+    let next = [...elements];
+    let fr = frames;
+    const freed: string[] = [];
+    for (const g of boxes) {
+      const go = absBoxOf(g, next, fr);
+      const po = originOf(g.parentId, next, fr);
+      const kids = next.filter(e => e.parentId === g.id);
+      // each comes out where it is on the canvas, into the group's parent,
+      // at the group's place in the layer order
+      const out = kids.map(k => ({ ...k, parentId: g.parentId, style: { ...k.style, x: Math.round(go.x + Number(k.style.x) - po.x), y: Math.round(go.y + Number(k.style.y) - po.y) } }));
+      const at = next.findIndex(e => e.id === g.id);
+      next = next.filter(e => e.id !== g.id && !kids.includes(e));
+      next.splice(Math.min(at, next.length), 0, ...out);
+      fr = fr.map(f => f.id === g.parentId ? { ...f, elementIds: [...f.elementIds.filter(x => x !== g.id), ...out.map(k => k.id)] } : f);
+      freed.push(...out.map(k => k.id));
+    }
+    set({ elements: next, frames: fr, selectedElementIds: freed, isSaved: false });
+  },
+
+  fitGroup: (id) => {
+    const { elements } = get();
+    const g = elements.find(e => e.id === id);
+    const kids = elements.filter(e => e.parentId === id && !e.hidden);
+    if (!g || !kids.length) return;
+    const x0 = Math.min(...kids.map(k => Number(k.style.x))), y0 = Math.min(...kids.map(k => Number(k.style.y)));
+    const x1 = Math.max(...kids.map(k => Number(k.style.x) + (Number(k.style.width) || 0))), y1 = Math.max(...kids.map(k => Number(k.style.y) + (Number(k.style.height) || 0)));
+    if (!x0 && !y0 && Math.round(x1) === Number(g.style.width) && Math.round(y1) === Number(g.style.height)) return;
+    set((state) => ({
+      elements: state.elements.map(e =>
+        e.id === id ? { ...e, style: { ...e.style, x: Math.round(Number(g.style.x) + x0), y: Math.round(Number(g.style.y) + y0), width: Math.round(x1 - x0), height: Math.round(y1 - y0) } }
+        : e.parentId === id ? { ...e, style: { ...e.style, x: Math.round(Number(e.style.x) - x0), y: Math.round(Number(e.style.y) - y0) } } : e)
+    }));
   },
 
   convertToFrame: () => {
