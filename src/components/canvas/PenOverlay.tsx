@@ -3,7 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
 import { closedPathAt, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
-import { deleteSegment, joinPoints, insertPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
+import { continueFrom, deleteSegment, isEndPoint, joinPoints, insertPoint, segmentPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
 const ACCENT = '#ff6b4a';
 const SNAP = '#3ddc97';     // a handle that just snapped into line / length
@@ -43,6 +43,21 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   // box select of points, canvas units
   const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
   const segs = vd && vectorTool === 'select' ? segmentsOf(vd) : [];
+  // The pen snaps to a point near the pointer (a bit wider than a click), or
+  // else onto a line; the target is ringed so it is plain what a click does.
+  const penSnap = (w: { x: number; y: number }): { x: number; y: number; point?: VectorPoint } | null => {
+    if (vectorTool !== 'pen' || !vd) return null;
+    const near2 = allPoints.filter(p => p !== points[points.length - 1]).map(p => ({ p, d: Math.hypot(p.x - w.x, p.y - w.y) * z }))
+      .filter(c => c.d <= HIT * 1.6).sort((a, b) => a.d - b.d)[0];
+    if (near2) return { x: near2.p.x, y: near2.p.y, point: near2.p };
+    const on = segmentAt(vd, w.x, w.y, (HIT * 1.2) / z);
+    if (on) {
+      const sg = segsOfPath(on.path)[on.seg];
+      if (sg) { const m = segmentPoint(sg, on.t); return { x: Math.round(m.x), y: Math.round(m.y) }; }
+    }
+    return null;
+  };
+  const [penTarget, setPenTarget] = useState<{ x: number; y: number; point?: VectorPoint } | null>(null);
   // Edit: what the pointer is over, for the cursor (a line or a shape can be dragged)
   const [overMovable, setOverMovable] = useState(false);
   const z = viewport.zoom;
@@ -97,7 +112,21 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       // closing a shape finishes it; the pen carries on with a new one in the
       // same vector (Enter / Esc when done)
       if (points.length > 2 && !vd?.isClosed && near(w, points[0])) { closeVectorPath(); return; }
-      const p = snap(w, e.shiftKey);
+      const tgt = penSnap(w);
+      // on the free end of a line: carry on from it - or, mid-line, join the
+      // line being drawn to it (that line is then done)
+      if (tgt?.point && vd && isEndPoint(vd, tgt.point.id) && !points.includes(tgt.point)) {
+        if (!points.length) { useProjectStore.getState().setVectorData(continueFrom(vd, tgt.point.id)); setSelected(tgt.point.id); return; }
+        const j = joinPoints(vd, points[points.length - 1].id, tgt.point.id);
+        if (j) {
+          // the joined line is finished; the next click starts a new one
+          const merged = { points: j.points, isClosed: j.isClosed };
+          useProjectStore.getState().setVectorData({ ...j, subpaths: [...(j.subpaths || []), merged], points: [], isClosed: false });
+          useProjectStore.setState({ selectedVectorPointIds: [] });
+          return;
+        }
+      }
+      const p = tgt ? { x: tgt.x, y: tgt.y } : snap(w, e.shiftKey);
       addVectorPoint(p.x, p.y);
       const id = useProjectStore.getState().selectedVectorPointIds[0];
       drag.current = { kind: 'new', id, ox: p.x, oy: p.y, alt: false };
@@ -199,7 +228,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
 
   const move = (e: React.PointerEvent) => {
     const w = toWorld(e.clientX, e.clientY);
-    setCursor(snap(w, e.shiftKey && vectorTool === 'pen' && !drag.current));
+    const ps = !drag.current ? penSnap(w) : null;
+    setCursor(ps ? { x: ps.x, y: ps.y } : snap(w, e.shiftKey && vectorTool === 'pen' && !drag.current));
+    setPenTarget(ps);
     if (box) { setBox({ ...box, x1: w.x, y1: w.y }); return; }
     const d = drag.current;
     if (!d) {
@@ -380,6 +411,10 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         {box && (
           <rect x={sx(Math.min(box.x0, box.x1))} y={sy(Math.min(box.y0, box.y1))} width={Math.abs(box.x1 - box.x0) * z} height={Math.abs(box.y1 - box.y0) * z}
                 fill="rgba(255,107,74,0.08)" stroke={ACCENT} strokeWidth={1} />
+        )}
+        {/* where the pen will land: a point, or onto a line */}
+        {vectorTool === 'pen' && penTarget && (
+          <circle cx={sx(penTarget.x)} cy={sy(penTarget.y)} r={penTarget.point ? 8 : 5} fill="none" stroke={SNAP} strokeWidth={2} />
         )}
         {selected && handleLines(selected)}
         {vectorTool === 'pen' && last && last !== selected && handleLines(last)}

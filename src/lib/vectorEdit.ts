@@ -128,6 +128,11 @@ export const segmentsOf = (vd: VectorData): Segment[] =>
     return out;
   });
 
+export const segmentPoint = (s: Segment, t: number) => {
+  const [P0, P1, P2, P3] = ctrl(s.a, s.b);
+  return bez(P0, P1, P2, P3, t);
+};
+
 export const segmentMid = (s: Segment) => {
   const [P0, P1, P2, P3] = ctrl(s.a, s.b);
   return bez(P0, P1, P2, P3, 0.5);
@@ -194,4 +199,20 @@ export const joinPoints = (vd: VectorData, aId: string, bId: string): VectorData
   const out = paths.filter((_, i) => i !== A.pi && i !== B.pi);
   out.push(merged);
   return fromPaths(vd, out);
+};
+
+// An end point of an open path (where a line can be carried on from).
+export const isEndPoint = (vd: VectorData, id: string) =>
+  pathsOf(vd).some(p => !p.isClosed && p.points.length > 0 && (p.points[0].id === id || p.points[p.points.length - 1].id === id));
+
+// The pen carries on from this end: its path becomes the one being drawn,
+// turned round so that end is last.
+export const continueFrom = (vd: VectorData, id: string): VectorData => {
+  const paths = pathsOf(vd).filter(p => p.points.length);
+  const i = paths.findIndex(p => !p.isClosed && (p.points[0].id === id || p.points[p.points.length - 1].id === id));
+  if (i < 0) return vd;
+  let pts = paths[i].points;
+  if (pts[0].id === id && pts.length > 1) pts = [...pts].reverse().map(q => ({ ...q, handleIn: q.handleOut, handleOut: q.handleIn }));
+  const rest = paths.filter((_, k) => k !== i);
+  return { ...vd, subpaths: rest, points: pts, isClosed: false };
 };

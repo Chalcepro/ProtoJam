@@ -7,7 +7,7 @@ import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { ContainerBox, clipCss } from './ContainerBox';
 import { TransformSelectionBox } from './TransformSelectionBox';
 import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
-import { isContainer, stepInto } from '../../lib/tree';
+import { isContainer, pickTarget, stepInto } from '../../lib/tree';
 
 interface Props {
   element: UIElement;
@@ -70,6 +70,15 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       data-el-id={element.id}
       data-container={container ? '' : undefined}
       data-flow-child={flow ? '' : undefined}
+      // hover: outline what a click here would pick (drawn by the canvas)
+      onPointerMove={(e) => {
+        if (activeTool !== 'select') return;
+        e.stopPropagation();
+        const st = useProjectStore.getState();
+        const id = (e.ctrlKey || e.metaKey) ? element.id : pickTarget(element.id, st.elements, st.selectedElementIds);
+        if (st.hoveredElementId !== id) st.setHoveredElement(id);
+      }}
+      onPointerLeave={() => { const st = useProjectStore.getState(); if (st.hoveredElementId) st.setHoveredElement(null); }}
       onPointerDown={(e) => {
         // drawing tools pass through; a right-click is the context menu's
         if (activeTool !== 'select' || e.button !== 0) return;

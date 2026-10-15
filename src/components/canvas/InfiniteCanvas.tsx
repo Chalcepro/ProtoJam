@@ -14,7 +14,7 @@ import { Rulers, RULER } from './Rulers';
 import { isTextEl } from '../../lib/styleCss';
 import { putAsset } from '../../lib/assets';
 import { PenOverlay } from './PenOverlay';
-import { BOOLEANABLE } from '../../lib/boolean';
+import { BOOLEANABLE, vectorAllD } from '../../lib/boolean';
 import { ElementNode } from './ElementNode';
 import { absBoxOf, chainOf, inFlow, isContainer, originOf, pickTarget, subtreeIds } from '../../lib/tree';
 
@@ -142,9 +142,10 @@ export const InfiniteCanvas: React.FC = () => {
     bringForward,
     sendBackward,
     guides,
+    hoveredElementId: hoverId,
     updateElementPosition,
     updateCanvasSettings
-  } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedElementIds: s.selectedElementIds, viewport: s.viewport, setViewport: s.setViewport, panBy: s.panBy, activeTool: s.activeTool, setActiveTool: s.setActiveTool, clearSelection: s.clearSelection, isWiring: s.isWiring, updateWireMousePos: s.updateWireMousePos, cancelWiring: s.cancelWiring, canvasSettings: s.canvasSettings, dropComponentAt: s.dropComponentAt, moveElement: s.moveElement, moveFrame: s.moveFrame, selectElement: s.selectElement, selectFrame: s.selectFrame, editorMode: s.editorMode, finishDrawingShape: s.finishDrawingShape, reparentElement: s.reparentElement, isVectorEditing: s.isVectorEditing, setInlineEditingElementId: s.setInlineEditingElementId, addElement: s.addElement, addPredefinedElement: s.addPredefinedElement, comments: s.comments, addComment: s.addComment, setSelection: s.setSelection, pasteElements: s.pasteElements, duplicateElement: s.duplicateElement, deleteElement: s.deleteElement, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleElementHidden: s.toggleElementHidden, toggleElementLock: s.toggleElementLock, zoomToFit: s.zoomToFit, selectedFrameIds: s.selectedFrameIds, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, alignSelectedElements: s.alignSelectedElements, groupSelectedIntoAutoLayout: s.groupSelectedIntoAutoLayout, createMasterComponent: s.createMasterComponent, bringForward: s.bringForward, sendBackward: s.sendBackward, guides: s.guides, updateElementPosition: s.updateElementPosition, updateCanvasSettings: s.updateCanvasSettings })));
+  } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedElementIds: s.selectedElementIds, viewport: s.viewport, setViewport: s.setViewport, panBy: s.panBy, activeTool: s.activeTool, setActiveTool: s.setActiveTool, clearSelection: s.clearSelection, isWiring: s.isWiring, updateWireMousePos: s.updateWireMousePos, cancelWiring: s.cancelWiring, canvasSettings: s.canvasSettings, dropComponentAt: s.dropComponentAt, moveElement: s.moveElement, moveFrame: s.moveFrame, selectElement: s.selectElement, selectFrame: s.selectFrame, editorMode: s.editorMode, finishDrawingShape: s.finishDrawingShape, reparentElement: s.reparentElement, isVectorEditing: s.isVectorEditing, setInlineEditingElementId: s.setInlineEditingElementId, addElement: s.addElement, addPredefinedElement: s.addPredefinedElement, comments: s.comments, addComment: s.addComment, setSelection: s.setSelection, pasteElements: s.pasteElements, duplicateElement: s.duplicateElement, deleteElement: s.deleteElement, bringToFront: s.bringToFront, sendToBack: s.sendToBack, toggleElementHidden: s.toggleElementHidden, toggleElementLock: s.toggleElementLock, zoomToFit: s.zoomToFit, selectedFrameIds: s.selectedFrameIds, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, alignSelectedElements: s.alignSelectedElements, groupSelectedIntoAutoLayout: s.groupSelectedIntoAutoLayout, createMasterComponent: s.createMasterComponent, bringForward: s.bringForward, sendBackward: s.sendBackward, guides: s.guides, hoveredElementId: s.hoveredElementId, updateElementPosition: s.updateElementPosition, updateCanvasSettings: s.updateCanvasSettings })));
 
   useEffect(() => {
     const el = canvasContainerRef.current;
@@ -865,6 +866,30 @@ export const InfiniteCanvas: React.FC = () => {
               </div>
             );
           })}
+
+        {/* 3c. Hover: the outline of what a click would pick, in its own shape */}
+        {activeTool === 'select' && !isVectorEditing && hoverId && !selectedElementIds.includes(hoverId) && (() => {
+          const el = elements.find(x => x.id === hoverId);
+          const b = el && worldBoxOf(el.id);
+          if (!el || !b) return null;
+          const z = viewport.zoom, t = el.style.frameShape || el.type;
+          const vd = el.style.vectorData;
+          return (
+            <div className="absolute pointer-events-none" data-export-skip style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: 999 }}>
+              {t === 'vectorPath' && vd ? (
+                <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none">
+                  <path d={vectorAllD(vd)} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                </svg>
+              ) : t === 'polygon' || t === 'star' ? (
+                <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polygon points={t === 'star' ? '50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36' : '50,5 95,95 5,95'} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                </svg>
+              ) : (
+                <div className="absolute inset-0" style={{ border: `${1.5 / z}px solid #ff6b4a`, borderRadius: t === 'ellipse' ? '9999px' : typeof el.style.borderRadius === 'number' ? el.style.borderRadius : 0 }} />
+              )}
+            </div>
+          );
+        })()}
 
         {/* 4. Prototype Wire Connecting Lines */}
         {(editorMode === 'prototype' || isWiring) && (
