@@ -1,0 +1,131 @@
+import React, { useLayoutEffect, useRef } from 'react';
+import * as Icons from 'lucide-react';
+import { AutoLayoutSettings, UIElement } from '../../types/components';
+import { useProjectStore } from '../../store/useProjectStore';
+import { useShallow } from 'zustand/react/shallow';
+import { SemanticElementRenderer } from './SemanticElementRenderer';
+import { TransformSelectionBox } from './TransformSelectionBox';
+import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
+import { isContainer, stepInto } from '../../lib/tree';
+
+interface Props {
+  element: UIElement;
+  // the parent's auto layout, when it lays this one out
+  parentLayout: AutoLayoutSettings | null;
+  layer: number;
+  // a press on this element (the deepest one under the pointer)
+  onPress: (el: UIElement, e: React.PointerEvent) => void;
+  // draw the selection box here, not on the canvas's top layer - for things
+  // whose place only the layout knows (in auto layout, inside a container)
+  boxInside: boolean;
+  frameId?: string;
+  frameOffset: { x: number; y: number };
+}
+
+// One element on the canvas - and, for a container (a frame inside a frame),
+// everything inside it, laid out by its own auto layout or placed by x/y.
+export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onPress, boxInside, frameId, frameOffset }) => {
+  const { elements, selectedElementIds, activeTool, editorMode, isWiring, finishWiring, startWiring, updateElementStyle, setSelection } =
+    useProjectStore(useShallow((s) => ({ elements: s.elements, selectedElementIds: s.selectedElementIds, activeTool: s.activeTool, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateElementStyle: s.updateElementStyle, setSelection: s.setSelection })));
+  const ref = useRef<HTMLDivElement>(null);
+  const flow = !!parentLayout && !element.style.absolutePosition;
+  const isSelected = selectedElementIds.includes(element.id);
+  const container = isContainer(element);
+  const ownLayout = container && element.style.autoLayout?.enabled ? element.style.autoLayout : null;
+  const size = nodeSize(element, parentLayout);
+
+  // Sizes the layout decides - filling the parent, hugging the children - are
+  // written back so W/H, snapping and the selection box tell the truth.
+  useLayoutEffect(() => {
+    const n = ref.current;
+    if (!n) return;
+    const s = element.style;
+    const fillW = flow && s.layoutSizingH === 'fill', fillH = flow && s.layoutSizingV === 'fill';
+    const hugW = ownLayout?.sizingH === 'hug', hugH = ownLayout?.sizingV === 'hug';
+    const upd: { width?: number; height?: number } = {};
+    if ((fillW || hugW) && Math.abs(n.offsetWidth - Number(s.width)) >= 1) upd.width = n.offsetWidth;
+    if ((fillH || hugH) && Math.abs(n.offsetHeight - Number(s.height)) >= 1) upd.height = n.offsetHeight;
+    if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(element.id, upd);
+  });
+
+  if (element.hidden) return null;
+  const kids = container ? elements.filter(e => e.parentId === element.id) : [];
+  const blend = element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined;
+  const position: React.CSSProperties = flow
+    ? { position: 'relative', flexShrink: 0 }
+    : { position: 'absolute', left: Number(element.style.x), top: Number(element.style.y) };
+
+  return (
+    <div
+      ref={ref}
+      data-el-id={element.id}
+      data-container={container ? '' : undefined}
+      data-flow-child={flow ? '' : undefined}
+      onPointerDown={(e) => {
+        // drawing tools pass through; a right-click is the context menu's
+        if (activeTool !== 'select' || e.button !== 0) return;
+        e.stopPropagation();
+        if (isWiring) { if (frameId) finishWiring(frameId); return; }
+        onPress(element, e);
+      }}
+      // double-click steps one level into a container, toward what was clicked
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        const st = useProjectStore.getState();
+        const next = stepInto(element.id, st.elements, st.selectedElementIds);
+        if (!st.selectedElementIds.includes(next)) setSelection([next]);
+      }}
+      style={{
+        ...position, ...size,
+        zIndex: 10 + layer,      // strictly by layer order, selected or not
+        mixBlendMode: blend,
+        pointerEvents: activeTool !== 'select' ? 'none' : undefined
+      }}
+      className={`group/el ${element.locked ? 'cursor-default' : 'cursor-move'}`}
+    >
+      {container ? (
+        <>
+          {/* the container's own box: fill, stroke, corners, effects */}
+          <div className="absolute inset-0 pointer-events-none">
+            <SemanticElementRenderer element={element} isInteractive={false} />
+          </div>
+          {/* its children */}
+          <div
+            style={{
+              position: 'relative',
+              width: ownLayout?.sizingH === 'hug' ? 'max-content' : '100%',
+              height: ownLayout?.sizingV === 'hug' ? 'max-content' : '100%',
+              overflow: element.style.clipContent ? 'hidden' : 'visible',
+              borderRadius: typeof element.style.borderRadius === 'number' ? element.style.borderRadius : undefined,
+              ...(ownLayout ? flexLayoutCss(ownLayout) : {})
+            }}
+          >
+            {kids.map((k, i) => (
+              <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={i} onPress={onPress}
+                           boxInside frameId={frameId} frameOffset={frameOffset} />
+            ))}
+          </div>
+        </>
+      ) : (
+        <SemanticElementRenderer element={element} isInteractive={false} />
+      )}
+
+      {isSelected && activeTool === 'select' && (boxInside || flow) && (
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000 }}>
+          <TransformSelectionBox element={element} parentFrameOffset={frameOffset} />
+        </div>
+      )}
+
+      {/* wire a prototype link from here */}
+      {isSelected && frameId && (editorMode === 'prototype' || isWiring) && (
+        <div
+          title="Drag to wire interaction"
+          onPointerDown={(e) => { e.stopPropagation(); startWiring(element.id, frameId); }}
+          className="absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 bg-[#ff6b4a] rounded-full border-2 border-[rgb(20,20,19)] shadow-lg cursor-crosshair flex items-center justify-center hotspot-handle z-50 hover:scale-125 transition-transform"
+        >
+          <Icons.Plus size={10} className="text-[rgb(235,235,236)]" />
+        </div>
+      )}
+    </div>
+  );
+};

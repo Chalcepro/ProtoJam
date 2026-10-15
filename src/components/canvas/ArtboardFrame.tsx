@@ -1,8 +1,6 @@
 import React, { useLayoutEffect, useRef } from 'react';
-import { wrapperSize } from '../../lib/styleCss';
 import { DeviceFrame, UIElement } from '../../types/components';
-import { SemanticElementRenderer } from './SemanticElementRenderer';
-import { TransformSelectionBox } from './TransformSelectionBox';
+import { ElementNode } from './ElementNode';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
@@ -32,20 +30,17 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     toggleFrameHidden,
     setStartingFrame,
     startPlaying,
-    editorMode,
     isWiring,
     finishWiring,
-    startWiring,
     updateFrameDimensions,
     viewport,
     pushHistory,
-    activeTool,
-    updateElementStyle,
     updateAutoLayout
-  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateFrameDimensions: s.updateFrameDimensions, updateElementStyle: s.updateElementStyle, updateAutoLayout: s.updateAutoLayout, viewport: s.viewport, pushHistory: s.pushHistory, activeTool: s.activeTool })));
+  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, isWiring: s.isWiring, finishWiring: s.finishWiring, updateFrameDimensions: s.updateFrameDimensions, updateAutoLayout: s.updateAutoLayout, viewport: s.viewport, pushHistory: s.pushHistory })));
 
   const isFrameSelected = selectedFrameIds.includes(frame.id);
-  const frameElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
+  // its direct children; things inside containers are drawn by those
+  const frameElements = elements.filter(el => el.parentId === frame.id || (!el.parentId && frame.elementIds.includes(el.id)));
 
   const autoLayout = frame.autoLayout?.enabled ? frame.autoLayout : null;
   const hugW = autoLayout?.sizingH === 'hug', hugH = autoLayout?.sizingV === 'hug';
@@ -58,15 +53,6 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
   useLayoutEffect(() => {
     const outer = outerRef.current;
     if (!autoLayout || !outer) return;
-    const st = useProjectStore.getState();
-    outer.querySelectorAll<HTMLElement>('[data-flow-child]').forEach(n => {
-      const el = st.elements.find(x => x.id === n.dataset.elId);
-      if (!el || (el.style.layoutSizingH !== 'fill' && el.style.layoutSizingV !== 'fill')) return;
-      const upd: { width?: number; height?: number } = {};
-      if (el.style.layoutSizingH === 'fill' && Math.abs(n.offsetWidth - Number(el.style.width)) >= 1) upd.width = n.offsetWidth;
-      if (el.style.layoutSizingV === 'fill' && Math.abs(n.offsetHeight - Number(el.style.height)) >= 1) upd.height = n.offsetHeight;
-      if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(el.id, upd);
-    });
     if (hugW || hugH) {
       const w = hugW ? outer.offsetWidth : frame.width, h = hugH ? outer.offsetHeight : frame.height;
       if (Math.abs(w - frame.width) >= 1 || Math.abs(h - frame.height) >= 1) updateFrameDimensions(frame.id, w, h);
@@ -298,110 +284,28 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           </div>
         )}
 
-        {/* Child Elements inside Frame */}
-        {frameElements.map((element, layer) => {
-          const isSelected = selectedElementIds.includes(element.id);
-          // Inside an auto-layout frame, children flow in flex order and ignore
-          // stored x/y — unless explicitly opted out via "Absolute Position".
-          const participatesInFlow = !!autoLayout && !element.style.absolutePosition;
-          const sizeStyle: React.CSSProperties = wrapperSize(element);
-          // Fill container: along the flow it takes the free space, across it
-          // stretches to the frame's inner size.
-          if (participatesInFlow) {
-            const row = autoLayout!.direction === 'horizontal';
-            const fillMain = row ? element.style.layoutSizingH === 'fill' : element.style.layoutSizingV === 'fill';
-            const fillCross = row ? element.style.layoutSizingV === 'fill' : element.style.layoutSizingH === 'fill';
-            if (fillMain) Object.assign(sizeStyle, { flex: '1 1 0', [row ? 'width' : 'height']: 'auto', [row ? 'minWidth' : 'minHeight']: 0 });
-            if (fillCross) Object.assign(sizeStyle, { alignSelf: 'stretch', [row ? 'height' : 'width']: 'auto' });
-          }
-          const blend = element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined;
-          const positionStyle: React.CSSProperties = participatesInFlow
-            ? {
-                position: 'relative',
-                flexShrink: 0,
-                ...sizeStyle,
-                // stacked strictly by layer order - selecting something must
-                // not lift it above what is in front of it (it used to jump
-                // to 35, so a layer sent back still showed on top while
-                // selected, and one brought forward seemed not to move)
-                zIndex: 10 + layer
+        {/* Child Elements inside Frame (containers draw their own children) */}
+        {frameElements.map((element, layer) => (
+          <ElementNode
+            key={element.id}
+            element={element}
+            parentLayout={autoLayout}
+            layer={layer}
+            boxInside={false}
+            frameId={frame.id}
+            frameOffset={{ x: frame.x, y: frame.y }}
+            onPress={(el, e) => {
+              // an old-style group frame: a click picks the group until
+              // something inside it is selected
+              if (isGroup && !frameElements.some(fe => selectedElementIds.includes(fe.id))) {
+                handleFrameBodyPointerDown(e);
+                return;
               }
-            : {
-                position: 'absolute',
-                left: Number(element.style.x),
-                top: Number(element.style.y),
-                ...sizeStyle,
-                // stacked strictly by layer order - selecting something must
-                // not lift it above what is in front of it (it used to jump
-                // to 35, so a layer sent back still showed on top while
-                // selected, and one brought forward seemed not to move)
-                zIndex: 10 + layer
-              };
-          return (
-            <div
-              key={element.id}
-              data-el-id={element.id}
-              data-flow-child={participatesInFlow ? '' : undefined}
-              onPointerDown={(e) => {
-                // Let a drawing/placement tool pass straight through to the frame
-                // body beneath instead of this existing element hijacking the
-                // click as a select/drag — otherwise you can never draw or place
-                // something on top of it. A right-click is the context menu's.
-                if (activeTool !== 'select' || e.button !== 0) return;
-                e.stopPropagation();
-                if (isWiring) {
-                  finishWiring(frame.id);
-                  return;
-                }
-                // A group acts as one object: a click picks (and drags) the
-                // group, until something inside it is already selected.
-                // Ctrl+click is caught earlier by the canvas and picks the child.
-                if (isGroup && !frameElements.some(fe => selectedElementIds.includes(fe.id))) {
-                  handleFrameBodyPointerDown(e);
-                  return;
-                }
-                if (onStartDragElement) {
-                  onStartDragElement(element, e);
-                } else {
-                  selectElement(element.id, e.shiftKey);
-                }
-              }}
-              // double-click a group to step in and pick the thing inside
-              onDoubleClick={isGroup ? (e) => { e.stopPropagation(); selectElement(element.id, false); } : undefined}
-              style={{ ...positionStyle, mixBlendMode: blend, pointerEvents: activeTool !== 'select' ? 'none' : undefined }}
-              className={`group/el relative ${element.locked ? 'cursor-default' : 'cursor-move'}`}
-            >
-              <SemanticElementRenderer element={element} isInteractive={false} />
-
-              {/* Interactive Transform, Scale & Rotate Box — hidden while a drawing
-                  tool is active so its handles can't intercept clicks meant to
-                  place a new object on top of this one. */}
-              {/* Drawn here only for a child laid out by auto layout, whose
-                  place on the canvas only the layout knows; every other
-                  selection box is drawn above everything by the canvas. */}
-              {isSelected && activeTool === 'select' && participatesInFlow && (
-                <TransformSelectionBox
-                  element={element}
-                  parentFrameOffset={{ x: frame.x, y: frame.y }}
-                />
-              )}
-
-              {/* Wire Hotspot Connector Handle */}
-              {isSelected && (editorMode === 'prototype' || isWiring) && (
-                <div
-                  title="Drag to wire interaction"
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    startWiring(element.id, frame.id);
-                  }}
-                  className="absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-5 bg-[#ff6b4a] rounded-full border-2 border-[rgb(20,20,19)] shadow-lg cursor-crosshair flex items-center justify-center hotspot-handle z-50 hover:scale-125 transition-transform"
-                >
-                  <Icons.Plus size={10} className="text-[rgb(235,235,236)]" />
-                </div>
-              )}
-            </div>
-          );
-        })}
+              if (onStartDragElement) onStartDragElement(el, e);
+              else selectElement(el.id, e.shiftKey);
+            }}
+          />
+        ))}
 
         {/* Mobile Bottom Home Indicator */}
         {frame.deviceType === 'mobile' && (

@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { ElementStyle, EffectLayer, UIElement } from '../types/components';
+import type { AutoLayoutSettings, ElementStyle, EffectLayer, UIElement } from '../types/components';
 
 // How a text box sizes itself. Old projects only have autoSize.
 export const textResizeOf = (s: ElementStyle): 'auto' | 'autoHeight' | 'fixed' =>
@@ -46,3 +46,33 @@ export const BLEND_MODES = [
   ['difference', 'Difference'], ['exclusion', 'Exclusion'],
   ['hue', 'Hue'], ['saturation', 'Saturation'], ['color', 'Color'], ['luminosity', 'Luminosity'],
 ] as const;
+
+// The flex box an auto-layout parent (screen or container) lays its
+// children out with.
+export const flexLayoutCss = (al: AutoLayoutSettings): React.CSSProperties => ({
+  display: 'flex',
+  flexDirection: al.direction === 'horizontal' ? 'row' : 'column',
+  flexWrap: al.wrap ? 'wrap' : 'nowrap',
+  gap: al.gap,
+  justifyContent: ({ start: 'flex-start', center: 'center', end: 'flex-end', spaceBetween: 'space-between' } as const)[al.align] || 'flex-start',
+  alignItems: 'flex-start',
+  paddingTop: al.padding?.top, paddingRight: al.padding?.right,
+  paddingBottom: al.padding?.bottom, paddingLeft: al.padding?.left
+});
+
+// The wrapper size of a child, with Fill container applied when its parent
+// lays it out, and Hug when it is a container that hugs its own children.
+export const nodeSize = (el: UIElement, parentLayout: AutoLayoutSettings | null): React.CSSProperties => {
+  const size: React.CSSProperties = wrapperSize(el);
+  const al = el.type === 'container' && el.style.autoLayout?.enabled ? el.style.autoLayout : null;
+  if (al?.sizingH === 'hug') size.width = 'max-content';
+  if (al?.sizingV === 'hug') size.height = 'max-content';
+  if (parentLayout && !el.style.absolutePosition) {
+    const row = parentLayout.direction === 'horizontal';
+    const fillMain = row ? el.style.layoutSizingH === 'fill' : el.style.layoutSizingV === 'fill';
+    const fillCross = row ? el.style.layoutSizingV === 'fill' : el.style.layoutSizingH === 'fill';
+    if (fillMain) Object.assign(size, { flex: '1 1 0', [row ? 'width' : 'height']: 'auto', [row ? 'minWidth' : 'minHeight']: 0 });
+    if (fillCross) Object.assign(size, { alignSelf: 'stretch', [row ? 'height' : 'width']: 'auto' });
+  }
+  return size;
+};

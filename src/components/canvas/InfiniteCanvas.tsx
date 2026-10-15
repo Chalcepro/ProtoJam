@@ -3,7 +3,6 @@ import { useProjectStore, toolToElementType } from '../../store/useProjectStore'
 import { useShallow } from 'zustand/react/shallow';
 import { ArtboardFrame } from './ArtboardFrame';
 import { SectionFrame } from './SectionFrame';
-import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { TransformSelectionBox } from './TransformSelectionBox';
 import { FlowConnectorLines } from './FlowConnectorLines';
 import { Minimap } from './Minimap';
@@ -12,9 +11,11 @@ import { CommentPin } from './CommentPin';
 import { UIElement, UIElementType } from '../../types/components';
 import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
 import { Rulers, RULER } from './Rulers';
-import { wrapperSize, isTextEl } from '../../lib/styleCss';
+import { isTextEl } from '../../lib/styleCss';
 import { putAsset } from '../../lib/assets';
 import { PenOverlay } from './PenOverlay';
+import { ElementNode } from './ElementNode';
+import { absBoxOf, chainOf, inFlow, isContainer, originOf, pickTarget, subtreeIds } from '../../lib/tree';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -142,11 +143,13 @@ export const InfiniteCanvas: React.FC = () => {
   // middle / bottom snap to the same lines of every other element, every
   // frame, and every ruler guide, within 6 screen pixels. Ctrl held: no snap.
   const boxOf = (el: UIElement, at?: { x: number; y: number }): Box => {
-    const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
-    const x = (f?.x || 0) + (at ? at.x : Number(el.style.x));
-    const y = (f?.y || 0) + (at ? at.y : Number(el.style.y));
+    const o = originOf(el.parentId, elements, frames);
+    const x = o.x + (at ? at.x : Number(el.style.x));
+    const y = o.y + (at ? at.y : Number(el.style.y));
     return { x0: x, y0: y, x1: x + (Number(el.style.width) || 0), y1: y + (Number(el.style.height) || 0) };
   };
+  // Placed by x/y all the way up - its box can be worked out without the page.
+  const placed = (el: UIElement) => chainOf(el.id, elements).every(c => !inFlow(c, elements, frames));
 
   const computeSnap = (ids: string[], dx: number, dy: number) => {
     let m: Box | null = null;
@@ -158,7 +161,7 @@ export const InfiniteCanvas: React.FC = () => {
     }
     if (!m) return { dx: 0, dy: 0, lines: [] as SnapLine[] };
     const others: Box[] = [
-      ...elements.filter(el => !ids.includes(el.id) && !el.hidden).map(el => boxOf(el)),
+      ...elements.filter(el => !el.hidden && placed(el) && !ids.some(id => subtreeIds(id, elements).includes(el.id))).map(el => boxOf(el)),
       ...frames.filter(f => !f.hidden).map(f => ({ x0: f.x, y0: f.y, x1: f.x + f.width, y1: f.y + f.height }))
     ];
     const thr = 6 / viewport.zoom;
@@ -211,40 +214,53 @@ export const InfiniteCanvas: React.FC = () => {
   };
 
   // An element's position on the canvas, whether it is free or in a frame.
-  const absOf = (el: UIElement) => {
-    const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
-    return { x: (f?.x || 0) + Number(el.style.x), y: (f?.y || 0) + Number(el.style.y) };
+  const absOf = (el: UIElement) => { const b = absBoxOf(el, elements, frames); return { x: b.x, y: b.y }; };
+
+  // Where an element really is on the canvas - from the page, so auto layout
+  // is counted. Falls back to the stored position.
+  const worldBoxOf = (id: string) => {
+    const n = document.querySelector(`[data-el-id="${id}"]`);
+    if (!n) { const el = elements.find(e => e.id === id); return el ? absBoxOf(el, elements, frames) : null; }
+    const r = n.getBoundingClientRect(), a = getWorldCoords(r.left, r.top);
+    return { x: a.x, y: a.y, w: r.width / viewport.zoom, h: r.height / viewport.zoom };
   };
 
   // ---- clipboard -----------------------------------------------------------
 
   const copySelection = () => {
-    CLIPBOARD = elements.filter(el => selectedElementIds.includes(el.id))
-                        .map(el => JSON.parse(JSON.stringify(el)));
+    const ids = new Set(selectedElementIds.flatMap(id => subtreeIds(id, elements)));
+    CLIPBOARD = elements.filter(el => ids.has(el.id)).map(el => JSON.parse(JSON.stringify(el)));
     return CLIPBOARD.length;
   };
+  // the copied things themselves, not what is inside them
+  const clipRoots = () => CLIPBOARD.filter(el => !CLIPBOARD.some(o => o.id === el.parentId));
 
   // Paste: with no point, beside the originals (same parent, +20,+20); with a
   // point (right-click > paste here), as free elements with their group's
   // top-left at that point.
   const pasteClipboard = (at?: { x: number; y: number }) => {
     if (!CLIPBOARD.length) return;
+    const roots = new Set(clipRoots().map(el => el.id));
     if (!at) {
-      pasteElements(CLIPBOARD.map(el => ({
-        ...el, style: { ...el.style, x: Number(el.style.x) + 20, y: Number(el.style.y) + 20 }
-      })));
-      CLIPBOARD = CLIPBOARD.map(el => ({ ...el, style: { ...el.style, x: Number(el.style.x) + 20, y: Number(el.style.y) + 20 } }));
+      const shift = (el: UIElement) => roots.has(el.id) ? { ...el, style: { ...el.style, x: Number(el.style.x) + 20, y: Number(el.style.y) + 20 } } : el;
+      pasteElements(CLIPBOARD.map(shift));
+      CLIPBOARD = CLIPBOARD.map(shift);
       return;
     }
     const abs = CLIPBOARD.map(absOf);
-    const minX = Math.min(...abs.map(a => a.x)), minY = Math.min(...abs.map(a => a.y));
-    pasteElements(CLIPBOARD.map((el, i) => ({
+    const rootAbs = abs.filter((_, i) => roots.has(CLIPBOARD[i].id));
+    const minX = Math.min(...rootAbs.map(a => a.x)), minY = Math.min(...rootAbs.map(a => a.y));
+    pasteElements(CLIPBOARD.map((el, i) => roots.has(el.id) ? {
       ...el, parentId: undefined,
       style: { ...el.style, x: Math.round(at.x + abs[i].x - minX), y: Math.round(at.y + abs[i].y - minY) }
-    })));
+    } : el));
   };
 
-  const selectAll = () => setSelection(elements.filter(el => !el.hidden).map(el => el.id));
+  const selectAll = () => {
+    const level = selectedElementIds.length ? elements.find(e => e.id === selectedElementIds[0])?.parentId : undefined;
+    const top = (el: UIElement) => !el.parentId || frames.some(f => f.id === el.parentId);
+    setSelection(elements.filter(el => !el.hidden && (level && !frames.some(f => f.id === level) ? el.parentId === level : top(el))).map(el => el.id));
+  };
 
   // Keys the canvas owns: space to pan, and the clipboard. Skipped while
   // typing in a field, so Ctrl+C in a text box still copies text.
@@ -323,6 +339,20 @@ export const InfiniteCanvas: React.FC = () => {
   };
 
   const freeElements = elements.filter(el => !el.parentId && !el.hidden);
+
+  // A press on an element (the deepest under the pointer): pick what Figma
+  // would - the outermost container not yet stepped into - and drag that.
+  const pressElement = (el: UIElement, e: React.PointerEvent) => {
+    const st = useProjectStore.getState();
+    const id = pickTarget(el.id, st.elements, st.selectedElementIds);
+    const target = st.elements.find(x => x.id === id) || el;
+    pressedSelectedText.current = isTextEl(target) && !e.shiftKey &&
+      st.selectedElementIds.length === 1 && st.selectedElementIds[0] === id;
+    dragOrigin.current = { x: e.clientX, y: e.clientY };
+    setDraggingElementId(id);
+    if (e.shiftKey || !st.selectedElementIds.includes(id)) selectElement(id, e.shiftKey);
+    setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(target.style.x), origY: Number(target.style.y) });
+  };
 
   // Prevent native browser zoom and enable trackpad pan / zoom
   useEffect(() => {
@@ -489,6 +519,7 @@ export const InfiniteCanvas: React.FC = () => {
           ax < x1 && ax + w > x0 && ay < y1 && ay + h > y0;
         const hitEls = elements.filter(el => {
           if (el.hidden || el.locked) return false;
+          if (el.parentId && !frames.some(f => f.id === el.parentId)) return false;   // inside a container
           const a = absOf(el);
           return touches(a.x, a.y, Number(el.style.width) || 0, Number(el.style.height) || 0);
         }).map(el => el.id);
@@ -513,12 +544,13 @@ export const InfiniteCanvas: React.FC = () => {
         // Single click placement
         const { x, y } = getWorldCoords(e.clientX, e.clientY);
         if (activeTool === 'text') {
-          const f = frames.find(fr => !fr.hidden && x >= fr.x && x <= fr.x + fr.width && y >= fr.y && y <= fr.y + fr.height);
-          const elId = f ? addElement('text', Math.round(x - f.x), Math.round(y - f.y), f.id)
-                         : addElement('text', Math.round(x), Math.round(y));
+          const p = useProjectStore.getState().parentAt(x, y);
+          const elId = addElement('text', Math.round(x - p.x), Math.round(y - p.y), p.id);
           setInlineEditingElementId(elId);
         } else if (activeTool === 'frame') {
-          finishDrawingShape('frame', x, y, x + 393, y + 852);
+          // inside a screen: a 100x100 frame there; on the canvas: a phone
+          if (useProjectStore.getState().parentAt(x, y).id) finishDrawingShape('frame', x, y, x + 100, y + 100);
+          else finishDrawingShape('frame', x, y, x + 393, y + 852);
         } else if (activeTool === 'section') {
           finishDrawingShape('section', x, y, x + 800, y + 700);
         } else {
@@ -535,27 +567,20 @@ export const InfiniteCanvas: React.FC = () => {
     if (draggingElementId) {
       const el = dragMoved ? elements.find(item => item.id === draggingElementId) : undefined;
       if (el) {
-        const absX = el.parentId 
-          ? (frames.find(f => f.id === el.parentId)?.x || 0) + Number(el.style.x)
-          : Number(el.style.x);
-        const absY = el.parentId 
-          ? (frames.find(f => f.id === el.parentId)?.y || 0) + Number(el.style.y)
-          : Number(el.style.y);
-
-        // Find which frame the center of element is inside
-        const elCenterX = absX + Number(el.style.width) / 2;
-        const elCenterY = absY + Number(el.style.height) / 2;
-
-        let targetFrame = frames.find(f => 
-          elCenterX >= f.x && elCenterX <= f.x + f.width &&
-          elCenterY >= f.y && elCenterY <= f.y + f.height
-        );
-
-        if (targetFrame && targetFrame.id !== el.parentId) {
-          reparentElement(el.id, targetFrame.id, absX, absY);
-        } else if (!targetFrame && el.parentId) {
-          // Dragged out to canvas
-          reparentElement(el.id, undefined, absX, absY);
+        const b = worldBoxOf(el.id);
+        if (b) {
+          const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+          const own = new Set(subtreeIds(el.id, elements));
+          // containers on the page, deepest first
+          const holder = elements
+            .filter(c => isContainer(c) && !c.hidden && !own.has(c.id))
+            .map(c => ({ c, r: worldBoxOf(c.id), depth: chainOf(c.id, elements).length }))
+            .filter(({ r }) => r && cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h)
+            .sort((p, q) => q.depth - p.depth)[0]?.c;
+          const frame = holder ? undefined : frames.find(f => !f.hidden &&
+            cx >= f.x && cx <= f.x + f.width && cy >= f.y && cy <= f.y + f.height);
+          const target = holder?.id ?? frame?.id;
+          if (target !== el.parentId) reparentElement(el.id, target, b.x, b.y);
         }
       }
       setDraggingElementId(null);
@@ -598,18 +623,16 @@ export const InfiniteCanvas: React.FC = () => {
     const scale = Math.min(1, MAX_DIM / Math.max(size.w, size.h));
     const width = Math.max(20, Math.round(size.w * scale));
     const height = Math.max(20, Math.round(size.h * scale));
-    const targetFrame = frames.find(f =>
-      worldX >= f.x && worldX <= f.x + f.width && worldY >= f.y && worldY <= f.y + f.height
-    );
+    const holder = useProjectStore.getState().parentAt(worldX, worldY);
     addPredefinedElement({
       id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       name: file.name.replace(/\.[^/.]+$/, '') || (video ? 'Video' : 'Image'),
       type: video ? 'video' : 'image',
-      parentId: targetFrame?.id,
+      parentId: holder.id,
       interactions: [],
       style: {
-        x: Math.round(targetFrame ? worldX - targetFrame.x : worldX),
-        y: Math.round(targetFrame ? worldY - targetFrame.y : worldY),
+        x: Math.round(worldX - holder.x),
+        y: Math.round(worldY - holder.y),
         width, height
       },
       semanticProps: video ? { videoSrc: src, alt: file.name } : { src, alt: file.name }
@@ -725,53 +748,15 @@ export const InfiniteCanvas: React.FC = () => {
               setDraggingFrameId(frame.id);
               setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: frame.x, origY: frame.y });
             }}
-            onStartDragElement={(el, e) => {
-              pressedSelectedText.current = isTextEl(el) && !e.shiftKey &&
-                selectedElementIds.length === 1 && selectedElementIds[0] === el.id;
-              dragOrigin.current = { x: e.clientX, y: e.clientY };
-              setDraggingElementId(el.id);
-              if (e.shiftKey || !selectedElementIds.includes(el.id)) selectElement(el.id, e.shiftKey);
-              setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(el.style.x), origY: Number(el.style.y) });
-            }}
+            onStartDragElement={pressElement}
           />
         ))}
 
         {/* 3. Free Canvas Elements (Detached / Outside Frames) */}
-        {freeElements.map((element, layer) => {
-          return (
-            <div
-              key={element.id}
-              onMouseDown={(e) => {
-                // Let a drawing/placement tool pass straight through to the canvas
-                // instead of this existing element hijacking the click as a move —
-                // otherwise you can never draw or place something on top of it.
-                if (activeTool !== 'select' || e.button !== 0) return;
-                e.stopPropagation();
-                pressedSelectedText.current = isTextEl(element) && !e.shiftKey &&
-                  selectedElementIds.length === 1 && selectedElementIds[0] === element.id;
-                if (e.shiftKey || !selectedElementIds.includes(element.id)) selectElement(element.id, e.shiftKey);
-                dragOrigin.current = { x: e.clientX, y: e.clientY };
-                setDraggingElementId(element.id);
-                setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(element.style.x), origY: Number(element.style.y) });
-              }}
-              onClick={(e) => { if (activeTool === 'select') e.stopPropagation(); }}
-              data-el-id={element.id}
-              style={{
-                position: 'absolute',
-                left: Number(element.style.x),
-                top: Number(element.style.y),
-                ...wrapperSize(element),
-                mixBlendMode: element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined,
-                // strictly by layer order, selected or not (see ArtboardFrame)
-                zIndex: 5 + layer,
-                pointerEvents: activeTool !== 'select' ? 'none' : undefined
-              }}
-              className="cursor-move group relative"
-            >
-              <SemanticElementRenderer element={element} isInteractive={false} />
-            </div>
-          );
-        })}
+        {freeElements.map((element, layer) => (
+          <ElementNode key={element.id} element={element} parentLayout={null} layer={layer}
+                       onPress={pressElement} boxInside={false} frameOffset={{ x: 0, y: 0 }} />
+        ))}
 
         {/* 3b. Selection handles, above everything (as in Figma): a selected
             shape under another keeps its handles visible and grabbable, and
@@ -780,7 +765,8 @@ export const InfiniteCanvas: React.FC = () => {
           .filter(el => selectedElementIds.includes(el.id) && !el.hidden)
           .map(el => {
             const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
-            if (f?.autoLayout?.enabled && !el.style.absolutePosition) return null;   // drawn by its frame
+            // drawn by the element itself: in auto layout, or inside a container
+            if (inFlow(el, elements, frames) || (el.parentId && !f)) return null;
             const b = boxOf(el);
             return (
               <div key={`sel-${el.id}`} className="pointer-events-none"

@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { isContainer } from '../../lib/tree';
+import { UIElement } from '../../types/components';
 
 export const LayersPanel: React.FC = () => {
   const {
@@ -46,11 +48,86 @@ export const LayersPanel: React.FC = () => {
 
   const totalLayersCount = frames.length + sections.length + elements.length;
 
+  // One layer row, and - for a frame inside a frame - the rows inside it.
+  const elementRow = (el: UIElement): React.ReactNode => {
+    const isElementSelected = selectedElementIds.includes(el.id);
+    const kids = isContainer(el) ? elements.filter(k => k.parentId === el.id) : [];
+    return (
+      <React.Fragment key={el.id}>
+      <div
+        onClick={(e) => {
+          e.stopPropagation();
+          selectElement(el.id, e.shiftKey);
+        }}
+        className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer group transition-colors ${
+          isElementSelected
+            ? 'bg-[rgba(235,235,236,0.18)] text-[rgb(235,235,236)] font-semibold border border-[rgba(235,235,236,0.3)]'
+            : 'hover:bg-[rgba(235,235,236,0.05)] text-[rgba(235,235,236,0.75)]'
+        } ${el.hidden ? 'opacity-30' : ''}`}
+      >
+        <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+          {el.isMasterComponent && <span className="text-[10px] text-[rgb(235,235,236)]">❖</span>}
+          {el.isInstance && <span className="text-[10px] text-[rgba(235,235,236,0.6)]">◇</span>}
+          <span className="text-[9px] font-mono text-[rgba(235,235,236,0.35)] uppercase">
+            {el.type.slice(0, 3)}
+          </span>
+          <span className="truncate text-xs">{el.name || el.type}</span>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleElementLock(el.id);
+            }}
+            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+          >
+            {el.locked ? <Icons.Lock size={10} /> : <Icons.Unlock size={10} />}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleElementHidden(el.id);
+            }}
+            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+          >
+            {el.hidden ? <Icons.EyeOff size={10} /> : <Icons.Eye size={10} />}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              duplicateElement(el.id);
+            }}
+            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+          >
+            <Icons.Copy size={10} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteElement(el.id);
+            }}
+            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
+          >
+            <Icons.Trash2 size={10} />
+          </button>
+        </div>
+      </div>
+      {kids.length > 0 && (
+        <div className="pl-3 space-y-0.5 border-l border-[rgba(235,235,236,0.08)] ml-2.5">
+          {kids.map(elementRow)}
+        </div>
+      )}
+      </React.Fragment>
+    );
+  };
+
   // Renders one artboard frame row plus its (optionally collapsed) child elements.
   // Shared by the top-level frame list and by frames nested inside a section.
   const renderFrameRow = (frame: typeof frames[number]) => {
     const isFrameSelected = selectedFrameIds.includes(frame.id);
-    const childElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
+    const childElements = elements.filter(el => el.parentId === frame.id || (!el.parentId && frame.elementIds.includes(el.id)));
     const isCollapsed = !!frame.collapsed;
 
     return (
@@ -139,72 +216,7 @@ export const LayersPanel: React.FC = () => {
         {/* Child Elements inside Frame */}
         {!isCollapsed && childElements.length > 0 && (
           <div className="pl-4 space-y-0.5 border-l border-[rgba(235,235,236,0.08)] ml-2.5">
-            {childElements.map(el => {
-              const isElementSelected = selectedElementIds.includes(el.id);
-              return (
-                <div
-                  key={el.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectElement(el.id, e.shiftKey);
-                  }}
-                  className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer group transition-colors ${
-                    isElementSelected
-                      ? 'bg-[rgba(235,235,236,0.18)] text-[rgb(235,235,236)] font-semibold border border-[rgba(235,235,236,0.3)]'
-                      : 'hover:bg-[rgba(235,235,236,0.05)] text-[rgba(235,235,236,0.75)]'
-                  } ${el.hidden ? 'opacity-30' : ''}`}
-                >
-                  <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                    {el.isMasterComponent && <span className="text-[10px] text-[rgb(235,235,236)]">❖</span>}
-                    {el.isInstance && <span className="text-[10px] text-[rgba(235,235,236,0.6)]">◇</span>}
-                    <span className="text-[9px] font-mono text-[rgba(235,235,236,0.35)] uppercase">
-                      {el.type.slice(0, 3)}
-                    </span>
-                    <span className="truncate text-xs">{el.name || el.type}</span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleElementLock(el.id);
-                      }}
-                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                    >
-                      {el.locked ? <Icons.Lock size={10} /> : <Icons.Unlock size={10} />}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleElementHidden(el.id);
-                      }}
-                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                    >
-                      {el.hidden ? <Icons.EyeOff size={10} /> : <Icons.Eye size={10} />}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        duplicateElement(el.id);
-                      }}
-                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                    >
-                      <Icons.Copy size={10} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteElement(el.id);
-                      }}
-                      className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                    >
-                      <Icons.Trash2 size={10} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {childElements.map(elementRow)}
           </div>
         )}
       </div>
@@ -325,70 +337,7 @@ export const LayersPanel: React.FC = () => {
               {!isSecCollapsed && childCount > 0 && (
                 <div className="pl-4 space-y-0.5 border-l border-[rgba(235,235,236,0.08)] ml-2.5">
                   {childFrames.map(f => renderFrameRow(f))}
-                  {childElements.map(el => {
-                    const isElementSelected = selectedElementIds.includes(el.id);
-                    return (
-                      <div
-                        key={el.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          selectElement(el.id, e.shiftKey);
-                        }}
-                        className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer group transition-colors ${
-                          isElementSelected
-                            ? 'bg-[rgba(235,235,236,0.18)] text-[rgb(235,235,236)] font-semibold border border-[rgba(235,235,236,0.3)]'
-                            : 'hover:bg-[rgba(235,235,236,0.05)] text-[rgba(235,235,236,0.75)]'
-                        } ${el.hidden ? 'opacity-30' : ''}`}
-                      >
-                        <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                          {el.isMasterComponent && <span className="text-[10px] text-[rgb(235,235,236)]">❖</span>}
-                          {el.isInstance && <span className="text-[10px] text-[rgba(235,235,236,0.6)]">◇</span>}
-                          <span className="text-[9px] font-mono text-[rgba(235,235,236,0.35)] uppercase">
-                            {el.type.slice(0, 3)}
-                          </span>
-                          <span className="truncate text-xs">{el.name || el.type}</span>
-                        </div>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleElementLock(el.id);
-                            }}
-                            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                          >
-                            {el.locked ? <Icons.Lock size={10} /> : <Icons.Unlock size={10} />}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleElementHidden(el.id);
-                            }}
-                            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                          >
-                            {el.hidden ? <Icons.EyeOff size={10} /> : <Icons.Eye size={10} />}
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              duplicateElement(el.id);
-                            }}
-                            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                          >
-                            <Icons.Copy size={10} />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteElement(el.id);
-                            }}
-                            className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]"
-                          >
-                            <Icons.Trash2 size={10} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {childElements.map(elementRow)}
                 </div>
               )}
             </div>
@@ -406,62 +355,7 @@ export const LayersPanel: React.FC = () => {
               <span>Canvas Objects ({filteredFreeElements.length})</span>
             </div>
             <div className="space-y-0.5">
-              {filteredFreeElements.map(el => {
-                const isElementSelected = selectedElementIds.includes(el.id);
-                return (
-                  <div
-                    key={el.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      selectElement(el.id, e.shiftKey);
-                    }}
-                    className={`flex items-center justify-between px-2 py-1.5 rounded-lg cursor-pointer group transition-colors ${
-                      isElementSelected
-                        ? 'bg-[rgba(235,235,236,0.18)] text-[rgb(235,235,236)] font-semibold border border-[rgba(235,235,236,0.3)]'
-                        : 'hover:bg-[rgba(235,235,236,0.05)] text-[rgba(235,235,236,0.75)]'
-                    } ${el.hidden ? 'opacity-30' : ''}`}
-                  >
-                    <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
-                      {el.isMasterComponent && <span className="text-[10px] text-[rgb(235,235,236)]">❖</span>}
-                      {el.isInstance && <span className="text-[10px] text-[rgba(235,235,236,0.6)]">◇</span>}
-                      <span className="text-[9px] font-mono text-[rgba(235,235,236,0.35)] uppercase">
-                        {el.type.slice(0, 3)}
-                      </span>
-                      <span className="truncate text-xs">{el.name || el.type}</span>
-                    </div>
-
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleElementLock(el.id);
-                        }}
-                        className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)]"
-                      >
-                        {el.locked ? <Icons.Lock size={10} /> : <Icons.Unlock size={10} />}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleElementHidden(el.id);
-                        }}
-                        className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)]"
-                      >
-                        {el.hidden ? <Icons.EyeOff size={10} /> : <Icons.Eye size={10} />}
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteElement(el.id);
-                        }}
-                        className="p-1 hover:bg-white/10 rounded text-[rgba(235,235,236,0.6)] hover:text-rose-400"
-                      >
-                        <Icons.Trash2 size={10} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              {filteredFreeElements.map(elementRow)}
             </div>
           </div>
         )}

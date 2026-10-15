@@ -1,4 +1,5 @@
 import { vectorBounds } from '../lib/vector';
+import { absBoxOf, chainOf, flowsChildren, isContainer, originOf, subtreeIds } from '../lib/tree';
 import { create } from 'zustand';
 import {
   DeviceFrame,
@@ -173,6 +174,8 @@ export interface ProjectState {
   addElement: (type: UIElementType, x: number, y: number, parentFrameId?: string) => string;
   createShapeAt: (type: UIElementType, x: number, y: number, width: number, height: number, parentId?: string) => string;
   dropComponentAt: (type: UIElementType, canvasX: number, canvasY: number) => string;
+  // The deepest screen or container at a canvas point, and where its 0,0 is.
+  parentAt: (x: number, y: number) => { id?: string; x: number; y: number };
   addPredefinedElement: (element: UIElement) => void;
   updateElement: (id: string, updates: Partial<UIElement>) => void;
   updateElementStyle: (id: string, styleUpdates: Partial<ElementStyle>) => void;
@@ -520,9 +523,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!pasted.length) return;
     const { pushHistory } = get();
     set((state) => {
-      const fresh = pasted.map((el, i) => ({
+      const ids = new Map(pasted.map((el, i) => [el.id, `el-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 5)}`]));
+      const fresh = pasted.map((el) => ({
         ...JSON.parse(JSON.stringify(el)),
-        id: `el-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 5)}`,
+        id: ids.get(el.id)!,
+        // what was inside a copied container stays inside the copy
+        parentId: el.parentId && ids.has(el.parentId) ? ids.get(el.parentId) : el.parentId,
         interactions: []                       // a copy does not inherit navigation wiring
       })) as UIElement[];
       const frames = state.frames.map(f => {
@@ -532,7 +538,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return {
         elements: [...state.elements, ...fresh],
         frames,
-        selectedElementIds: fresh.map(el => el.id),
+        selectedElementIds: fresh.filter(el => !ids.has(pasted.find(p => ids.get(p.id) === el.id)?.parentId || '')).map(el => el.id),
         selectedFrameIds: []
       };
     });
@@ -831,7 +837,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     set((state) => {
       let updatedFrames = state.frames;
-      if (parentFrameId) {
+      if (parentFrameId && state.frames.some(f => f.id === parentFrameId)) {
         updatedFrames = state.frames.map(f =>
           f.id === parentFrameId
             ? { ...f, elementIds: [...f.elementIds, id] }
@@ -891,22 +897,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   dropComponentAt: (type, canvasX, canvasY) => {
-    const { frames, addElement } = get();
-    let targetFrame: DeviceFrame | undefined;
-    for (const f of frames) {
-      if (canvasX >= f.x && canvasX <= f.x + f.width && canvasY >= f.y && canvasY <= f.y + f.height) {
-        targetFrame = f;
-        break;
-      }
-    }
+    const p = get().parentAt(canvasX, canvasY);
+    return get().addElement(type, Math.round(canvasX - p.x), Math.round(canvasY - p.y), p.id);
+  },
 
-    if (targetFrame) {
-      const relX = Math.max(10, Math.round(canvasX - targetFrame.x));
-      const relY = Math.max(10, Math.round(canvasY - targetFrame.y));
-      return addElement(type, relX, relY, targetFrame.id);
-    } else {
-      return addElement(type, Math.round(canvasX), Math.round(canvasY), undefined);
-    }
+  parentAt: (x, y) => {
+    const { elements, frames } = get();
+    const inside = (b: { x: number; y: number; w: number; h: number }) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+    const c = elements
+      .filter(e => isContainer(e) && !e.hidden && inside(absBoxOf(e, elements, frames)))
+      .sort((a, b) => chainOf(b.id, elements).length - chainOf(a.id, elements).length)[0];
+    if (c) { const o = originOf(c.id, elements, frames); return { id: c.id, x: o.x, y: o.y }; }
+    const f = frames.find(fr => !fr.hidden && !fr.isGroup && inside({ x: fr.x, y: fr.y, w: fr.width, h: fr.height }));
+    return f ? { id: f.id, x: f.x, y: f.y } : { x: 0, y: 0 };
   },
 
   addPredefinedElement: (element) => {
@@ -989,15 +992,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   deleteElement: (id) => {
     const { pushHistory } = get();
-    set((state) => ({
-      elements: state.elements.filter(el => el.id !== id),
+    set((state) => {
+      // a container goes with everything inside it
+      const gone = new Set(subtreeIds(id, state.elements));
+      return {
+      elements: state.elements.filter(el => !gone.has(el.id)),
       frames: state.frames.map(f => ({
         ...f,
-        elementIds: f.elementIds.filter(elId => elId !== id)
+        elementIds: f.elementIds.filter(elId => !gone.has(elId))
       })),
-      selectedElementIds: state.selectedElementIds.filter(i => i !== id),
+      selectedElementIds: state.selectedElementIds.filter(i => !gone.has(i)),
       isSaved: false
-    }));
+      };
+    });
     pushHistory();
   },
 
@@ -1005,31 +1012,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const { elements, pushHistory } = get();
     const el = elements.find(e => e.id === id);
     if (!el) return;
-
-    const newId = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    const cloned: UIElement = {
-      ...JSON.parse(JSON.stringify(el)),
-      id: newId,
-      name: `${el.name} (Copy)`,
-      style: {
-        ...el.style,
-        x: Number(el.style.x) + 20,
-        y: Number(el.style.y) + 20
-      }
-    };
+    // the element and everything inside it, with fresh ids
+    const ids = subtreeIds(id, elements);
+    const fresh = new Map(ids.map((old, i) => [old, `el-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 5)}`]));
+    const copies: UIElement[] = ids.map(old => {
+      const src = elements.find(e => e.id === old)!;
+      const c: UIElement = JSON.parse(JSON.stringify(src));
+      c.id = fresh.get(old)!;
+      if (old === id) {
+        c.name = `${el.name} (Copy)`;
+        // beside it, unless its parent lays it out
+        if (!flowsChildren(el.parentId, elements, get().frames)) c.style = { ...c.style, x: Number(el.style.x) + 20, y: Number(el.style.y) + 20 };
+      } else c.parentId = fresh.get(src.parentId!) ?? src.parentId;
+      return c;
+    });
+    const newId = fresh.get(id)!;
 
     set((state) => {
-      let updatedFrames = state.frames;
-      if (el.parentId) {
-        updatedFrames = state.frames.map(f => 
-          f.id === el.parentId 
-            ? { ...f, elementIds: [...f.elementIds, newId] }
-            : f
-        );
-      }
+      // right after the original, so it lands next to it in a row / column
+      const at = state.elements.findIndex(e => e.id === ids[ids.length - 1]);
+      const next = [...state.elements];
+      next.splice(Math.max(at, state.elements.findIndex(e => e.id === id)) + 1, 0, ...copies);
       return {
-        elements: [...state.elements, cloned],
-        frames: updatedFrames,
+        elements: next,
+        frames: el.parentId ? state.frames.map(f => f.id === el.parentId ? { ...f, elementIds: [...f.elementIds, newId] } : f) : state.frames,
         selectedElementIds: [newId],
         isSaved: false
       };
@@ -1100,11 +1106,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     let targetY = absCanvasY ?? Number(el.style.y);
 
     if (newParentId) {
-      const targetFrame = frames.find(f => f.id === newParentId);
-      if (targetFrame) {
-        targetX = targetX - targetFrame.x;
-        targetY = targetY - targetFrame.y;
-      }
+      const o = originOf(newParentId, elements, frames);
+      targetX = targetX - o.x;
+      targetY = targetY - o.y;
     }
 
     set((state) => {
@@ -1290,25 +1294,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   groupSelectedIntoAutoLayout: () => {
-    const { elements, selectedElementIds, addElement, pushHistory } = get();
+    const { elements, frames, selectedElementIds, pushHistory } = get();
     if (selectedElementIds.length < 2) return;
 
     const selected = elements.filter(e => selectedElementIds.includes(e.id));
-    // where each one is on the canvas (x/y are relative to a frame they sit in)
-    const abs = selected.map(e => {
-      const f = get().frames.find(fr => fr.id === e.parentId);
-      return { x: (f?.x || 0) + Number(e.style.x), y: (f?.y || 0) + Number(e.style.y), w: Number(e.style.width), h: Number(e.style.height) };
-    });
+    const parentId = selected[0].parentId;
+    const abs = selected.map(e => absBoxOf(e, elements, frames));
     const minX = Math.min(...abs.map(a => a.x)), minY = Math.min(...abs.map(a => a.y));
     const maxX = Math.max(...abs.map(a => a.x + a.w)), maxY = Math.max(...abs.map(a => a.y + a.h));
-
-    const frameId = get().addCustomFrame(minX, minY, maxX - minX + 24, maxY - minY + 24, 'Auto Layout Group');
-    get().updateFrame(frameId, { isGroup: true, backgroundColor: 'transparent', isStartingFrame: false });
-
-    // Reparent all selected into this frame
-    selected.forEach((el, i) => {
-      get().reparentElement(el.id, frameId, abs[i].x, abs[i].y);
-    });
 
     // Keep the arrangement they were in, as Figma does: side by side becomes
     // a row, one above another a column, with the gap that was between them.
@@ -1316,17 +1309,35 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const order = abs.map((a, i) => ({ ...a, i })).sort((p, q) => across ? p.x - q.x : p.y - q.y);
     const gaps = order.slice(1).map((a, k) => across ? a.x - (order[k].x + order[k].w) : a.y - (order[k].y + order[k].h));
     const gap = Math.max(0, Math.round(gaps.reduce((t, g) => t + g, 0) / (gaps.length || 1)));
-    // children go into the frame in that order
-    set((state) => ({ elements: [
-      ...state.elements.filter(e => !selectedElementIds.includes(e.id)),
-      ...order.map(o => state.elements.find(e => e.id === selected[o.i].id)!)
-    ] }));
-    get().toggleAutoLayout(frameId);
-    get().updateAutoLayout(frameId, {
-      direction: across ? 'horizontal' : 'vertical', gap,
-      padding: { top: 0, right: 0, bottom: 0, left: 0 }, sizingH: 'hug', sizingV: 'hug'
+
+    // the new frame goes where they are, in the parent they share (or, when
+    // they come from different places, the first one's)
+    const o = originOf(parentId, elements, frames);
+    const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const box: UIElement = {
+      id, name: 'Frame', type: 'container', parentId, interactions: [], semanticProps: {},
+      style: {
+        x: Math.round(minX - o.x), y: Math.round(minY - o.y), width: Math.round(maxX - minX), height: Math.round(maxY - minY),
+        fillColor: 'transparent', clipContent: false,
+        autoLayout: { enabled: true, direction: across ? 'horizontal' : 'vertical', gap, align: 'start',
+                      padding: { top: 0, right: 0, bottom: 0, left: 0 }, sizingH: 'hug', sizingV: 'hug' }
+      }
+    };
+    const moved = new Set(selectedElementIds);
+    set((state) => {
+      const at = state.elements.findIndex(e => moved.has(e.id));
+      const rest = state.elements.filter(e => !moved.has(e.id));
+      const kids = order.map(k => ({ ...selected[k.i], parentId: id }));
+      rest.splice(Math.min(at, rest.length), 0, box);
+      return {
+        elements: [...rest, ...kids],
+        frames: state.frames.map(f => ({
+          ...f,
+          elementIds: [...f.elementIds.filter(e => !moved.has(e)), ...(f.id === parentId ? [id] : [])]
+        })),
+        selectedElementIds: [id], selectedFrameIds: [], isSaved: false
+      };
     });
-    set({ selectedFrameIds: [frameId], selectedElementIds: [] });
     pushHistory();
   },
 
@@ -1671,17 +1682,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const height = Math.round(Math.max(Math.abs(endY - startY), 20));
 
     if (type === 'frame') {
-      get().addCustomFrame(x, y, width, height);
+      const p = get().parentAt(x, y);
+      if (p.id) {
+        const id = get().createShapeAt('container', x - p.x, y - p.y, width, height, p.id);
+        get().updateElementStyle(id, { fillColor: '#ffffff', borderWidth: 0, borderRadius: 0, padding: undefined, display: undefined, clipContent: true });
+        get().updateElement(id, { name: 'Frame' });
+      } else get().addCustomFrame(x, y, width, height);
     } else if (type === 'section') {
       get().addSection(x, y, width, height);
     } else {
       // Drawn inside a frame, it belongs to that frame - as in Figma. It used
       // to float above the frame instead, and anything floating draws above
       // everything in a frame whatever the layer order says.
-      const f = get().frames.find(fr => !fr.hidden &&
-        x >= fr.x && x <= fr.x + fr.width && y >= fr.y && y <= fr.y + fr.height);
-      if (f) get().createShapeAt(toolToElementType(type), x - f.x, y - f.y, width, height, f.id);
-      else   get().createShapeAt(toolToElementType(type), x, y, width, height);
+      const p = get().parentAt(x, y);
+      get().createShapeAt(toolToElementType(type), x - p.x, y - p.y, width, height, p.id);
     }
   },
 

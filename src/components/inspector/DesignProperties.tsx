@@ -7,6 +7,7 @@ import * as Icons from 'lucide-react';
 import { FontPicker } from './FontPicker';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { BLEND_MODES, textResizeOf } from '../../lib/styleCss';
+import { inFlow as treeInFlow } from '../../lib/tree';
 import { EffectLayer, BlendMode } from '../../types/components';
 
 const field = 'bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] font-mono text-xs outline-none';
@@ -657,24 +658,30 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   const setFill = (c: string) => updateElementStyle(element!.id, { [fillKey]: c, fillGradient: undefined });
 
   // In an auto-layout frame, W and H each say Fixed, Hug (text) or Fill.
-  const inFlow = !!frames.find(f => f.id === element!.parentId)?.autoLayout?.enabled && !style.absolutePosition;
+  const elements = useProjectStore.getState().elements;
+  const inFlow = treeInFlow(element!, elements, frames);
+  // a container with auto layout can hug what is inside it
+  const ownAL = element!.type === 'container' && style.autoLayout?.enabled ? style.autoLayout : null;
   const isTextEl = element!.type === 'text' || element!.type === 'heading';
   const tMode = textResizeOf(style);
   const sizingOf = (axis: 'H' | 'V'): 'fixed' | 'hug' | 'fill' => {
     const v = axis === 'H' ? style.layoutSizingH : style.layoutSizingV;
-    if (v === 'fill') return 'fill';
+    if (v === 'fill' && inFlow) return 'fill';
+    if (ownAL && (axis === 'H' ? ownAL.sizingH : ownAL.sizingV) === 'hug') return 'hug';
     if (isTextEl && (tMode === 'auto' || (axis === 'V' && tMode === 'autoHeight'))) return 'hug';
     return 'fixed';
   };
   const setSizing = (axis: 'H' | 'V', v: 'fixed' | 'hug' | 'fill') => {
-    const upd: Partial<typeof style> = axis === 'H' ? { layoutSizingH: v } : { layoutSizingV: v };
+    if (ownAL) updateAutoLayout(element!.id, axis === 'H' ? { sizingH: v === 'hug' ? 'hug' : 'fixed' } : { sizingV: v === 'hug' ? 'hug' : 'fixed' });
+    const upd: Partial<typeof style> = axis === 'H' ? { layoutSizingH: v === 'fill' ? 'fill' : 'fixed' } : { layoutSizingV: v === 'fill' ? 'fill' : 'fixed' };
     if (isTextEl) {
       const h = axis === 'H' ? v : sizingOf('H'), vv = axis === 'V' ? v : sizingOf('V');
       upd.textResize = h === 'hug' ? 'auto' : vv === 'hug' ? 'autoHeight' : 'fixed';
     }
     updateElementStyle(element!.id, upd);
   };
-  const sizingOptions: ('fixed' | 'hug' | 'fill')[] = isTextEl ? ['fixed', 'hug', 'fill'] : ['fixed', 'fill'];
+  const sizingOptions = (['fixed', 'hug', 'fill'] as const).filter(o =>
+    o === 'fixed' || (o === 'hug' && (isTextEl || !!ownAL)) || (o === 'fill' && inFlow));
 
   return (
     <div className="p-3.5 space-y-4 text-xs text-[rgb(235,235,236)] overflow-y-auto select-none">
@@ -818,7 +825,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               onChange={(e) => updateElementStyle(element!.id, { width: Number(e.target.value), layoutSizingH: 'fixed', ...(isTextEl && tMode === 'auto' ? { textResize: 'autoHeight' as const } : {}) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
-            {inFlow && <SizingSelect value={sizingOf('H')} options={sizingOptions} onChange={v => setSizing('H', v)} />}
+            {sizingOptions.length > 1 && <SizingSelect value={sizingOf('H')} options={sizingOptions} onChange={v => setSizing('H', v)} />}
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">H</span>
@@ -827,7 +834,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               onChange={(e) => updateElementStyle(element!.id, { height: Number(e.target.value), layoutSizingV: 'fixed', ...(isTextEl && tMode !== 'fixed' ? { textResize: 'fixed' as const } : {}) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
-            {inFlow && <SizingSelect value={sizingOf('V')} options={sizingOptions} onChange={v => setSizing('V', v)} />}
+            {sizingOptions.length > 1 && <SizingSelect value={sizingOf('V')} options={sizingOptions} onChange={v => setSizing('V', v)} />}
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">∠</span>
@@ -863,7 +870,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         {/* Absolute Position — opt this child out of its parent frame's auto-layout flow */}
         {element && (() => {
           const parentFrame = frames.find(f => f.id === element.parentId);
-          if (!parentFrame?.autoLayout?.enabled) return null;
+          const parentBox = useProjectStore.getState().elements.find(e => e.id === element.parentId);
+          if (!parentFrame?.autoLayout?.enabled && !parentBox?.style.autoLayout?.enabled) return null;
           return (
             <div className="flex items-center justify-between mt-2 bg-[rgba(235,235,236,0.02)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.5)] text-[11px]" title="Take this element out of the auto-layout flow and position it freely with X/Y">

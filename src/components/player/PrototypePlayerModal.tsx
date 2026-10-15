@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
+import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
+import { isContainer } from '../../lib/tree';
+import type { AutoLayoutSettings } from '../../types/components';
 import { UIElement } from '../../types/components';
 import confetti from 'canvas-confetti';
 import * as Icons from 'lucide-react';
@@ -32,7 +35,7 @@ export const PrototypePlayerModal: React.FC = () => {
 
   const currentFrame = frames.find(f => f.id === currentPlayingFrameId) || frames[0];
   const frameElements = currentFrame 
-    ? elements.filter(el => currentFrame.elementIds.includes(el.id) || el.parentId === currentFrame.id)
+    ? elements.filter(el => el.parentId === currentFrame.id || (!el.parentId && currentFrame.elementIds.includes(el.id)))
     : [];
 
   // Auto-fade the bottom hint after 3.5 seconds
@@ -124,6 +127,60 @@ export const PrototypePlayerModal: React.FC = () => {
       default:
         return 'translate-x-0 opacity-100';
     }
+  };
+
+  // One element as the player shows it, and what is inside a container.
+  const renderNode = (element: UIElement, layer: number, parentLayout: AutoLayoutSettings | null): React.ReactNode => {
+    if (element.hidden) return null;
+    const hasInteractions = element.interactions.length > 0;
+    const flow = !!parentLayout && !element.style.absolutePosition;
+    const own = isContainer(element) && element.style.autoLayout?.enabled ? element.style.autoLayout : null;
+    const kids = isContainer(element) ? elements.filter(e => e.parentId === element.id) : [];
+    return (
+      <div
+        key={element.id}
+        style={{
+          ...(flow ? { position: 'relative', flexShrink: 0 } : { position: 'absolute', left: Number(element.style.x), top: Number(element.style.y) }),
+          ...nodeSize(element, parentLayout),
+          zIndex: 10 + layer,      // the layer order, as on the canvas
+          mixBlendMode: element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined
+        }}
+        className={`transition-transform ${hasInteractions ? 'cursor-pointer' : ''}`}
+        onMouseEnter={() => setHoveredElementId(element.id)}
+        onMouseLeave={() => {
+          setHoveredElementId(prev => prev === element.id ? null : prev);
+          setPressedElementId(prev => prev === element.id ? null : prev);
+        }}
+        onMouseDown={(e) => { e.stopPropagation(); setPressedElementId(element.id); }}
+        onMouseUp={() => setPressedElementId(prev => prev === element.id ? null : prev)}
+      >
+        {isContainer(element) ? (
+          <>
+            <div className="absolute inset-0">
+              <SemanticElementRenderer element={element} isInteractive={true} isHovering={hoveredElementId === element.id}
+                                       isPressed={pressedElementId === element.id} onTriggerInteraction={handleTriggerInteraction} />
+            </div>
+            <div style={{ position: 'relative', width: own?.sizingH === 'hug' ? 'max-content' : '100%', height: own?.sizingV === 'hug' ? 'max-content' : '100%',
+                          overflow: element.style.clipContent ? 'hidden' : 'visible', ...(own ? flexLayoutCss(own) : {}) }}>
+              {kids.map((k, i) => renderNode(k, i, own))}
+            </div>
+          </>
+        ) : (
+          <SemanticElementRenderer
+            element={element}
+            isInteractive={true}
+            isHovering={hoveredElementId === element.id}
+            isPressed={pressedElementId === element.id}
+            onTriggerInteraction={handleTriggerInteraction}
+          />
+        )}
+
+        {/* Hotspot Click Hint Flash Indicator */}
+        {showHintFlash && hasInteractions && (
+          <div className="absolute inset-0 rounded-lg pointer-events-none hint-flash" />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -276,44 +333,11 @@ export const PrototypePlayerModal: React.FC = () => {
               }}
               className={`relative overflow-hidden transition-all duration-300 ${getTransitionStyle()}`}
             >
-              {/* Render Interactive Elements */}
-              {frameElements.map((element, layer) => {
-                const hasInteractions = element.interactions.length > 0;
-                return (
-                  <div
-                    key={element.id}
-                    style={{
-                      position: 'absolute',
-                      left: Number(element.style.x),
-                      top: Number(element.style.y),
-                      width: Number(element.style.width),
-                      height: Number(element.style.height),
-                      zIndex: 10 + layer      // the layer order, as on the canvas
-                    }}
-                    className={`transition-transform ${hasInteractions ? 'cursor-pointer' : ''}`}
-                    onMouseEnter={() => setHoveredElementId(element.id)}
-                    onMouseLeave={() => {
-                      setHoveredElementId(prev => prev === element.id ? null : prev);
-                      setPressedElementId(prev => prev === element.id ? null : prev);
-                    }}
-                    onMouseDown={() => setPressedElementId(element.id)}
-                    onMouseUp={() => setPressedElementId(prev => prev === element.id ? null : prev)}
-                  >
-                    <SemanticElementRenderer
-                      element={element}
-                      isInteractive={true}
-                      isHovering={hoveredElementId === element.id}
-                      isPressed={pressedElementId === element.id}
-                      onTriggerInteraction={handleTriggerInteraction}
-                    />
-
-                    {/* Hotspot Click Hint Flash Indicator */}
-                    {showHintFlash && hasInteractions && (
-                      <div className="absolute inset-0 rounded-lg pointer-events-none hint-flash" />
-                    )}
-                  </div>
-                );
-              })}
+              {/* Render Interactive Elements - laid out as on the canvas,
+                  frames inside frames included */}
+              <div style={{ position: 'absolute', inset: 0, ...(currentFrame.autoLayout?.enabled ? flexLayoutCss(currentFrame.autoLayout) : {}) }}>
+                {frameElements.map((element, layer) => renderNode(element, layer, currentFrame.autoLayout?.enabled ? currentFrame.autoLayout : null))}
+              </div>
 
               {/* Bottom Home Indicator */}
               {deviceSkin === 'iphone' && (
