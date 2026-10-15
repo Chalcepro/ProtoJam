@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -6,11 +6,18 @@ let mainWindow = null;
 const isMac = process.platform === 'darwin';
 
 function createWindow() {
+  // 1440x900, or the screen's usable area if that is smaller. Without an OS
+  // frame, Windows no longer squeezes an oversized window in: on a 1366x768
+  // laptop it hung past every edge and over the taskbar.
+  const work = screen.getPrimaryDisplay().workArea;
+  const tooSmall = work.width < 1440 || work.height < 900;
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 700,
+    width: Math.min(1440, work.width),
+    height: Math.min(900, work.height),
+    minWidth: Math.min(1024, work.width),
+    minHeight: Math.min(700, work.height),
+    center: true,
+    show: false,
     title: 'ProtoJam — UI/UX Prototyping Suite',
     backgroundColor: '#121316',
     // No OS title bar or File/Edit/View/Window menu: ProtoJam's own top bar
@@ -23,6 +30,10 @@ function createWindow() {
       contextIsolation: true
     }
   });
+
+  // a small screen starts maximised - filling the space above the taskbar
+  if (tooSmall) mainWindow.maximize();
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
