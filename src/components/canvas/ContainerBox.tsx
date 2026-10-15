@@ -6,6 +6,7 @@ import { shapeD } from '../../lib/boolean';
 import { effectsCss } from '../../lib/styleCss';
 import { fillsOf, hasLayeredPaint, strokesOf } from '../../lib/paint';
 import { SvgPaint } from './SvgPaint';
+import { useProjectStore } from '../../store/useProjectStore';
 
 // The outline of a frame made from a shape, in its own 0,0 space.
 export const frameOutline = (el: UIElement) =>
@@ -22,7 +23,10 @@ export const clipCss = (el: UIElement): React.CSSProperties => {
 
 // A frame's own look under its children: a boolean result, a shape's
 // outline, or the plain box.
-export const ContainerBox: React.FC<{ el: UIElement; elements: UIElement[]; interactive?: boolean; hidden?: boolean }> = ({ el, elements, interactive, hidden }) => {
+export const ContainerBox: React.FC<{ el: UIElement; elements: UIElement[]; interactive?: boolean; hidden?: boolean }> = ({ el: e0, elements, interactive, hidden }) => {
+  // a paint being hovered in a menu shows before it is chosen
+  const preview = useProjectStore((st) => st.stylePreview?.ids.includes(e0.id) ? st.stylePreview.style : null);
+  const el = preview ? { ...e0, style: { ...e0.style, ...preview } } : e0;
   const s = el.style;
   if (s.booleanOp) return hidden ? null : <BooleanShape group={el} elements={elements} />;
   if (s.frameShape) {

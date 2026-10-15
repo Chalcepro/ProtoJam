@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
 import * as Icons from 'lucide-react';
 import { NumberInput } from './NumberInput';
-import { BLEND_MODES } from '../../lib/styleCss';
+import { BlendPicker } from './BlendPicker';
+import { useProjectStore } from '../../store/useProjectStore';
 import { fillsOf, paintRgba, paintsLetters, strokesOf, fillsCss } from '../../lib/paint';
 import { putAsset } from '../../lib/assets';
 import { exportLayer } from '../../lib/exportImage';
-import type { BlendMode, ElementStyle, ExportSetting, FillLayer, StrokeLayer, UIElement } from '../../types/components';
+import type { ElementStyle, ExportSetting, FillLayer, StrokeLayer, UIElement } from '../../types/components';
 
 // Fill, Stroke and Export as lists, the way Figma lays them out: + to add a
 // row, an eye and a minus on each, a paint's own editor under its swatch.
@@ -74,6 +75,8 @@ export const FillsSection: React.FC<{ element: UIElement; update: (s: Partial<El
           </div>
           {open === f.id && (
             <PaintEditor f={f} onChange={p => patch(f.id, p)} letters={letters}
+                         // a change shown on the canvas but not saved (hovering a menu)
+                         preview={p => useProjectStore.setState({ stylePreview: p ? { ids: [element.id], style: { fills: fills.map(x => x.id === f.id ? { ...x, ...p } : x) } } : null })}
                          canUp={i > 0} canDown={i < fills.length - 1}
                          move={(dir) => { const n = [...fills]; const j = i + dir; [n[i], n[j]] = [n[j], n[i]]; save(n); }} />
           )}
@@ -84,8 +87,8 @@ export const FillsSection: React.FC<{ element: UIElement; update: (s: Partial<El
   );
 };
 
-const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) => void; letters: boolean; canUp: boolean; canDown: boolean; move: (d: -1 | 1) => void }> =
-  ({ f, onChange, letters, canUp, canDown, move }) => {
+const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) => void; preview: (p: Partial<FillLayer> | null) => void; letters: boolean; canUp: boolean; canDown: boolean; move: (d: -1 | 1) => void }> =
+  ({ f, onChange, preview, letters, canUp, canDown, move }) => {
   const file = useRef<HTMLInputElement>(null);
   const isGrad = f.type === 'linear' || f.type === 'radial' || f.type === 'angular' || f.type === 'diamond';
   const stops = f.gradient?.stops || [];
@@ -115,9 +118,8 @@ const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) =>
       </div>
       <div className="flex items-center gap-2">
         <Icons.Blend size={12} className="text-[rgba(235,235,236,0.4)] shrink-0" />
-        <select value={f.blendMode || 'normal'} onChange={e => onChange({ blendMode: e.target.value as BlendMode })} className={`${sel} flex-1`} title="This paint's blend mode">
-          {BLEND_MODES.map(([v, l]) => <option key={v} value={v} className="bg-[rgb(20,20,19)]">{l}</option>)}
-        </select>
+        <BlendPicker value={f.blendMode} onPick={m => onChange({ blendMode: m })} onPreview={m => preview(m ? { blendMode: m } : null)}
+                     className={`${sel} flex-1`} title="This paint's blend mode - hover a mode to see it" />
         <button disabled={!canUp} onClick={() => move(-1)} className={`${iconBtn} disabled:opacity-25`} title="Move up (paints over)"><Icons.ArrowUp size={12} /></button>
         <button disabled={!canDown} onClick={() => move(1)} className={`${iconBtn} disabled:opacity-25`} title="Move down"><Icons.ArrowDown size={12} /></button>
       </div>

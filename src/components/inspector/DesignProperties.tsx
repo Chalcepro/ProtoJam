@@ -6,8 +6,9 @@ import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { FontPicker, WeightPicker } from './FontPicker';
 import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
+import { BlendPicker } from './BlendPicker';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
-import { BLEND_MODES, textResizeOf } from '../../lib/styleCss';
+import { textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
 import { BOOLEANABLE } from '../../lib/boolean';
 
@@ -15,7 +16,7 @@ const BOOL_OPS = [
   ['union', 'Union', Icons.SquaresUnite, 'U'], ['subtract', 'Subtract', Icons.SquaresSubtract, 'S'],
   ['intersect', 'Intersect', Icons.SquaresIntersect, 'I'], ['exclude', 'Exclude', Icons.SquaresExclude, 'X']
 ] as const;
-import { EffectLayer, BlendMode } from '../../types/components';
+import { EffectLayer } from '../../types/components';
 
 
 // A small Fixed / Hug / Fill menu, as in Figma's W and H fields.
@@ -890,11 +891,10 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
         <div className="flex items-center gap-2 mt-2 bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
           <Icons.Blend size={12} className="text-[rgba(235,235,236,0.4)] shrink-0" />
-          <select value={style.blendMode || 'normal'} title="Blend mode"
-                  onChange={(e) => updateElementStyle(element!.id, { blendMode: e.target.value as BlendMode })}
-                  className="bg-transparent text-xs text-[rgb(235,235,236)] outline-none flex-1 cursor-pointer">
-            {BLEND_MODES.map(([v, label]) => <option key={v} value={v} className="bg-[rgb(20,20,19)]">{label}</option>)}
-          </select>
+          <BlendPicker value={style.blendMode} title="Layer blend mode - hover a mode to see it"
+                       onPreview={(m) => previewStyle(m ? { blendMode: m } : null)}
+                       onPick={(m) => updateElementStyle(element!.id, { blendMode: m })}
+                       className="flex-1 text-xs text-[rgb(235,235,236)]" />
         </div>
 
         {/* Absolute Position — opt this child out of its parent frame's auto-layout flow */}

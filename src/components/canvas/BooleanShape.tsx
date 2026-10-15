@@ -4,11 +4,15 @@ import { booleanD, shapeD } from '../../lib/boolean';
 import { effectsCss } from '../../lib/styleCss';
 import { fillsOf, hasLayeredPaint, strokesOf } from '../../lib/paint';
 import { SvgPaint } from './SvgPaint';
+import { useProjectStore } from '../../store/useProjectStore';
 
 // A boolean group drawn as its result: the shapes inside it, united /
 // subtracted / intersected / excluded, in the group's own fill and stroke.
 // Live - edit a shape inside and the result follows.
-export const BooleanShape: React.FC<{ group: UIElement; elements: UIElement[] }> = ({ group, elements }) => {
+export const BooleanShape: React.FC<{ group: UIElement; elements: UIElement[] }> = ({ group: g0, elements }) => {
+  // a paint being hovered in a menu shows before it is chosen
+  const preview = useProjectStore((st) => st.stylePreview?.ids.includes(g0.id) ? st.stylePreview.style : null);
+  const group = preview ? { ...g0, style: { ...g0.style, ...preview } } : g0;
   const s = group.style;
   const kids = elements.filter(e => e.parentId === group.id && !e.hidden);
   const d = useMemo(

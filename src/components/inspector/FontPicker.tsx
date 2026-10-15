@@ -161,14 +161,19 @@ export const WeightPicker: React.FC<{ family?: string; weights: number[]; value:
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
+  const previewRef = useRef(onPreview);
+  previewRef.current = onPreview;
   useEffect(() => {
     if (!open) return;
+    const onPreview = (w: number | null) => previewRef.current?.(w);
     const down = (e: MouseEvent) => {
       if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) { onPreview?.(null); setOpen(false); }
     };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); onPreview?.(null); setOpen(false); } };
     window.addEventListener('mousedown', down);
-    return () => window.removeEventListener('mousedown', down);
-  }, [open, onPreview]);
+    window.addEventListener('keydown', key, true);
+    return () => { window.removeEventListener('mousedown', down); window.removeEventListener('keydown', key, true); onPreview?.(null); };
+  }, [open]);
   const r = btn.current?.getBoundingClientRect();
   return (
     <>

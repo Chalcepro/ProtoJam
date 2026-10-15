@@ -33,6 +33,8 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
   const { elements, selectedElementIds, activeTool, editorMode, isWiring, finishWiring, startWiring, updateElementStyle, setSelection } =
     useProjectStore(useShallow((s) => ({ elements: s.elements, selectedElementIds: s.selectedElementIds, activeTool: s.activeTool, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateElementStyle: s.updateElementStyle, setSelection: s.setSelection })));
   const ref = useRef<HTMLDivElement>(null);
+  // a blend mode being hovered in a menu shows before it is chosen
+  const preview = useProjectStore((s) => s.stylePreview?.ids.includes(element.id) ? s.stylePreview.style : null);
   const flow = !!parentLayout && !element.style.absolutePosition;
   const isSelected = selectedElementIds.includes(element.id);
   const container = isContainer(element);
@@ -56,7 +58,8 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
   if (element.hidden) return null;
   const kids = container ? elements.filter(e => e.parentId === element.id) : [];
   const bool = container && !!element.style.booleanOp;
-  const blend = element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined;
+  const shownBlend = preview?.blendMode ?? element.style.blendMode;
+  const blend = shownBlend && shownBlend !== 'normal' ? shownBlend : undefined;
   const position: React.CSSProperties = flow
     ? { position: 'relative', flexShrink: 0 }
     : { position: 'absolute', left: Number(element.style.x), top: Number(element.style.y) };
