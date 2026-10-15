@@ -234,6 +234,7 @@ export interface ProjectState {
 
   // History & Storage
   pushHistory: () => void;
+  pruneSelection: () => void;
   undo: () => void;
   redo: () => void;
   loadStarterProject: (projectId: string) => void;
@@ -1703,34 +1704,36 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   // History Undo / Redo
+  //
+  // Every change to the document is recorded on its own (see the subscriber
+  // at the bottom of this file) - a drag, a colour, typing - so nothing has to
+  // remember to call this. A snapshot holds the arrays themselves: the store
+  // never edits them in place, so no copy is needed and big images cost nothing.
   pushHistory: () => {
     const { frames, sections, elements, history, historyIndex } = get();
-    const newSnapshot: HistorySnapshot = {
-      frames: JSON.parse(JSON.stringify(frames)),
-      sections: JSON.parse(JSON.stringify(sections)),
-      elements: JSON.parse(JSON.stringify(elements))
-    };
-    const sliced = history.slice(0, historyIndex + 1);
+    const top = history[historyIndex];
+    if (top && top.frames === frames && top.sections === sections && top.elements === elements) return;
+    const sliced = history.slice(0, historyIndex + 1).slice(-HISTORY_LIMIT);
     set({
-      history: [...sliced, newSnapshot],
+      history: [...sliced, { frames, sections, elements }],
       historyIndex: sliced.length
     });
   },
 
   undo: () => {
+    get().pushHistory();             // a change not yet recorded is the step undone
     const { history, historyIndex } = get();
     if (historyIndex > 0) {
       const prev = history[historyIndex - 1];
       set({
-        frames: JSON.parse(JSON.stringify(prev.frames)),
-        sections: JSON.parse(JSON.stringify(prev.sections || [])),
-        elements: JSON.parse(JSON.stringify(prev.elements)),
+        frames: prev.frames,
+        sections: prev.sections || [],
+        elements: prev.elements,
         historyIndex: historyIndex - 1,
-        selectedElementIds: [],
-        selectedFrameIds: [],
-        selectedSectionIds: [],
+        inlineEditingElementId: null,
         isSaved: false
       });
+      get().pruneSelection();
     }
   },
 
@@ -1739,17 +1742,23 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (historyIndex < history.length - 1) {
       const next = history[historyIndex + 1];
       set({
-        frames: JSON.parse(JSON.stringify(next.frames)),
-        sections: JSON.parse(JSON.stringify(next.sections || [])),
-        elements: JSON.parse(JSON.stringify(next.elements)),
+        frames: next.frames,
+        sections: next.sections || [],
+        elements: next.elements,
         historyIndex: historyIndex + 1,
-        selectedElementIds: [],
-        selectedFrameIds: [],
-        selectedSectionIds: [],
+        inlineEditingElementId: null,
         isSaved: false
       });
+      get().pruneSelection();
     }
   },
+
+  // Keep the selection on whatever still exists (undo used to drop it all).
+  pruneSelection: () => set((state) => ({
+    selectedElementIds: state.selectedElementIds.filter(id => state.elements.some(e => e.id === id)),
+    selectedFrameIds: state.selectedFrameIds.filter(id => state.frames.some(f => f.id === id)),
+    selectedSectionIds: state.selectedSectionIds.filter(id => state.sections.some(sc => sc.id === id))
+  })),
 
   // Project Management Methods
   loadStarterProject: (projectId) => {
@@ -2087,3 +2096,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }));
   }
 }));
+
+// ---- automatic undo history -----------------------------------------------
+// A snapshot is taken once the document has been still for a moment, and never
+// while a mouse button is down - so a whole drag or resize is one step, and so
+// is a burst of typing.
+const HISTORY_LIMIT = 200;
+let historyTimer: ReturnType<typeof setTimeout> | undefined;
+let pointerDown = false;
+const scheduleHistory = () => {
+  clearTimeout(historyTimer);
+  if (!pointerDown) historyTimer = setTimeout(() => useProjectStore.getState().pushHistory(), 300);
+};
+useProjectStore.subscribe((s, prev) => {
+  if (s.frames !== prev.frames || s.elements !== prev.elements || s.sections !== prev.sections) scheduleHistory();
+});
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', () => { pointerDown = true; clearTimeout(historyTimer); }, true);
+  window.addEventListener('pointerup', () => { pointerDown = false; scheduleHistory(); }, true);
+}

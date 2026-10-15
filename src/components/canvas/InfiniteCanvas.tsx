@@ -650,6 +650,7 @@ export const InfiniteCanvas: React.FC = () => {
   return (
     <div
       ref={canvasContainerRef}
+      data-canvas
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

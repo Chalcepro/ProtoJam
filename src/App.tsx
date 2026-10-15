@@ -8,165 +8,125 @@ import { useProjectStore } from './store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
+// Zoom keeping the middle of the canvas where it is. `absolute`: set the zoom.
+const zoomAround = (f: number, absolute = false) => {
+  const s = useProjectStore.getState();
+  const r = document.querySelector('[data-canvas]')?.getBoundingClientRect();
+  const cx = r ? r.width / 2 : 0, cy = r ? r.height / 2 : 0;
+  const { x, y, zoom } = s.viewport;
+  const z = Math.min(4, Math.max(0.1, absolute ? f : zoom * f));
+  s.setViewport({ zoom: z, x: cx - (cx - x) * z / zoom, y: cy - (cy - y) * z / zoom });
+};
+
 export const App: React.FC = () => {
   const {
-    undo,
-    redo,
-    deleteElement,
-    deleteFrame,
-    selectedElementIds,
-    selectedFrameIds,
-    duplicateElement,
-    duplicateFrame,
-    startPlaying,
-    isPlaying,
-    stopPlaying,
-    zoomToFit,
-    setActiveTool,
     isLeftSidebarOpen,
     isRightSidebarOpen,
     toggleLeftSidebar,
-    toggleRightSidebar,
-    setEditorMode,
-    editorMode,
-    saveCurrentProject,
-    openProjectMenu
-  } = useProjectStore(useShallow((s) => ({ undo: s.undo, redo: s.redo, deleteElement: s.deleteElement, deleteFrame: s.deleteFrame, selectedElementIds: s.selectedElementIds, selectedFrameIds: s.selectedFrameIds, duplicateElement: s.duplicateElement, duplicateFrame: s.duplicateFrame, startPlaying: s.startPlaying, isPlaying: s.isPlaying, stopPlaying: s.stopPlaying, zoomToFit: s.zoomToFit, setActiveTool: s.setActiveTool, isLeftSidebarOpen: s.isLeftSidebarOpen, isRightSidebarOpen: s.isRightSidebarOpen, toggleLeftSidebar: s.toggleLeftSidebar, toggleRightSidebar: s.toggleRightSidebar, setEditorMode: s.setEditorMode, editorMode: s.editorMode, saveCurrentProject: s.saveCurrentProject, openProjectMenu: s.openProjectMenu })));
+    toggleRightSidebar
+  } = useProjectStore(useShallow((s) => ({ isLeftSidebarOpen: s.isLeftSidebarOpen, isRightSidebarOpen: s.isRightSidebarOpen, toggleLeftSidebar: s.toggleLeftSidebar, toggleRightSidebar: s.toggleRightSidebar })));
 
-  // Global Keyboard Shortcuts
+  // Global Keyboard Shortcuts. Read from the store as the key goes down, so
+  // they never act on a stale selection. Letter keys are matched case-blind
+  // (Caps Lock, Shift) and never fire with Ctrl / Alt held, so Ctrl+V pastes
+  // without also switching tools. The canvas owns the clipboard, Ctrl+A,
+  // Ctrl+[ / ] and Shift+R; this owns the rest.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept if typing inside an input/textarea
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return;
+      const s = useProjectStore.getState();
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      const done = () => e.preventDefault();
+
+      if (s.isPlaying) {
+        if (e.key === 'Escape' || (!mod && k === 'p')) { done(); s.stopPlaying(); }
         return;
       }
 
-      // Save Project (Ctrl+S / Cmd+S)
-      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
-        e.preventDefault();
-        saveCurrentProject();
-        return;
-      }
-
-      // Open Project Menu (Ctrl+O / Cmd+O)
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) {
-        e.preventDefault();
-        openProjectMenu();
-        return;
-      }
-
-      // Prototyping Play toggle (P)
-      if (e.key === 'p' || e.key === 'P') {
-        e.preventDefault();
-        if (isPlaying) {
-          stopPlaying();
-        } else {
-          startPlaying();
+      if (mod) {
+        if (k === 's') { done(); s.saveCurrentProject(); }
+        else if (k === 'o') { done(); s.openProjectMenu(); }
+        else if (k === 'z') { done(); if (e.shiftKey) s.redo(); else s.undo(); }
+        else if (k === 'y') { done(); s.redo(); }
+        else if (k === 'd') {
+          done();
+          if (s.selectedElementIds.length) s.selectedElementIds.forEach(id => s.duplicateElement(id));
+          else s.selectedFrameIds.forEach(id => s.duplicateFrame(id));
         }
+        else if (e.code === 'Backslash') { done(); s.toggleLeftSidebar(); }
+        else if (e.code === 'Digit1') { done(); s.zoomToFit(); }
+        else if (e.code === 'Digit0') { done(); zoomAround(1, true); }
+        else if (e.key === '=' || e.key === '+') { done(); zoomAround(1.25); }
+        else if (e.key === '-' || e.key === '_') { done(); zoomAround(0.8); }
+        return;
+      }
+      if (e.altKey) return;
+
+      // Arrows nudge the selection 1px, 10px with Shift
+      if (e.key.startsWith('Arrow') && (s.selectedElementIds.length || s.selectedFrameIds.length)) {
+        done();
+        const d = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0;
+        const dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
+        s.selectedElementIds.forEach(id => {
+          const el = s.elements.find(x => x.id === id);
+          if (el && !el.locked) s.updateElementPosition(id, Number(el.style.x) + dx, Number(el.style.y) + dy);
+        });
+        s.selectedFrameIds.forEach(id => s.moveFrame(id, dx, dy));
         return;
       }
 
-      // Exit Play mode (Escape)
-      if (e.key === 'Escape' && isPlaying) {
-        stopPlaying();
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        done();
+        if (s.selectedElementIds.length) s.selectedElementIds.forEach(id => s.deleteElement(id));
+        else s.selectedFrameIds.forEach(id => s.deleteFrame(id));
         return;
       }
-
-      // Toggle Panels (Ctrl+\ or Tab for Zen mode)
-      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
-        e.preventDefault();
-        toggleLeftSidebar();
+      if (e.key === 'Escape') {
+        if (s.activeTool !== 'select') s.setActiveTool('select');
+        else s.clearSelection();
         return;
       }
       if (e.key === 'Tab') {
-        e.preventDefault();
-        // Zen canvas toggle: collapse/expand both sidebars together
-        if (isLeftSidebarOpen || isRightSidebarOpen) {
-          if (isLeftSidebarOpen) toggleLeftSidebar();
-          if (isRightSidebarOpen) toggleRightSidebar();
-        } else {
-          toggleLeftSidebar();
-          toggleRightSidebar();
+        done();
+        // Zen canvas: both side panels away, or both back
+        if (s.isLeftSidebarOpen || s.isRightSidebarOpen) {
+          if (s.isLeftSidebarOpen) s.toggleLeftSidebar();
+          if (s.isRightSidebarOpen) s.toggleRightSidebar();
+        } else { s.toggleLeftSidebar(); s.toggleRightSidebar(); }
+        return;
+      }
+
+      if (e.shiftKey) {
+        if (e.code === 'Digit1') { done(); s.zoomToFit(); }
+        else if (e.code === 'Digit0') { done(); zoomAround(1, true); }
+        else if (k === 'a') {
+          // Shift+A: auto layout - wrap several things in one, or switch it
+          // on / off for the selected frame or element
+          done();
+          if (s.selectedElementIds.length > 1) s.groupSelectedIntoAutoLayout();
+          else if (s.selectedElementIds.length === 1) s.toggleAutoLayout(s.selectedElementIds[0]);
+          else if (s.selectedFrameIds.length === 1) s.toggleAutoLayout(s.selectedFrameIds[0]);
         }
-        return;
+        else if (k === 'l') s.setActiveTool('arrow');
+        return;   // Shift+R (rulers) is the canvas's
       }
 
-      // Mode Switch: D for Design, W for Prototype
-      if (e.key === 'w' || e.key === 'W') {
-        setEditorMode(editorMode === 'prototype' ? 'design' : 'prototype');
-      }
-
-      // Undo (Ctrl+Z) / Redo (Ctrl+Y or Ctrl+Shift+Z)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault();
-        redo();
-        return;
-      }
-
-      // Duplicate (Ctrl+D)
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D')) {
-        e.preventDefault();
-        if (selectedElementIds.length > 0) {
-          selectedElementIds.forEach(id => duplicateElement(id));
-        } else if (selectedFrameIds.length > 0) {
-          selectedFrameIds.forEach(id => duplicateFrame(id));
-        }
-        return;
-      }
-
-      // Delete (Backspace or Delete)
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedElementIds.length > 0) {
-          selectedElementIds.forEach(id => deleteElement(id));
-        } else if (selectedFrameIds.length > 0) {
-          selectedFrameIds.forEach(id => deleteFrame(id));
-        }
-        return;
-      }
-
-      // Zoom to fit (Ctrl+1)
-      if ((e.ctrlKey || e.metaKey) && e.key === '1') {
-        e.preventDefault();
-        zoomToFit();
-        return;
-      }
-
-      // Tool shortcuts: V (Select), H (Hand), T (Text)
-      if (e.key === 'v' || e.key === 'V') setActiveTool('select');
-      if (e.key === 'h' || e.key === 'H') setActiveTool('hand');
-      if (e.key === 't' || e.key === 'T') setActiveTool('text');
-
-      // Remaining tool shortcuts advertised in the toolbar tooltips but never wired up.
-      // Skipped when a modifier is held so they don't clash with browser/OS shortcuts.
-      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (e.key === 'a' || e.key === 'A') setActiveTool('directSelect');
-        if ((e.key === 'r' || e.key === 'R') && !e.shiftKey) setActiveTool('rectangle');   // Shift+R is the rulers
-        if (e.key === 'o' || e.key === 'O') setActiveTool('ellipse');
-        if (e.key === 'l' && !e.shiftKey) setActiveTool('line');
-        if (e.key === 'L' && e.shiftKey) setActiveTool('arrow');
-        if (e.key === 'f' || e.key === 'F') setActiveTool('frame');
-        if (e.key === 's' && !e.shiftKey) setActiveTool('section');
-        if (e.key === 'b' || e.key === 'B') setActiveTool('button');
-        if (e.key === 'i' || e.key === 'I') setActiveTool('input');
-        if (e.key === 'c' || e.key === 'C') setActiveTool('sticky');
-      }
+      const tools: Record<string, Parameters<typeof s.setActiveTool>[0]> = {
+        v: 'select', h: 'hand', t: 'text', a: 'directSelect', r: 'rectangle', o: 'ellipse', l: 'line',
+        f: 'frame', s: 'section', b: 'button', i: 'input', c: 'sticky'
+      };
+      if (k === 'p') { done(); s.startPlaying(); }
+      else if (k === 'w') s.setEditorMode(s.editorMode === 'prototype' ? 'design' : 'prototype');
+      else if (e.key === 'Enter' && !s.selectedElementIds.length) return;
+      else if (tools[k]) s.setActiveTool(tools[k]);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    undo, redo, deleteElement, deleteFrame, selectedElementIds, selectedFrameIds,
-    duplicateElement, duplicateFrame, startPlaying, isPlaying, stopPlaying, zoomToFit, setActiveTool,
-    isLeftSidebarOpen, isRightSidebarOpen, toggleLeftSidebar, toggleRightSidebar, setEditorMode, editorMode,
-    saveCurrentProject, openProjectMenu
-  ]);
+  }, []);
 
   // Select the entire value whenever any numeric field gains focus, app-wide.
   // Without this, clicking into a "0" and typing "456" produces "0456" —
