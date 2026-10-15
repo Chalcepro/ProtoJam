@@ -961,7 +961,7 @@ export const InfiniteCanvas: React.FC = () => {
       <BottomToolbar />
 
       {/* Auto-fading 20% Smaller Radar Map (Minimap) */}
-      <Minimap />
+      <Minimap containerRef={canvasContainerRef} />
     </div>
   );
 };

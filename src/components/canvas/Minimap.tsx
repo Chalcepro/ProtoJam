@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 
-export const Minimap: React.FC = () => {
+export const Minimap: React.FC<{ containerRef?: React.RefObject<HTMLDivElement | null> }> = ({ containerRef }) => {
   const { frames, sections, viewport, setViewport, canvasSettings } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, viewport: s.viewport, setViewport: s.setViewport, canvasSettings: s.canvasSettings })));
   const [isVisible, setIsVisible] = useState(false);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -34,53 +34,46 @@ export const Minimap: React.FC = () => {
 
   if (!canvasSettings.showMinimap || (frames.length === 0 && sections.length === 0)) return null;
 
-  // Compute bounding box of all frames and sections
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // The canvas draws world points at screen = world * zoom + viewport, so the
+  // part of the world on screen starts at -viewport / zoom.
+  const rect = containerRef?.current?.getBoundingClientRect();
+  const cw = rect?.width ?? window.innerWidth;
+  const ch = rect?.height ?? window.innerHeight;
+  const view = { x: -viewport.x / viewport.zoom, y: -viewport.y / viewport.zoom, w: cw / viewport.zoom, h: ch / viewport.zoom };
+
+  // Bounds = every frame and section, padded, plus the view itself - so the
+  // view box is always inside the map instead of pinned to an edge.
+  let minX = view.x, minY = view.y, maxX = view.x + view.w, maxY = view.y + view.h;
+  const pad = 240;
   [...frames, ...sections].forEach(f => {
-    minX = Math.min(minX, f.x);
-    minY = Math.min(minY, f.y);
-    maxX = Math.max(maxX, f.x + f.width);
-    maxY = Math.max(maxY, f.y + f.height);
+    minX = Math.min(minX, f.x - pad);
+    minY = Math.min(minY, f.y - pad);
+    maxX = Math.max(maxX, f.x + f.width + pad);
+    maxY = Math.max(maxY, f.y + f.height + pad);
   });
 
-  const pad = 240;
-  minX -= pad;
-  minY -= pad;
-  maxX += pad;
-  maxY += pad;
-
-  const worldWidth = maxX - minX;
-  const worldHeight = maxY - minY;
-
-  // 20% smaller dimensions: 160px × 104px
+  // The drawing area under the 20px header is 160 x 84.
   const mapWidth = 160;
-  const mapHeight = 104;
-  const scale = Math.min(mapWidth / worldWidth, mapHeight / worldHeight);
+  const mapHeight = 84;
+  const scale = Math.min(mapWidth / (maxX - minX), mapHeight / (maxY - minY));
+  // Centre the world in the map rather than hugging the top-left corner.
+  const offX = (mapWidth - (maxX - minX) * scale) / 2;
+  const offY = (mapHeight - (maxY - minY) * scale) / 2;
+  const toMap = (x: number, y: number) => ({ left: offX + (x - minX) * scale, top: offY + (y - minY) * scale });
 
-  // Viewport rect calculation in minimap coords
-  const vpX = ((-viewport.x - minX) * scale);
-  const vpY = ((-viewport.y - minY) * scale);
-  const vpW = ((window.innerWidth / viewport.zoom) * scale);
-  const vpH = ((window.innerHeight / viewport.zoom) * scale);
+  const vp = toMap(view.x, view.y);
 
   const handleMinimapClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    const targetWorldX = minX + clickX / scale;
-    const targetWorldY = minY + clickY / scale;
-
-    setViewport({
-      x: -(targetWorldX - window.innerWidth / (2 * viewport.zoom)),
-      y: -(targetWorldY - window.innerHeight / (2 * viewport.zoom))
-    });
+    const r = e.currentTarget.getBoundingClientRect();
+    const worldX = minX + (e.clientX - r.left - offX) / scale;
+    const worldY = minY + (e.clientY - r.top - offY) / scale;
+    // Put the clicked point in the middle of the canvas.
+    setViewport({ x: cw / 2 - worldX * viewport.zoom, y: ch / 2 - worldY * viewport.zoom });
   };
 
   return (
     <div
-      onClick={handleMinimapClick}
-      className={`fixed bottom-16 right-4 w-[160px] h-[104px] bg-[rgb(20,20,19)]/95 backdrop-blur-md border border-[rgba(235,235,236,0.18)] rounded-xl overflow-hidden shadow-2xl z-30 cursor-pointer select-none transition-all duration-300 text-[rgb(235,235,236)] ${
+      className={`absolute bottom-20 right-4 w-[160px] h-[104px] bg-[rgb(20,20,19)]/95 backdrop-blur-md border border-[rgba(235,235,236,0.18)] rounded-xl overflow-hidden shadow-2xl z-30 cursor-pointer select-none transition-all duration-300 text-[rgb(235,235,236)] ${
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2 pointer-events-none'
       }`}
     >
@@ -89,17 +82,13 @@ export const Minimap: React.FC = () => {
         <span className="text-[rgb(235,235,236)] font-mono font-bold">{Math.round(viewport.zoom * 100)}%</span>
       </div>
 
-      <div className="relative w-full h-[84px] bg-[rgb(20,20,19)]">
+      <div onClick={handleMinimapClick} className="relative w-full h-[84px] bg-[rgb(20,20,19)]">
         {/* Render mini sections */}
         {sections.map(s => {
-          const sx = (s.x - minX) * scale;
-          const sy = (s.y - minY) * scale;
-          const sw = s.width * scale;
-          const sh = s.height * scale;
           return (
             <div
               key={s.id}
-              style={{ left: sx, top: sy, width: sw, height: sh }}
+              style={{ ...toMap(s.x, s.y), width: s.width * scale, height: s.height * scale }}
               className="absolute bg-[rgba(235,235,236,0.02)] border border-[rgba(235,235,236,0.15)] border-dashed rounded-sm"
             />
           );
@@ -107,20 +96,10 @@ export const Minimap: React.FC = () => {
 
         {/* Render mini frames */}
         {frames.map(f => {
-          const fx = (f.x - minX) * scale;
-          const fy = (f.y - minY) * scale;
-          const fw = f.width * scale;
-          const fh = f.height * scale;
-
           return (
             <div
               key={f.id}
-              style={{
-                left: fx,
-                top: fy,
-                width: fw,
-                height: fh
-              }}
+              style={{ ...toMap(f.x, f.y), width: f.width * scale, height: f.height * scale }}
               className="absolute bg-[rgba(235,235,236,0.06)] border border-[rgba(235,235,236,0.3)] rounded-sm"
             />
           );
@@ -128,12 +107,7 @@ export const Minimap: React.FC = () => {
 
         {/* Viewport indicator box */}
         <div
-          style={{
-            left: Math.max(0, vpX),
-            top: Math.max(0, vpY),
-            width: Math.min(mapWidth, vpW),
-            height: Math.min(mapHeight, vpH)
-          }}
+          style={{ ...vp, width: view.w * scale, height: view.h * scale }}
           className="absolute border border-[rgb(235,235,236)] bg-[rgba(235,235,236,0.15)] rounded-sm pointer-events-none transition-all duration-75"
         />
       </div>
