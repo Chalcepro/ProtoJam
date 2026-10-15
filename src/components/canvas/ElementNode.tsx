@@ -4,7 +4,7 @@ import { AutoLayoutSettings, UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
-import { BooleanShape } from './BooleanShape';
+import { ContainerBox, clipCss } from './ContainerBox';
 import { TransformSelectionBox } from './TransformSelectionBox';
 import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
 import { isContainer, stepInto } from '../../lib/tree';
@@ -17,7 +17,8 @@ interface Props {
   // a press on this element (the deepest one under the pointer)
   onPress: (el: UIElement, e: React.PointerEvent) => void;
   // draw the selection box here, not on the canvas's top layer - for things
-  // whose place only the layout knows (in auto layout, inside a container)
+  // whose place only the layout knows (in auto layout, or inside something
+  // that is); everything else gets its handles on top, never clipped
   boxInside: boolean;
   frameId?: string;
   frameOffset: { x: number; y: number };
@@ -91,27 +92,21 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
     >
       {container ? (
         <>
-          {/* the container's own box: fill, stroke, corners, effects - or,
-              for a boolean group, the result of its shapes */}
-          {bool ? (!ghost && <BooleanShape group={element} elements={elements} />) : (
-            <div className="absolute inset-0 pointer-events-none" style={{ opacity: ghost ? 0 : undefined }}>
-              <SemanticElementRenderer element={element} isInteractive={false} />
-            </div>
-          )}
+          {/* the frame's own look: its box, a shape's outline, or a boolean result */}
+          <ContainerBox el={element} elements={elements} hidden={ghost} />
           {/* its children */}
           <div
             style={{
               position: 'relative',
               width: ownLayout?.sizingH === 'hug' ? 'max-content' : '100%',
               height: ownLayout?.sizingV === 'hug' ? 'max-content' : '100%',
-              overflow: element.style.clipContent ? 'hidden' : 'visible',
-              borderRadius: typeof element.style.borderRadius === 'number' ? element.style.borderRadius : undefined,
+              ...clipCss(element),
               ...(ownLayout ? flexLayoutCss(ownLayout) : {})
             }}
           >
             {kids.map((k, i) => (
               <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={i} onPress={onPress}
-                           boxInside frameId={frameId} frameOffset={frameOffset} ghost={ghost || bool} />
+                           boxInside={boxInside || flow} frameId={frameId} frameOffset={frameOffset} ghost={ghost || bool} />
             ))}
           </div>
         </>

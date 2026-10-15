@@ -10,6 +10,9 @@ import React, { useState } from 'react';
 //
 // min >= 0 also refuses the minus key, so a radius, a size or an opacity can
 // never be typed negative.
+//
+// Drag on it to scrub, as in Figma: right adds, left takes away - one step
+// per pixel, ten with Shift. A click without dragging goes in to type.
 type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value'> & {
   value: number | string | undefined | null;
 };
@@ -20,6 +23,35 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
     ? '' : String(value);
   const lo = min !== undefined ? Number(min) : undefined;
   const hi = max !== undefined ? Number(max) : undefined;
+  const step = Number(rest.step) || 1;
+
+  const scrub = (e: React.PointerEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
+    if (e.button !== 0 || document.activeElement === input || rest.disabled) return;   // typing: leave it be
+    e.preventDefault();                       // not focused yet: a drag or a click decides
+    const x0 = e.clientX, v0 = Number(fallback) || 0;
+    const decimals = (String(step).split('.')[1] || '').length;
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - x0;
+      if (!moved && Math.abs(dx) < 3) return;
+      moved = true;
+      document.body.style.cursor = 'ew-resize';
+      let n = v0 + Math.round(dx) * step * (ev.shiftKey ? 10 : 1);
+      if (lo !== undefined) n = Math.max(lo, n);
+      if (hi !== undefined) n = Math.min(hi, n);
+      n = Number(n.toFixed(decimals));
+      onChange?.({ target: { value: String(n) }, currentTarget: { value: String(n) } } as unknown as React.ChangeEvent<HTMLInputElement>);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.style.cursor = '';
+      if (!moved) { input.focus(); input.select(); }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
   return (
     <input
@@ -28,6 +60,7 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
       min={min}
       max={max}
       value={text ?? fallback}
+      onPointerDown={scrub}
       onFocus={(e) => { setText(fallback); onFocus?.(e); }}
       onBlur={(e) => { setText(null); onBlur?.(e); }}
       onKeyDown={(e) => {

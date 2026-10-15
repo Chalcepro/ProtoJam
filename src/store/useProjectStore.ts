@@ -224,6 +224,8 @@ export interface ProjectState {
   booleanSelection: (op: 'union' | 'subtract' | 'intersect' | 'exclude') => void;
   // Ctrl+E: the selected shapes / boolean groups as one plain vector.
   flattenSelection: () => void;
+  // The selected shapes become frames (things can go inside; Clip content on).
+  convertToFrame: () => void;
   // Put an element into an auto-layout parent at a place in its row / column.
   moveToFlow: (id: string, parentId: string, index: number) => void;
   updateVectorPoint: (pointId: string, updates: Partial<VectorPoint>) => void;
@@ -1582,6 +1584,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 
+  convertToFrame: () => {
+    const { selectedElementIds } = get();
+    const shapes = new Set(['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath']);
+    set((state) => ({
+      elements: state.elements.map(e => {
+        if (!selectedElementIds.includes(e.id) || !shapes.has(e.type)) return e;
+        return {
+          ...e, type: 'container' as const,
+          style: {
+            ...e.style,
+            // a circle / triangle / star / drawn path keeps its outline
+            frameShape: e.type === 'rectangle' ? undefined : e.type as 'ellipse' | 'polygon' | 'star' | 'vectorPath',
+            // a path's own fill shows, as the frame's
+            fillColor: e.type === 'vectorPath' && !(e.style.vectorData?.isClosed || e.style.vectorData?.subpaths?.some(p => p.isClosed)) ? 'transparent' : e.style.fillColor,
+            clipContent: true
+          }
+        };
+      }),
+      isSaved: false
+    }));
+  },
+
   flattenSelection: () => {
     const { elements, frames, selectedElementIds } = get();
     const order = elements.filter(e => selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
@@ -2250,8 +2274,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 }));
 
 // ---- automatic undo history -----------------------------------------------
-// A snapshot is taken once the document has been still for a moment, and never
-// while a mouse button is down - so a whole drag or resize is one step, and so
+// A snapshot is taken once the document has been still for a moment (or the
+// mouse is let go), and never while a mouse button is down - so a whole drag or resize is one step, and so
 // is a burst of typing.
 const HISTORY_LIMIT = 200;
 let historyTimer: ReturnType<typeof setTimeout> | undefined;
@@ -2265,5 +2289,10 @@ useProjectStore.subscribe((s, prev) => {
 });
 if (typeof window !== 'undefined') {
   window.addEventListener('pointerdown', () => { pointerDown = true; clearTimeout(historyTimer); }, true);
-  window.addEventListener('pointerup', () => { pointerDown = false; scheduleHistory(); }, true);
+  // letting go ends a gesture (a drag, a scrub): that is a step, right away
+  window.addEventListener('pointerup', () => {
+    pointerDown = false;
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(() => useProjectStore.getState().pushHistory(), 0);
+  }, true);
 }

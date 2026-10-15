@@ -35,6 +35,7 @@ export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): st
     case 'vectorPath': {
       const vd = s.vectorData;
       if (!vd) return '';
+      setup();
       const sx = vd.w ? w / vd.w : 1, sy = vd.h ? h / vd.h : 1;
       const p = new paper.CompoundPath(vectorAllD(vd));
       p.scale(sx, sy, new paper.Point(0, 0));
@@ -43,6 +44,8 @@ export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): st
       return d;
     }
     case 'container':
+      // a frame made from a shape is that shape
+      if (s.frameShape) return shapeD({ ...el, type: s.frameShape }, ox, oy, all);
       // a boolean group inside a boolean group: its own result
       return s.booleanOp ? booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))) : rectD(x, y, w, h, s.borderRadius);
     default:

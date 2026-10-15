@@ -920,6 +920,27 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           );
         })()}
 
+        {/* Frames: Convert a shape into one; Clip content cuts what is inside
+            at the frame's edge (its shape's edge, for a circle or a star) */}
+        {element && ['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(element.type) && (
+          <button onClick={() => useProjectStore.getState().convertToFrame()}
+                  title="Turn this shape into a frame: things can go inside it, cut to its shape (Ctrl+Alt+F)"
+                  className="w-full mt-2 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[rgba(235,235,236,0.04)] hover:bg-[rgba(235,235,236,0.08)] text-[rgb(235,235,236)] text-[11px] font-semibold border border-[rgba(235,235,236,0.08)]">
+            <Icons.Frame size={12} /> Convert to frame
+          </button>
+        )}
+        {element?.type === 'container' && !style.booleanOp && (
+          <div className="flex items-center justify-between mt-2 bg-[rgba(235,235,236,0.02)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)]">
+            <span className="text-[rgba(235,235,236,0.5)] text-[11px]" title="Cut off anything inside that goes past the frame's edge">Clip content</span>
+            <button
+              onClick={() => updateElementStyle(element.id, { clipContent: !style.clipContent })}
+              className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${style.clipContent ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'}`}
+            >
+              {style.clipContent ? 'On' : 'Off'}
+            </button>
+          </div>
+        )}
+
         {/* Clip Content — fixed-size text/heading only: clip + scroll overflow instead of spilling past the box */}
         {element && (element.type === 'text' || element.type === 'heading') && style.autoSize !== true && (
           <div className="flex items-center justify-between mt-2 bg-[rgba(235,235,236,0.02)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)]">

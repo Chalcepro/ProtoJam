@@ -254,6 +254,9 @@ export interface ElementStyle {
   blur?: number;
   effects?: EffectLayer[];
   blendMode?: BlendMode;
+  // A frame made from a shape keeps the shape's outline: drawn as it, and
+  // with Clip content on, what is inside is cut to it.
+  frameShape?: 'ellipse' | 'polygon' | 'star' | 'vectorPath';
 
   // Vector / Pen tool data
   vectorData?: VectorData;

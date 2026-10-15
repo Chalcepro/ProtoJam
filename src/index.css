@@ -185,3 +185,9 @@ input:focus, select:focus, textarea:focus {
 .drag-region button,
 .drag-region input,
 .drag-region select { -webkit-app-region: no-drag; app-region: no-drag; }
+
+/* Number fields: no spinner arrows - drag on a field to change it (see NumberInput) */
+input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type='number']:not(:focus) { cursor: ew-resize; }

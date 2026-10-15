@@ -4,7 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
 import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
 import { isContainer } from '../../lib/tree';
-import { BooleanShape } from '../canvas/BooleanShape';
+import { ContainerBox, clipCss } from '../canvas/ContainerBox';
 import type { AutoLayoutSettings } from '../../types/components';
 import { UIElement } from '../../types/components';
 import confetti from 'canvas-confetti';
@@ -155,8 +155,15 @@ export const PrototypePlayerModal: React.FC = () => {
         onMouseDown={(e) => { e.stopPropagation(); setPressedElementId(element.id); }}
         onMouseUp={() => setPressedElementId(prev => prev === element.id ? null : prev)}
       >
-        {isContainer(element) && element.style.booleanOp ? (
-          <BooleanShape group={element} elements={elements} />
+        {isContainer(element) && (element.style.booleanOp || element.style.frameShape) ? (
+          <>
+            <ContainerBox el={element} elements={elements} interactive />
+            {element.style.frameShape && (
+              <div style={{ position: 'relative', width: '100%', height: '100%', ...clipCss(element), ...(own ? flexLayoutCss(own) : {}) }}>
+                {kids.map((k, i) => renderNode(k, i, own))}
+              </div>
+            )}
+          </>
         ) : isContainer(element) ? (
           <>
             <div className="absolute inset-0">
@@ -164,7 +171,7 @@ export const PrototypePlayerModal: React.FC = () => {
                                        isPressed={pressedElementId === element.id} onTriggerInteraction={handleTriggerInteraction} />
             </div>
             <div style={{ position: 'relative', width: own?.sizingH === 'hug' ? 'max-content' : '100%', height: own?.sizingV === 'hug' ? 'max-content' : '100%',
-                          overflow: element.style.clipContent ? 'hidden' : 'visible', ...(own ? flexLayoutCss(own) : {}) }}>
+                          ...clipCss(element), ...(own ? flexLayoutCss(own) : {}) }}>
               {kids.map((k, i) => renderNode(k, i, own))}
             </div>
           </>

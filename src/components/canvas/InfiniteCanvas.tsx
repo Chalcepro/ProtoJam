@@ -831,9 +831,9 @@ export const InfiniteCanvas: React.FC = () => {
         {activeTool === 'select' && !isVectorEditing && elements
           .filter(el => selectedElementIds.includes(el.id) && !el.hidden)
           .map(el => {
-            const f = el.parentId ? frames.find(fr => fr.id === el.parentId) : undefined;
-            // drawn by the element itself: in auto layout, or inside a container
-            if (inFlow(el, elements, frames) || (el.parentId && !f)) return null;
+            // drawn by the element itself when only the layout knows where it is
+            if (!placed(el)) return null;
+            const f = originOf(el.parentId, elements, frames);
             const b = boxOf(el);
             return (
               <div key={`sel-${el.id}`} className="pointer-events-none"
@@ -1013,6 +1013,8 @@ export const InfiniteCanvas: React.FC = () => {
             ] });
           }
           const flat = elements.filter(e => selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
+          if (elements.some(e => selectedElementIds.includes(e.id) && ['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(e.type)))
+            items.push({ label: 'Convert to frame', hint: 'Ctrl+Alt+F', run: () => useProjectStore.getState().convertToFrame() });
           if (flat.length && (n > 1 || flat[0].style.booleanOp || flat[0].type !== 'vectorPath'))
             items.push({ label: 'Flatten', hint: 'Ctrl+E', run: () => useProjectStore.getState().flattenSelection() });
           if (n === 1) items.push({ label: 'Create component', run: () => createMasterComponent(selectedElementIds[0]) });

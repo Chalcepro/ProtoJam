@@ -54,6 +54,7 @@ export const App: React.FC = () => {
 
       if (mod) {
         // Ctrl+Alt+U / S / I / X: union, subtract, intersect, exclude
+        if (e.altKey && k === 'f') { done(); s.convertToFrame(); return; }   // Ctrl+Alt+F: shape -> frame
         if (e.altKey && ({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']) {
           done(); s.booleanSelection(({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']);
           return;

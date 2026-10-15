@@ -15,7 +15,9 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
   element,
   parentFrameOffset = { x: 0, y: 0 }
 }) => {
-  const { type, style } = element;
+  const { style } = element;
+  // a frame made from a shape is outlined as that shape
+  const type = element.style.frameShape || element.type;
   const { updateElementStyle, viewport, pushHistory } = useProjectStore(useShallow((s) => ({ updateElementStyle: s.updateElementStyle, viewport: s.viewport, pushHistory: s.pushHistory })));
 
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
