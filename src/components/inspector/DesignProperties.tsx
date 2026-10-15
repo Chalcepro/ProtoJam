@@ -4,7 +4,7 @@ import { UIElement, DeviceFrame, SectionFrame } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
-import { FontPicker } from './FontPicker';
+import { FontPicker, WeightPicker } from './FontPicker';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { BLEND_MODES, textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
@@ -16,7 +16,6 @@ const BOOL_OPS = [
 ] as const;
 import { EffectLayer, BlendMode } from '../../types/components';
 
-const field = 'bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] font-mono text-xs outline-none';
 
 // A small Fixed / Hug / Fill menu, as in Figma's W and H fields.
 const SizingSelect: React.FC<{ value: string; options: ('fixed' | 'hug' | 'fill')[]; onChange: (v: 'fixed' | 'hug' | 'fill') => void }> =
@@ -133,11 +132,6 @@ const parseColorToRgba = (color: string | undefined): { r: number; g: number; b:
     };
   }
   return { r: 235, g: 235, b: 236, a: 1 };
-};
-
-const WEIGHT_NAME: Record<number, string> = {
-  100: 'Thin', 200: 'Extra Light', 300: 'Light', 400: 'Regular', 500: 'Medium',
-  600: 'Semi Bold', 700: 'Bold', 800: 'Extra Bold', 900: 'Black'
 };
 
 const toHex = ({ r, g, b }: { r: number; g: number; b: number }): string =>
@@ -659,6 +653,11 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   // Fill on plain text colours the letters, as in Figma. Only text with auto
   // layout has a box of its own, and then Fill is that box and the letters'
   // colour moves to Typography.
+  // show a hovered font / weight on every selected text, without saving it
+  const previewStyle = (st: Partial<typeof style> | null) => useProjectStore.setState({
+    stylePreview: st ? { ids: useProjectStore.getState().selectedElementIds, style: st } : null
+  });
+
   const textFill = (element!.type === 'text' || element!.type === 'heading') && !style.autoLayout?.enabled;
   const fillKey: 'fillColor' | 'textColor' = textFill ? 'textColor' : 'fillColor';
   const fillValue = textFill ? style.textColor : style.fillColor;
@@ -1299,6 +1298,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <div className="space-y-2">
             <FontPicker
               value={style.fontFamily || '"Inter", sans-serif'}
+              onPreview={(f) => previewStyle(f ? { fontFamily: fontStack(f) } : null)}
               onPick={(f) => {
                 // keep the weight if the new font has it, else its nearest
                 const w = Number(style.fontWeight) || 400;
@@ -1365,15 +1365,13 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
             {/* Font Weight & Alignment */}
             <div className="grid grid-cols-2 gap-2">
-              <select
-                value={String(style.fontWeight || 400)}
-                onChange={(e) => updateElementStyle(element!.id, { fontWeight: Number(e.target.value) })}
-                className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] text-xs outline-none"
-              >
-                {(findFont(familyOf(style.fontFamily))?.weights || [100, 200, 300, 400, 500, 600, 700, 800, 900]).map(w => (
-                  <option key={w} value={w} className="bg-[rgb(20,20,19)]">{WEIGHT_NAME[w] || w} ({w})</option>
-                ))}
-              </select>
+              <WeightPicker
+                family={style.fontFamily}
+                weights={findFont(familyOf(style.fontFamily))?.weights || [100, 200, 300, 400, 500, 600, 700, 800, 900]}
+                value={Number(style.fontWeight) || 400}
+                onPreview={(w) => previewStyle(w ? { fontWeight: w } : null)}
+                onPick={(w) => updateElementStyle(element!.id, { fontWeight: w })}
+              />
 
               <div className="flex items-center justify-around bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.08)] px-1">
                 {(['left', 'center', 'right', 'justify'] as const).map(align => (

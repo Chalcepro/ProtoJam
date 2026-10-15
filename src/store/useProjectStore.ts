@@ -215,6 +215,8 @@ export interface ProjectState {
   // Fill (or, with null, empty) one region of the vector being edited.
   setVectorRegion: (key: string, color: string | null) => void;
   vectorBucketColor: string;
+  // A look shown while hovering a menu (a font, a weight) - drawn, never saved.
+  stylePreview: { ids: string[]; style: Partial<ElementStyle> } | null;
   // Union / Subtract / Intersect / Exclude the selected shapes into a live
   // boolean group (or change the op of a selected boolean group).
   booleanSelection: (op: 'union' | 'subtract' | 'intersect' | 'exclude') => void;
@@ -277,6 +279,9 @@ export interface ProjectState {
   activeCommentId: string | null;
   setActiveCommentId: (id: string | null) => void;
 }
+
+// Zoom range, as Figma's: 2% out to 25,600% in, close enough to place single pixels.
+export const ZOOM_MIN = 0.02, ZOOM_MAX = 256;
 
 const STORAGE_KEY_SAVED_LIST = 'protojam_saved_projects_list';
 const STORAGE_KEY_PROJECT_PREFIX = 'protojam_project_';
@@ -396,6 +401,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   activeVectorData: null,
   vectorOriginal: null,
   vectorBucketColor: '#31C3F3',
+  stylePreview: null,
 
   // Inline text
   inlineEditingElementId: null,
@@ -446,7 +452,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   setViewport: (transform) => set((state) => ({ viewport: { ...state.viewport, ...transform } })),
-  setZoom: (zoom) => set((state) => ({ viewport: { ...state.viewport, zoom: Math.min(Math.max(zoom, 0.1), 4.0) } })),
+  setZoom: (zoom) => set((state) => ({ viewport: { ...state.viewport, zoom: Math.min(Math.max(zoom, ZOOM_MIN), ZOOM_MAX) } })),
   panBy: (dx, dy) => set((state) => ({ viewport: { ...state.viewport, x: state.viewport.x + dx, y: state.viewport.y + dy } })),
   resetZoom: () => set((state) => ({ viewport: { ...state.viewport, zoom: 1 } })),
   zoomToFit: () => {

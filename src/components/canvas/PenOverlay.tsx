@@ -5,13 +5,16 @@ import type { VectorPoint } from '../../types/components';
 import { regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
 
 const ACCENT = '#ff6b4a';
+const SNAP = '#3ddc97';     // a handle that just snapped into line / length
 const HIT = 8;   // px on screen
 
 // The pen, as in Figma. Laid over the canvas only (the toolbar and panels sit
 // above it, so their clicks never land as points).
 //   Pen:  click = corner point, click-drag = curve, click the first point =
 //         close, Shift = 45 degree steps.
-//   Edit: drag points and curve handles; Alt-drag a handle breaks the mirror.
+//   Edit: drag points and curve handles. The two handles stay in line (lengths
+//         free); Alt-drag moves one alone; a broken pair snaps back into line
+//         within 3 degrees, and lengths snap equal within 4px (shown green).
 //   Bend: click a point to switch it between sharp and smooth.
 //   Bucket: click a region where closed shapes overlap to fill it (again to empty).
 //   Enter / Esc: done.  Backspace / Delete: remove the selected point.
@@ -25,7 +28,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   const paths = vd ? vectorPaths(vd) : [];   // every path, finished ones too
   const allPoints = paths.flatMap(p => p.points);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out'; id: string; ox: number; oy: number; alt: boolean } | null>(null);
+  const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean } | null>(null);
+  // what the last handle move snapped to, so the handles can show it
+  const [snapped, setSnapped] = useState(false);
   const z = viewport.zoom;
   const sx = (x: number) => x * z + viewport.x, sy = (y: number) => y * z + viewport.y;
   const selected = allPoints.find(p => p.id === selectedVectorPointIds[0]);
@@ -60,6 +65,20 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       return;
     }
 
+    // the selected point's handles first - in the pen too, for the last point
+    const grabHandle = () => {
+      if (!selected) return false;
+      for (const kind of ['in', 'out'] as const) {
+        const h = kind === 'in' ? selected.handleIn : selected.handleOut;
+        if (h && near(w, { x: selected.x + h.x, y: selected.y + h.y })) {
+          drag.current = { kind, id: selected.id, ox: selected.x, oy: selected.y, alt: e.altKey, linked: collinear(selected) };
+          return true;
+        }
+      }
+      return false;
+    };
+    if (grabHandle()) return;
+
     if (vectorTool === 'pen') {
       // closing a shape finishes it; the pen carries on with a new one in the
       // same vector (Enter / Esc when done)
@@ -71,16 +90,6 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       return;
     }
 
-    // handles of the selected point first, then points
-    if (selected) {
-      for (const kind of ['in', 'out'] as const) {
-        const h = kind === 'in' ? selected.handleIn : selected.handleOut;
-        if (h && near(w, { x: selected.x + h.x, y: selected.y + h.y })) {
-          drag.current = { kind, id: selected.id, ox: selected.x, oy: selected.y, alt: e.altKey };
-          return;
-        }
-      }
-    }
     const hit = pointAt(w);
     if (!hit) return;
     setSelected(hit.id);
@@ -111,18 +120,54 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     }
     const hx = w.x - d.ox, hy = w.y - d.oy;
     if (d.kind === 'new') {
-      // dragging out of a new point pulls a smooth curve through it
+      // dragging out of a new point pulls a smooth curve through it, both
+      // sides; with Alt, only the side the line goes on to
       if (Math.hypot(hx, hy) * z < 3) return;
-      updateVectorPoint(d.id, { handleOut: { x: hx, y: hy }, handleIn: { x: -hx, y: -hy }, isCorner: false });
+      updateVectorPoint(d.id, e.altKey ? { handleOut: { x: hx, y: hy }, isCorner: false }
+                                       : { handleOut: { x: hx, y: hy }, handleIn: { x: -hx, y: -hy }, isCorner: false });
       return;
     }
-    // a handle: its twin mirrors it unless Alt broke them apart
-    const mirror = !d.alt && !e.altKey;
-    if (d.kind === 'out') updateVectorPoint(d.id, { handleOut: { x: hx, y: hy }, ...(mirror ? { handleIn: { x: -hx, y: -hy } } : {}) });
-    else updateVectorPoint(d.id, { handleIn: { x: hx, y: hy }, ...(mirror ? { handleOut: { x: -hx, y: -hy } } : {}) });
+    // A handle. Alt: this side alone, no snapping. Otherwise the two sides
+    // stay in one straight line (each keeping its own length), and a broken
+    // pair snaps back into line within 3 degrees; a length within 4px of the
+    // other side's snaps to it.
+    const pt = allPoints.find(p => p.id === d.id);
+    if (!pt) return;
+    const mine = d.kind === 'out' ? 'handleOut' : 'handleIn', twin = d.kind === 'out' ? 'handleIn' : 'handleOut';
+    const other = pt[twin];
+    let h = { x: hx, y: hy };
+    let snapHit = false;
+    if (!(d.alt || e.altKey) && other) {
+      const len = Math.hypot(h.x, h.y), olen = Math.hypot(other.x, other.y);
+      const opp = Math.atan2(-other.y, -other.x);
+      let ang = Math.atan2(h.y, h.x);
+      const diff = Math.abs(((ang - opp + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+      const inLine = d.linked || diff < (3 * Math.PI) / 180;
+      if (inLine && !d.linked) { ang = opp; snapHit = true; }
+      let L = len;
+      if (Math.abs(len - olen) * z < 4) { L = olen; snapHit = true; }
+      h = { x: Math.cos(ang) * L, y: Math.sin(ang) * L };
+      if (d.linked || snapHit) {
+        const nh = { [mine]: h } as Partial<VectorPoint>;
+        // linked: the other side turns with it, its length unchanged
+        if (d.linked) nh[twin] = { x: -Math.cos(ang) * olen, y: -Math.sin(ang) * olen };
+        updateVectorPoint(d.id, { ...nh, isCorner: false });
+        setSnapped(snapHit);
+        return;
+      }
+    }
+    setSnapped(false);
+    updateVectorPoint(d.id, { [mine]: h });
   };
 
-  const up = () => { drag.current = null; };
+  // the two handles of a point lie on one straight line
+  const collinear = (p: VectorPoint) => {
+    if (!p.handleIn || !p.handleOut) return false;
+    const a = Math.atan2(p.handleOut.y, p.handleOut.x), b = Math.atan2(-p.handleIn.y, -p.handleIn.x);
+    return Math.abs(((a - b + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < (0.5 * Math.PI) / 180;
+  };
+
+  const up = () => { drag.current = null; setSnapped(false); };
 
   // keys while the pen is out; caught first so Delete does not delete the path
   useEffect(() => {
@@ -155,8 +200,8 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     if (!h) return null;
     return (
       <g key={k}>
-        <line x1={sx(p.x)} y1={sy(p.y)} x2={sx(p.x + h.x)} y2={sy(p.y + h.y)} stroke={ACCENT} strokeWidth={1} />
-        <circle cx={sx(p.x + h.x)} cy={sy(p.y + h.y)} r={3.5} fill="rgb(20,20,19)" stroke={ACCENT} strokeWidth={1.25} />
+        <line x1={sx(p.x)} y1={sy(p.y)} x2={sx(p.x + h.x)} y2={sy(p.y + h.y)} stroke={snapped ? SNAP : ACCENT} strokeWidth={snapped ? 1.5 : 1} />
+        <circle cx={sx(p.x + h.x)} cy={sy(p.y + h.y)} r={3.5} fill="rgb(20,20,19)" stroke={snapped ? SNAP : ACCENT} strokeWidth={1.25} />
       </g>
     );
   });

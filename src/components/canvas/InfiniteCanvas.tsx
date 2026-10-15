@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { useProjectStore, toolToElementType } from '../../store/useProjectStore';
+import { useProjectStore, toolToElementType, ZOOM_MAX, ZOOM_MIN } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ArtboardFrame } from './ArtboardFrame';
 import { SectionFrame } from './SectionFrame';
@@ -364,7 +364,7 @@ export const InfiniteCanvas: React.FC = () => {
 
       if (e.ctrlKey || e.metaKey) {
         const zoomDelta = -e.deltaY * 0.005;
-        const newZoom = Math.min(Math.max(viewport.zoom * Math.exp(zoomDelta), 0.1), 4.0);
+        const newZoom = Math.min(Math.max(viewport.zoom * Math.exp(zoomDelta), ZOOM_MIN), ZOOM_MAX);
         
         const rect = el.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
@@ -728,7 +728,9 @@ export const InfiniteCanvas: React.FC = () => {
         ref={stageRef}
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
-          transformOrigin: '0 0'
+          transformOrigin: '0 0',
+          // close in, show an image's real pixels rather than a blur
+          imageRendering: viewport.zoom >= 4 ? 'pixelated' : undefined
         }}
         className="absolute inset-0 pointer-events-auto"
       >
@@ -842,6 +844,16 @@ export const InfiniteCanvas: React.FC = () => {
           onMouseMove={(e) => { e.stopPropagation(); handleMouseMove(e); }}
           onMouseUp={(e) => { e.stopPropagation(); handleMouseUp(e); }}
         />
+      )}
+
+      {/* Pixel grid from 800%: one cell per canvas pixel, for icon work */}
+      {viewport.zoom >= 8 && (
+        <div className="absolute inset-0 pointer-events-none z-[30]"
+             style={{
+               backgroundImage: 'linear-gradient(to right, rgba(235,235,236,0.09) 1px, transparent 1px), linear-gradient(to bottom, rgba(235,235,236,0.09) 1px, transparent 1px)',
+               backgroundSize: `${viewport.zoom}px ${viewport.zoom}px`,
+               backgroundPosition: `${viewport.x}px ${viewport.y}px`
+             }} />
       )}
 
       {/* Smart guides while dragging */}

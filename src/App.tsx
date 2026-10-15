@@ -4,7 +4,7 @@ import { LeftSidebar } from './components/sidebar/LeftSidebar';
 import { RightInspector } from './components/inspector/RightInspector';
 import { InfiniteCanvas } from './components/canvas/InfiniteCanvas';
 import { PrototypePlayerModal } from './components/player/PrototypePlayerModal';
-import { useProjectStore } from './store/useProjectStore';
+import { useProjectStore, ZOOM_MAX, ZOOM_MIN } from './store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 
@@ -14,7 +14,7 @@ const zoomAround = (f: number, absolute = false) => {
   const r = document.querySelector('[data-canvas]')?.getBoundingClientRect();
   const cx = r ? r.width / 2 : 0, cy = r ? r.height / 2 : 0;
   const { x, y, zoom } = s.viewport;
-  const z = Math.min(4, Math.max(0.1, absolute ? f : zoom * f));
+  const z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, absolute ? f : zoom * f));
   s.setViewport({ zoom: z, x: cx - (cx - x) * z / zoom, y: cy - (cy - y) * z / zoom });
 };
 
@@ -34,10 +34,15 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return;
-      const s = useProjectStore.getState();
       const mod = e.ctrlKey || e.metaKey;
       const k = e.key.toLowerCase();
+      // Undo / redo from a field in a side panel (a colour just picked, a size
+      // just typed) undoes the design, as in Figma - not just the field's text.
+      // Text being typed on the canvas keeps its own undo.
+      const panelField = !!target.closest?.('aside') && (target.tagName === 'INPUT' || target.tagName === 'SELECT');
+      if (panelField && mod && (k === 'z' || k === 'y')) target.blur();
+      else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return;
+      const s = useProjectStore.getState();
       const done = () => e.preventDefault();
 
       // the pen owns the plain keys while it is out (see PenOverlay)

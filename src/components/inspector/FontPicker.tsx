@@ -12,7 +12,7 @@ const FILTERS: { id: 'all' | FontCategory; label: string }[] = [
 ];
 
 // A font menu as in Figma: search, filter, every name drawn in its own font.
-export const FontPicker: React.FC<{ value?: string; onPick: (f: FontEntry) => void }> = ({ value, onPick }) => {
+export const FontPicker: React.FC<{ value?: string; onPick: (f: FontEntry) => void; onPreview?: (f: FontEntry | null) => void }> = ({ value, onPick, onPreview }) => {
   const [open, setOpen] = useState(false);
   const current = familyOf(value);
   const btn = useRef<HTMLButtonElement>(null);
@@ -28,16 +28,16 @@ export const FontPicker: React.FC<{ value?: string; onPick: (f: FontEntry) => vo
         <Icons.ChevronDown size={13} className="opacity-50 shrink-0" />
       </button>
       {open && btn.current && createPortal(
-        <FontMenu anchor={btn.current} current={current}
-                  onPick={(f) => { onPick(f); setOpen(false); }} onClose={() => setOpen(false)} />,
+        <FontMenu anchor={btn.current} current={current} onPreview={onPreview}
+                  onPick={(f) => { onPreview?.(null); onPick(f); setOpen(false); }} onClose={() => { onPreview?.(null); setOpen(false); }} />,
         document.body
       )}
     </>
   );
 };
 
-const FontMenu: React.FC<{ anchor: HTMLElement; current: string; onPick: (f: FontEntry) => void; onClose: () => void }> =
-  ({ anchor, current, onPick, onClose }) => {
+const FontMenu: React.FC<{ anchor: HTMLElement; current: string; onPick: (f: FontEntry) => void; onClose: () => void; onPreview?: (f: FontEntry | null) => void }> =
+  ({ anchor, current, onPick, onClose, onPreview }) => {
   const [bundled, setBundled] = useState<FontEntry[]>([]);
   const [local, setLocal] = useState<FontEntry[] | null>(null);
   const [query, setQuery] = useState('');
@@ -97,6 +97,7 @@ const FontMenu: React.FC<{ anchor: HTMLElement; current: string; onPick: (f: Fon
     e.preventDefault();
     const n = Math.max(0, Math.min(shown.length - 1, hi + (e.key === 'ArrowDown' ? 1 : -1)));
     setHi(n);
+    if (shown[n]) onPreview?.(shown[n]);
     const el = listRef.current;
     if (el && (n * ROW < el.scrollTop || (n + 1) * ROW > el.scrollTop + LIST_H)) el.scrollTop = n * ROW - LIST_H / 2;
   };
@@ -121,13 +122,13 @@ const FontMenu: React.FC<{ anchor: HTMLElement; current: string; onPick: (f: Fon
           ))}
         </div>
       </div>
-      <div ref={listRef} onScroll={e => setScroll(e.currentTarget.scrollTop)}
+      <div ref={listRef} onScroll={e => setScroll(e.currentTarget.scrollTop)} onMouseLeave={() => onPreview?.(null)}
            style={{ height: LIST_H, overflowY: 'auto', position: 'relative' }}>
         <div style={{ height: shown.length * ROW }} />
         {shown.slice(first, last).map((f, k) => {
           const i = first + k;
           return (
-            <button key={f.family} onClick={() => onPick(f)} onMouseEnter={() => setHi(i)}
+            <button key={f.family} onClick={() => onPick(f)} onMouseEnter={() => { setHi(i); onPreview?.(f); }}
                     style={{ position: 'absolute', top: i * ROW, height: ROW, left: 0, right: 0 }}
                     className={`flex items-center gap-2 px-3 text-left ${i === hi ? 'bg-[rgba(235,235,236,0.08)]' : ''}`}>
               <span className="w-3 shrink-0">{f.family === current && <Icons.Check size={12} />}</span>
@@ -146,5 +147,51 @@ const FontMenu: React.FC<{ anchor: HTMLElement; current: string; onPick: (f: Fon
         {shown.length} fonts{local === null ? '' : ` · ${local.length} on this PC`}
       </div>
     </div>
+  );
+};
+
+const WEIGHT_NAMES: Record<number, string> = {
+  100: 'Thin', 200: 'Extra Light', 300: 'Light', 400: 'Regular', 500: 'Medium',
+  600: 'Semi Bold', 700: 'Bold', 800: 'Extra Bold', 900: 'Black'
+};
+
+// Weights of the current font, each drawn in itself; hovering one previews it.
+export const WeightPicker: React.FC<{ family?: string; weights: number[]; value: number; onPick: (w: number) => void; onPreview?: (w: number | null) => void }> =
+  ({ family, weights, value, onPick, onPreview }) => {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const down = (e: MouseEvent) => {
+      if (!menu.current?.contains(e.target as Node) && !btn.current?.contains(e.target as Node)) { onPreview?.(null); setOpen(false); }
+    };
+    window.addEventListener('mousedown', down);
+    return () => window.removeEventListener('mousedown', down);
+  }, [open, onPreview]);
+  const r = btn.current?.getBoundingClientRect();
+  return (
+    <>
+      <button ref={btn} onClick={() => setOpen(o => !o)}
+              className="w-full flex items-center justify-between bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] hover:border-[rgba(235,235,236,0.2)] text-xs outline-none">
+        <span className="truncate" style={{ fontFamily: family, fontWeight: value }}>{WEIGHT_NAMES[value] || value}</span>
+        <Icons.ChevronDown size={12} className="opacity-50 shrink-0" />
+      </button>
+      {open && r && createPortal(
+        <div ref={menu} onMouseLeave={() => onPreview?.(null)}
+             style={{ position: 'fixed', left: r.left, top: Math.min(r.bottom + 4, window.innerHeight - weights.length * 30 - 16), width: Math.max(r.width, 170), zIndex: 10000 }}
+             className="bg-[rgb(28,28,27)] border border-[rgba(235,235,236,0.15)] rounded-xl shadow-2xl py-1 text-[rgb(235,235,236)]">
+          {weights.map(w => (
+            <button key={w} onMouseEnter={() => onPreview?.(w)} onClick={() => { onPreview?.(null); onPick(w); setOpen(false); }}
+                    className="w-full flex items-center gap-2 px-3 h-[30px] text-left hover:bg-[rgba(235,235,236,0.08)]">
+              <span className="w-3 shrink-0">{w === value && <Icons.Check size={12} />}</span>
+              <span className="flex-1 text-[14px]" style={{ fontFamily: family, fontWeight: w }}>{WEIGHT_NAMES[w] || w}</span>
+              <span className="text-[10px] opacity-40 font-mono">{w}</span>
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
   );
 };

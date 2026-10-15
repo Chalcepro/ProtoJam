@@ -23,15 +23,18 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
   onTriggerInteraction
 }) => {
   const { type, semanticProps } = element;
+  // a font / weight being hovered in a menu shows here before it is chosen
+  const preview = useProjectStore((s) => s.stylePreview && s.stylePreview.ids.includes(element.id) ? s.stylePreview.style : null);
   // In the live player, layer hover/pressed style overrides on top of the base
   // style — an "interactive component" without a full variant-set system.
-  const style = isInteractive && element.states
+  let style = isInteractive && element.states
     ? {
         ...element.style,
         ...(isHovering ? element.states.hover : null),
         ...(isPressed ? element.states.pressed : null)
       }
     : element.style;
+  if (preview) style = { ...style, ...preview };
   const { inlineEditingElementId, setInlineEditingElementId, updateElementSemanticProps, updateElementStyle, deleteElement } = useProjectStore(useShallow((s) => ({ inlineEditingElementId: s.inlineEditingElementId, setInlineEditingElementId: s.setInlineEditingElementId, updateElementSemanticProps: s.updateElementSemanticProps, updateElementStyle: s.updateElementStyle, deleteElement: s.deleteElement })));
 
   const [internalValue, setInternalValue] = useState<any>(semanticProps.value ?? '');
@@ -50,8 +53,10 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     const el = textRef.current;
     if (!isText || isInteractive || resizeMode === 'fixed' || !el) return;
     const sync = () => {
-      const cur = useProjectStore.getState().elements.find(x => x.id === element.id);
-      if (!cur) return;
+      const st = useProjectStore.getState();
+      const cur = st.elements.find(x => x.id === element.id);
+      // a hover preview changes the drawn size; it is not the text's size
+      if (!cur || st.stylePreview?.ids.includes(element.id)) return;
       const upd: { width?: number; height?: number } = {};
       if (resizeMode === 'auto' && Math.abs(el.offsetWidth - Number(cur.style.width)) >= 1) upd.width = el.offsetWidth;
       if (Math.abs(el.offsetHeight - Number(cur.style.height)) >= 1) upd.height = el.offsetHeight;
