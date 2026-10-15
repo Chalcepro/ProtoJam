@@ -763,6 +763,10 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         return (
           <div className="flex items-center gap-1 bg-[rgba(235,235,236,0.03)] p-1 rounded-xl border border-[rgba(235,235,236,0.08)]">
             <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider px-1.5 mr-auto">Boolean</span>
+            <button onClick={() => useProjectStore.getState().flattenSelection()} title="Flatten into one editable vector (Ctrl+E)"
+                    className="px-1.5 py-1 rounded text-[10px] font-semibold hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)] mr-1">
+              Flatten
+            </button>
             {BOOL_OPS.map(([o, label, Ic, key]) => (
               <button key={o} onClick={() => booleanSelection(o)} title={`${label} (Ctrl+Alt+${key})`}
                       className={`p-1.5 rounded ${op === o ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]'}`}>

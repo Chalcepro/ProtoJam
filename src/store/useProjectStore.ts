@@ -1,6 +1,6 @@
 import { vectorBounds } from '../lib/vector';
 import { absBoxOf, chainOf, flowsChildren, isContainer, originOf, subtreeIds } from '../lib/tree';
-import { BOOLEANABLE } from '../lib/boolean';
+import { BOOLEANABLE, dToVectorData, shapeD } from '../lib/boolean';
 import { create } from 'zustand';
 import {
   DeviceFrame,
@@ -222,6 +222,10 @@ export interface ProjectState {
   // Union / Subtract / Intersect / Exclude the selected shapes into a live
   // boolean group (or change the op of a selected boolean group).
   booleanSelection: (op: 'union' | 'subtract' | 'intersect' | 'exclude') => void;
+  // Ctrl+E: the selected shapes / boolean groups as one plain vector.
+  flattenSelection: () => void;
+  // Put an element into an auto-layout parent at a place in its row / column.
+  moveToFlow: (id: string, parentId: string, index: number) => void;
   updateVectorPoint: (pointId: string, updates: Partial<VectorPoint>) => void;
   closeVectorPath: () => void;
   fillVectorFace: (pointIds?: string[], color?: string) => void;
@@ -1551,6 +1555,70 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return {
         elements: [...rest, ...kids],
         frames: state.frames.map(f => ({ ...f, elementIds: [...f.elementIds.filter(e => !moved.has(e)), ...(f.id === parentId ? [id] : [])] })),
+        selectedElementIds: [id], selectedFrameIds: [], isSaved: false
+      };
+    });
+  },
+
+  moveToFlow: (id, parentId, index) => {
+    set((state) => {
+      const el = state.elements.find(e => e.id === id);
+      if (!el) return state;
+      const rest = state.elements.filter(e => e.id !== id);
+      // its new neighbours: the parent's children that are laid out
+      const sibs = rest.filter(e => e.parentId === parentId && !e.style.absolutePosition);
+      const at = index < sibs.length ? rest.indexOf(sibs[index])
+               : sibs.length ? rest.indexOf(sibs[sibs.length - 1]) + 1 : rest.length;
+      rest.splice(at, 0, { ...el, parentId, style: { ...el.style, absolutePosition: false } });
+      const moved = el.parentId !== parentId;
+      return {
+        elements: rest,
+        frames: moved ? state.frames.map(f => ({
+          ...f,
+          elementIds: [...f.elementIds.filter(e => e !== id), ...(f.id === parentId ? [id] : [])]
+        })) : state.frames,
+        isSaved: false
+      };
+    });
+  },
+
+  flattenSelection: () => {
+    const { elements, frames, selectedElementIds } = get();
+    const order = elements.filter(e => selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
+    if (!order.length) return;
+    // every outline, in canvas coordinates (a boolean group gives its result)
+    const d = order.map(e => {
+      const o = originOf(e.parentId, elements, frames);
+      return shapeD(e, o.x, o.y, elements);
+    }).filter(Boolean).join(' ');
+    if (!d) return;
+    const raw = dToVectorData(d);
+    const b = vectorBounds(raw);
+    const shift = (pts: VectorPoint[]) => pts.map(p => ({ ...p, x: p.x - b.x0, y: p.y - b.y0 }));
+    const data: VectorData = { ...raw, w: b.w, h: b.h, points: shift(raw.points), subpaths: raw.subpaths?.map(sp => ({ ...sp, points: shift(sp.points) })) };
+    const base = order[0];
+    const parentId = base.parentId;
+    const o = originOf(parentId, elements, frames);
+    const id = `vector-${Date.now()}`;
+    const fill = base.style.fillColor && base.style.fillColor !== 'transparent' ? base.style.fillColor : (base.type === 'vectorPath' ? 'transparent' : '#ebebec');
+    const vec: UIElement = {
+      id, name: order.length === 1 && base.style.booleanOp ? base.name : 'Vector', type: 'vectorPath', parentId, interactions: [], semanticProps: {},
+      style: {
+        x: Math.round(b.x0 - o.x), y: Math.round(b.y0 - o.y), width: Math.round(b.w), height: Math.round(b.h),
+        fillColor: fill, borderColor: base.style.borderColor || '#ebebec',
+        borderWidth: base.type === 'vectorPath' ? (base.style.borderWidth ?? 2) : (base.style.borderWidth || 0),
+        opacity: base.style.opacity, effects: base.style.effects, blendMode: base.style.blendMode, vectorData: data
+      }
+    };
+    // the originals go (with what is inside them); the vector takes the bottom one's place
+    const gone = new Set(order.flatMap(e => subtreeIds(e.id, elements)));
+    set((state) => {
+      const at = state.elements.findIndex(e => e.id === base.id);
+      const next = state.elements.filter(e => !gone.has(e.id));
+      next.splice(state.elements.slice(0, at).filter(e => !gone.has(e.id)).length, 0, vec);
+      return {
+        elements: next,
+        frames: state.frames.map(f => ({ ...f, elementIds: [...f.elementIds.filter(e => !gone.has(e)), ...(f.id === parentId ? [id] : [])] })),
         selectedElementIds: [id], selectedFrameIds: [], isSaved: false
       };
     });

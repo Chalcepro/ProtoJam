@@ -14,6 +14,7 @@ import { Rulers, RULER } from './Rulers';
 import { isTextEl } from '../../lib/styleCss';
 import { putAsset } from '../../lib/assets';
 import { PenOverlay } from './PenOverlay';
+import { BOOLEANABLE } from '../../lib/boolean';
 import { ElementNode } from './ElementNode';
 import { absBoxOf, chainOf, inFlow, isContainer, originOf, pickTarget, subtreeIds } from '../../lib/tree';
 
@@ -66,7 +67,14 @@ export const InfiniteCanvas: React.FC = () => {
   // The press was on a text that was already the only thing selected: let go
   // without dragging and it opens for editing, as in Figma.
   const pressedSelectedText = useRef(false);
+  // a laid-out element's box when its drag began
+  const flowStart = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
+  // Dragging over an auto-layout row / column: where it would go in, and the
+  // line that shows it (canvas units). index -1: dropped by position instead.
+  const [flowDrop, setFlowDrop] = useState<{ parentId?: string; index: number; line?: { x: number; y: number; w: number; h: number } } | null>(null);
+  // a laid-out element being dragged: an outline follows the pointer
+  const [flowGhost, setFlowGhost] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   // For the rulers: the pointer in canvas space, and the canvas's size.
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
   // Space held: left-drag pans, the way Figma does it.
@@ -223,6 +231,38 @@ export const InfiniteCanvas: React.FC = () => {
     if (!n) { const el = elements.find(e => e.id === id); return el ? absBoxOf(el, elements, frames) : null; }
     const r = n.getBoundingClientRect(), a = getWorldCoords(r.left, r.top);
     return { x: a.x, y: a.y, w: r.width / viewport.zoom, h: r.height / viewport.zoom };
+  };
+
+  // The deepest frame (container or screen) at a canvas point, not one of `own`.
+  const holderAt = (px: number, py: number, own: Set<string>) => {
+    const c = elements
+      .filter(x => isContainer(x) && !x.hidden && !own.has(x.id))
+      .map(x => ({ x, r: worldBoxOf(x.id), depth: chainOf(x.id, elements).length }))
+      .filter(({ r }) => r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
+      .sort((p, q) => q.depth - p.depth)[0]?.x;
+    if (c) return { id: c.id as string | undefined, layout: c.style.autoLayout?.enabled ? c.style.autoLayout : null };
+    const f = frames.find(fr => !fr.hidden && px >= fr.x && px <= fr.x + fr.width && py >= fr.y && py <= fr.y + fr.height);
+    return { id: f?.id, layout: f?.autoLayout?.enabled ? f.autoLayout : null };
+  };
+
+  // Where in a row / column a point falls: the index among the laid-out
+  // children, and a line between them to show it.
+  const flowSlot = (parentId: string, layout: NonNullable<ReturnType<typeof holderAt>['layout']>, px: number, py: number, skip: string) => {
+    const row = layout.direction === 'horizontal';
+    const sibs = elements.filter(x => x.parentId === parentId && x.id !== skip && !x.hidden && !x.style.absolutePosition)
+      .map(x => worldBoxOf(x.id)!).filter(Boolean);
+    const p = row ? px : py;
+    const index = sibs.filter(b => (row ? b.x + b.w / 2 : b.y + b.h / 2) < p).length;
+    const pr = worldBoxOf(parentId) || (() => { const f = frames.find(fr => fr.id === parentId)!; return { x: f.x, y: f.y, w: f.width, h: f.height }; })();
+    const g = (layout.gap || 0) / 2;
+    const T = 2 / viewport.zoom;
+    let at: number;
+    if (!sibs.length) at = row ? pr.x + (layout.padding?.left || 0) : pr.y + (layout.padding?.top || 0);
+    else if (index < sibs.length) at = (row ? sibs[index].x : sibs[index].y) - g;
+    else { const l = sibs[sibs.length - 1]; at = (row ? l.x + l.w : l.y + l.h) + g; }
+    const c0 = sibs.length ? Math.min(...sibs.map(b => row ? b.y : b.x)) : (row ? pr.y : pr.x);
+    const c1 = sibs.length ? Math.max(...sibs.map(b => row ? b.y + b.h : b.x + b.w)) : (row ? pr.y + pr.h : pr.x + pr.w);
+    return { index, line: row ? { x: at - T / 2, y: c0, w: T, h: c1 - c0 } : { x: c0, y: at - T / 2, w: c1 - c0, h: T } };
   };
 
   // ---- clipboard -----------------------------------------------------------
@@ -481,6 +521,24 @@ export const InfiniteCanvas: React.FC = () => {
       }
       let dx = (e.clientX - dragOrigin.current.x) / viewport.zoom;
       let dy = (e.clientY - dragOrigin.current.y) / viewport.zoom;
+      const dragged = elements.find(x => x.id === draggingElementId);
+      const p = lastWorld.current!;
+      const own = new Set(subtreeIds(draggingElementId, elements));
+      if (dragged && inFlow(dragged, elements, frames)) {
+        // stays in its row; an outline follows the pointer and a line shows the spot
+        if (!dragMoved) return;
+        if (!flowStart.current) flowStart.current = worldBoxOf(dragged.id);
+        const b = flowStart.current!;
+        setFlowGhost({ x: b.x + dx, y: b.y + dy, w: b.w, h: b.h });
+        const h = holderAt(p.x, p.y, own);
+        setFlowDrop(h.id && h.layout ? { parentId: h.id, ...flowSlot(h.id, h.layout, p.x, p.y, dragged.id) } : { parentId: h.id, index: -1 });
+        return;
+      }
+      // a placed element over an auto-layout frame: show where it would go in
+      if (dragMoved && dragged) {
+        const h = holderAt(p.x, p.y, own);
+        setFlowDrop(h.id && h.layout ? { parentId: h.id, ...flowSlot(h.id, h.layout, p.x, p.y, dragged.id) } : null);
+      }
       if (dragMoved && !e.ctrlKey && !e.metaKey && canvasSettings.snapToObjects !== false) {
         const snap = computeSnap(ids, dx, dy);
         dx += snap.dx; dy += snap.dy;
@@ -564,7 +622,13 @@ export const InfiniteCanvas: React.FC = () => {
     // plain click used to move whatever was clicked into the frame under it
     if (draggingElementId && !dragMoved && pressedSelectedText.current) setInlineEditingElementId(draggingElementId);
     pressedSelectedText.current = false;
-    if (draggingElementId) {
+    if (draggingElementId && dragMoved && flowDrop) {
+      const el = elements.find(item => item.id === draggingElementId);
+      if (el && flowDrop.parentId && flowDrop.index >= 0) useProjectStore.getState().moveToFlow(el.id, flowDrop.parentId, flowDrop.index);
+      // out of its row: placed where the outline was
+      else if (el && flowGhost && flowDrop.parentId !== el.parentId) reparentElement(el.id, flowDrop.parentId, flowGhost.x, flowGhost.y);
+      setDraggingElementId(null);
+    } else if (draggingElementId) {
       const el = dragMoved ? elements.find(item => item.id === draggingElementId) : undefined;
       if (el) {
         const b = worldBoxOf(el.id);
@@ -587,6 +651,7 @@ export const InfiniteCanvas: React.FC = () => {
     }
 
     setDraggingFrameId(null);
+    setFlowDrop(null); setFlowGhost(null); flowStart.current = null;
     setDragMoved(false);
     dragOrigin.current = null;
     dragOrig.current = null;
@@ -856,6 +921,18 @@ export const InfiniteCanvas: React.FC = () => {
              }} />
       )}
 
+      {/* Auto layout: where the dragged thing will go, and its outline */}
+      {flowDrop?.line && (
+        <div className="absolute pointer-events-none z-[59] bg-[#ff6b4a] rounded-full"
+             style={{ left: flowDrop.line.x * viewport.zoom + viewport.x, top: flowDrop.line.y * viewport.zoom + viewport.y,
+                      width: Math.max(2, flowDrop.line.w * viewport.zoom), height: Math.max(2, flowDrop.line.h * viewport.zoom) }} />
+      )}
+      {flowGhost && (
+        <div className="absolute pointer-events-none z-[59] border border-dashed border-[#ff6b4a] bg-[rgba(255,107,74,0.08)]"
+             style={{ left: flowGhost.x * viewport.zoom + viewport.x, top: flowGhost.y * viewport.zoom + viewport.y,
+                      width: flowGhost.w * viewport.zoom, height: flowGhost.h * viewport.zoom }} />
+      )}
+
       {/* Smart guides while dragging */}
       {snapLines.map((l, i) => {
         const z = viewport.zoom;
@@ -935,6 +1012,9 @@ export const InfiniteCanvas: React.FC = () => {
               { label: 'Intersect', hint: 'Ctrl+Alt+I', run: b('intersect') }, { label: 'Exclude', hint: 'Ctrl+Alt+X', run: b('exclude') }
             ] });
           }
+          const flat = elements.filter(e => selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
+          if (flat.length && (n > 1 || flat[0].style.booleanOp || flat[0].type !== 'vectorPath'))
+            items.push({ label: 'Flatten', hint: 'Ctrl+E', run: () => useProjectStore.getState().flattenSelection() });
           if (n === 1) items.push({ label: 'Create component', run: () => createMasterComponent(selectedElementIds[0]) });
           items.push({ label: 'Hide', run: () => selectedElementIds.forEach(id => toggleElementHidden(id)) });
           items.push({ label: 'Lock / unlock', run: () => selectedElementIds.forEach(id => toggleElementLock(id)) });

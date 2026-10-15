@@ -133,3 +133,23 @@ export const regionAt = (regions: { key: string; d: string }[], x: number, y: nu
   }
   return null;
 };
+
+// Path data back into editable vector points, one path per outline (holes
+// included), each point with its curve handles.
+export const dToVectorData = (d: string): VectorData => {
+  setup();
+  const item = new paper.CompoundPath(d);
+  const paths = (item.children as paper.Path[]).map((c, ci) => ({
+    isClosed: c.closed,
+    points: c.segments.map((sg, i) => ({
+      id: `pt-${Date.now()}-${ci}-${i}`,
+      x: Math.round(sg.point.x * 100) / 100, y: Math.round(sg.point.y * 100) / 100,
+      handleIn: sg.handleIn.isZero() ? undefined : { x: sg.handleIn.x, y: sg.handleIn.y },
+      handleOut: sg.handleOut.isZero() ? undefined : { x: sg.handleOut.x, y: sg.handleOut.y },
+      isCorner: sg.handleIn.isZero() && sg.handleOut.isZero()
+    }))
+  })).filter(p => p.points.length);
+  item.remove();
+  const last = paths.pop() || { points: [], isClosed: false };
+  return { points: last.points, isClosed: last.isClosed, subpaths: paths, faces: [] };
+};
