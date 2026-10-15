@@ -167,3 +167,31 @@ export const deleteSegment = (vd: VectorData, aId: string, bId: string): VectorD
   // the last path is the one the pen would carry on; keep it open-ended
   return { ...vd, subpaths: kept.slice(0, -1), points: last ? last.points : [], isClosed: last ? last.isClosed : false, regions: {} };
 };
+
+// Ctrl+J: join two end points. The two ends of one open path close it; ends
+// of two open paths make one path through a new line between them. Anything
+// else (a point in the middle of a path, a closed path) cannot join: null.
+export const joinPoints = (vd: VectorData, aId: string, bId: string): VectorData | null => {
+  const paths = pathsOf(vd).filter(p => p.points.length);
+  const find = (id: string) => {
+    const pi = paths.findIndex(p => p.points.some(q => q.id === id));
+    if (pi < 0) return null;
+    const p = paths[pi], i = p.points.findIndex(q => q.id === id);
+    return !p.isClosed && (i === 0 || i === p.points.length - 1) ? { pi, first: i === 0 } : null;
+  };
+  const A = find(aId), B = find(bId);
+  if (!A || !B) return null;
+  // walked the other way: order reversed, each point's handles swapped
+  const rev = (pts: VectorPoint[]) => [...pts].reverse().map(q => ({ ...q, handleIn: q.handleOut, handleOut: q.handleIn }));
+  if (A.pi === B.pi) {
+    if (paths[A.pi].points.length < 3) return null;
+    paths[A.pi] = { ...paths[A.pi], isClosed: true };
+    return fromPaths(vd, paths);
+  }
+  const P = A.first ? rev(paths[A.pi].points) : paths[A.pi].points;      // ends at a
+  const Q = B.first ? paths[B.pi].points : rev(paths[B.pi].points);      // starts at b
+  const merged = { points: [...P, ...Q], isClosed: false };
+  const out = paths.filter((_, i) => i !== A.pi && i !== B.pi);
+  out.push(merged);
+  return fromPaths(vd, out);
+};

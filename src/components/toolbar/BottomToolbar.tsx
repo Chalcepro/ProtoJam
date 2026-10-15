@@ -87,7 +87,7 @@ export const BottomToolbar: React.FC = () => {
 
   const selectTools: { id: ToolMode; label: string; icon: any; hotkey: string }[] = [
     { id: 'select', label: 'Move', icon: Icons.MousePointer2, hotkey: 'V' },
-    { id: 'directSelect', label: 'Direct Point Select', icon: Icons.Pointer, hotkey: 'A' },
+    { id: 'directSelect', label: 'Direct Point Select', icon: Icons.Pointer, hotkey: '' },
     { id: 'hand', label: 'Hand Tool', icon: Icons.Hand, hotkey: 'H' }
   ];
 

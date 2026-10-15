@@ -7,6 +7,7 @@ import { PrototypePlayerModal } from './components/player/PrototypePlayerModal';
 import { useProjectStore, ZOOM_MAX, ZOOM_MIN } from './store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { ShortcutsPanel } from './components/ShortcutsPanel';
 
 // Zoom keeping the middle of the canvas where it is. `absolute`: set the zoom.
 const zoomAround = (f: number, absolute = false) => {
@@ -52,6 +53,8 @@ export const App: React.FC = () => {
         return;
       }
 
+      // ? or Ctrl+/: the shortcut list
+      if (e.key === '?' || (mod && e.key === '/')) { done(); window.dispatchEvent(new Event('protojam:shortcuts')); return; }
       if (mod) {
         // Ctrl+Alt+U / S / I / X: union, subtract, intersect, exclude
         if (e.altKey && k === 'f') { done(); s.convertToFrame(); return; }   // Ctrl+Alt+F: shape -> frame
@@ -129,7 +132,7 @@ export const App: React.FC = () => {
       }
 
       const tools: Record<string, Parameters<typeof s.setActiveTool>[0]> = {
-        v: 'select', h: 'hand', t: 'text', a: 'directSelect', r: 'rectangle', o: 'ellipse', l: 'line',
+        v: 'select', h: 'hand', t: 'text', a: 'frame', r: 'rectangle', o: 'ellipse', l: 'line',
         f: 'frame', s: 'section', b: 'button', i: 'input', c: 'sticky'
       };
       if (k === 'p') { done(); s.startPlaying(); }
@@ -160,10 +163,19 @@ export const App: React.FC = () => {
     return () => document.removeEventListener('focusin', handleFocusIn);
   }, []);
 
+  // the shortcut list (? or Ctrl+/)
+  const [showKeys, setShowKeys] = React.useState(false);
+  useEffect(() => {
+    const open = () => setShowKeys(v => !v);
+    window.addEventListener('protojam:shortcuts', open);
+    return () => window.removeEventListener('protojam:shortcuts', open);
+  }, []);
+
   return (
     <div className="flex flex-col h-screen w-screen bg-[rgb(20,20,19)] text-[rgb(235,235,236)] overflow-hidden font-sans relative">
       {/* Top Application Header */}
       <Topbar />
+      {showKeys && <ShortcutsPanel onClose={() => setShowKeys(false)} />}
 
       {/* Main Workspace: Collapsible Left Sidebar + Infinite Canvas + Collapsible Right Inspector */}
       <div className="flex flex-1 w-full overflow-hidden relative">

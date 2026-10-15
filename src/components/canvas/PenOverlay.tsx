@@ -3,7 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
 import { closedPathAt, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
-import { deleteSegment, insertPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
+import { deleteSegment, joinPoints, insertPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
 const ACCENT = '#ff6b4a';
 const SNAP = '#3ddc97';     // a handle that just snapped into line / length
@@ -287,8 +287,30 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
-      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || e.ctrlKey || e.metaKey) return;
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
       const s = useProjectStore.getState();
+      const vdNow = s.elements.find(x => x.id === s.editingVectorId)?.style.vectorData;
+      const allNow = vdNow ? vectorPaths(vdNow).flatMap(p => p.points) : [];
+      if (e.ctrlKey || e.metaKey) {
+        const k2 = e.key.toLowerCase();
+        // Ctrl+J: join the two picked end points; Ctrl+A: pick every point
+        if (k2 === 'j' && vdNow && s.selectedVectorPointIds.length === 2) {
+          const j = joinPoints(vdNow, s.selectedVectorPointIds[0], s.selectedVectorPointIds[1]);
+          if (j) s.setVectorData(j);
+        } else if (k2 === 'a') {
+          useProjectStore.setState({ selectedVectorPointIds: allNow.map(p => p.id), vectorTool: 'select' });
+        } else return;     // Ctrl+Z and the rest go on to the app
+        e.preventDefault(); e.stopImmediatePropagation();
+        return;
+      }
+      // arrows nudge the picked points: 1px, 10 with Shift
+      if (e.key.startsWith('Arrow') && s.selectedVectorPointIds.length) {
+        const d = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
+        allNow.filter(p => s.selectedVectorPointIds.includes(p.id)).forEach(p => s.updateVectorPoint(p.id, { x: p.x + dx, y: p.y + dy }));
+        e.preventDefault(); e.stopImmediatePropagation();
+        return;
+      }
       const k = e.key.toLowerCase();
       let handled = true;
       if (e.key === 'Enter' || e.key === 'Escape') s.finishVectorEditing();
