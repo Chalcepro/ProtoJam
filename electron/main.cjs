@@ -5,18 +5,30 @@ const fs = require('fs');
 let mainWindow = null;
 const isMac = process.platform === 'darwin';
 
+const boundsFile = () => path.join(app.getPath('userData'), 'window-bounds.json');
+
+// The saved window, if it still fits this screen.
+function loadBounds(work) {
+  try {
+    const b = JSON.parse(fs.readFileSync(boundsFile(), 'utf-8'));
+    const fits = b.width <= work.width && b.height <= work.height &&
+      b.x >= work.x && b.y >= work.y && b.x + b.width <= work.x + work.width && b.y + b.height <= work.y + work.height;
+    return fits ? b : null;
+  } catch { return null; }
+}
+
 function createWindow() {
-  // 1440x900, or the screen's usable area if that is smaller. Without an OS
-  // frame, Windows no longer squeezes an oversized window in: on a 1366x768
-  // laptop it hung past every edge and over the taskbar.
+  // A normal window, never full screen: the size and place it was left at,
+  // else 1440x900 shrunk to fit (85% of a small screen), centred. Without an
+  // OS frame Windows no longer squeezes an oversized window onto the screen.
   const work = screen.getPrimaryDisplay().workArea;
-  const tooSmall = work.width < 1440 || work.height < 900;
+  const saved = loadBounds(work);
   mainWindow = new BrowserWindow({
-    width: Math.min(1440, work.width),
-    height: Math.min(900, work.height),
-    minWidth: Math.min(1024, work.width),
-    minHeight: Math.min(700, work.height),
-    center: true,
+    width: saved?.width ?? Math.min(1440, Math.round(work.width * 0.85)),
+    height: saved?.height ?? Math.min(900, Math.round(work.height * 0.85)),
+    ...(saved ? { x: saved.x, y: saved.y } : { center: true }),
+    minWidth: Math.min(800, work.width),
+    minHeight: Math.min(560, work.height),
     show: false,
     title: 'ProtoJam — UI/UX Prototyping Suite',
     backgroundColor: '#121316',
@@ -31,9 +43,11 @@ function createWindow() {
     }
   });
 
-  // a small screen starts maximised - filling the space above the taskbar
-  if (tooSmall) mainWindow.maximize();
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  // remember the windowed size and place (not the maximised one)
+  mainWindow.on('close', () => {
+    try { fs.writeFileSync(boundsFile(), JSON.stringify(mainWindow.getNormalBounds())); } catch {}
+  });
 
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
