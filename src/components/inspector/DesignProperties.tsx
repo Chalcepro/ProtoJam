@@ -368,7 +368,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         {/* Alignment & Screen Geometry */}
         <div>
           <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
-            Screen Dimensions
+            {frame.isGroup ? 'Group' : 'Screen Dimensions'}
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
@@ -515,7 +515,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         {/* Screen Background Color */}
         <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
           <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
-            Screen Background
+            {frame.isGroup ? 'Fill' : 'Screen Background'}
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -647,6 +647,14 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     : { tl: Number(style.borderRadius) || 0, tr: Number(style.borderRadius) || 0, br: Number(style.borderRadius) || 0, bl: Number(style.borderRadius) || 0 };
 
   const paddingObj = style.padding || { top: 12, right: 12, bottom: 12, left: 12 };
+
+  // Fill on plain text colours the letters, as in Figma. Only text with auto
+  // layout has a box of its own, and then Fill is that box and the letters'
+  // colour moves to Typography.
+  const textFill = (element!.type === 'text' || element!.type === 'heading') && !style.autoLayout?.enabled;
+  const fillKey: 'fillColor' | 'textColor' = textFill ? 'textColor' : 'fillColor';
+  const fillValue = textFill ? style.textColor : style.fillColor;
+  const setFill = (c: string) => updateElementStyle(element!.id, { [fillKey]: c, fillGradient: undefined });
 
   // In an auto-layout frame, W and H each say Fixed, Hug (text) or Fill.
   const inFlow = !!frames.find(f => f.id === element!.parentId)?.autoLayout?.enabled && !style.absolutePosition;
@@ -1067,14 +1075,14 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             >
               Gradient
             </button>
-            <button
+            {!textFill && <button
               onClick={() => setFillType('image')}
               className={`px-2 py-0.5 rounded text-[10px] ${
                 fillType === 'image' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
               }`}
             >
               Image
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -1083,25 +1091,24 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <div className="flex items-center gap-2">
               <input
                 type="color"
-                value={toHex(parseColorToRgba(style.fillColor || '#ebebec'))}
+                value={toHex(parseColorToRgba(fillValue || '#ebebec'))}
                 onChange={(e) => {
-                  const { a } = parseColorToRgba(style.fillColor);
-                  const next = toRgbaString({ ...parseColorToRgba(e.target.value), a });
-                  updateElementStyle(element!.id, { fillColor: next, fillGradient: undefined });
+                  const { a } = parseColorToRgba(fillValue);
+                  setFill(toRgbaString({ ...parseColorToRgba(e.target.value), a }));
                 }}
                 className="w-7 h-7 rounded border-none cursor-pointer bg-transparent"
               />
               <input
                 type="text"
-                value={style.fillColor || '#ebebec'}
-                onChange={(e) => updateElementStyle(element!.id, { fillColor: e.target.value, fillGradient: undefined })}
+                value={fillValue || '#ebebec'}
+                onChange={(e) => setFill(e.target.value)}
                 className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2.5 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] font-mono text-xs flex-1 outline-none min-w-0"
               />
               <ColorAlphaSlider
-                color={style.fillColor}
-                onChange={(next) => updateElementStyle(element!.id, { fillColor: next, fillGradient: undefined })}
+                color={fillValue}
+                onChange={setFill}
               />
-              <VariableBindButton elementId={element!.id} styleKey="fillColor" boundVariableId={style.boundVariables?.fillColor} />
+              <VariableBindButton elementId={element!.id} styleKey={fillKey} boundVariableId={style.boundVariables?.[fillKey]} />
             </div>
 
             {/* Quick Monochrome Palette Swatches */}
@@ -1116,7 +1123,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               ].map(swatch => (
                 <button
                   key={swatch.hex}
-                  onClick={() => updateElementStyle(element!.id, { fillColor: swatch.hex, fillGradient: undefined })}
+                  onClick={() => setFill(swatch.hex)}
                   style={{ backgroundColor: swatch.hex }}
                   className="flex-1 h-5 rounded border border-[rgba(235,235,236,0.15)] hover:scale-105 transition-transform"
                   title={swatch.label}
@@ -1161,7 +1168,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
         )}
 
-        {fillType === 'image' && (
+        {fillType === 'image' && !textFill && (
           <div className="space-y-2">
             <button
               onClick={() => imageUploadInputRef.current?.click()}
@@ -1276,16 +1283,16 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                 />
               </div>
 
-              <div className="flex items-center gap-1 bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
-                <span className="text-[rgba(235,235,236,0.4)] mr-1.5 text-[10px]">Color</span>
+              {!textFill && <div className="flex items-center gap-1 bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Text colour">
+                <span className="text-[rgba(235,235,236,0.4)] mr-1.5 text-[10px]">Text</span>
                 <input
                   type="color"
-                  value={style.textColor || '#ebebec'}
-                  onChange={(e) => updateElementStyle(element!.id, { textColor: e.target.value })}
+                  value={toHex(parseColorToRgba(style.textColor || '#ebebec'))}
+                  onChange={(e) => updateElementStyle(element!.id, { textColor: toRgbaString({ ...parseColorToRgba(e.target.value), a: parseColorToRgba(style.textColor).a }) })}
                   className="w-5 h-5 rounded cursor-pointer bg-transparent ml-auto"
                 />
                 <VariableBindButton elementId={element!.id} styleKey="textColor" boundVariableId={style.boundVariables?.textColor} />
-              </div>
+              </div>}
             </div>
 
             <div className="grid grid-cols-2 gap-2">

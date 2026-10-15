@@ -1288,20 +1288,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (selectedElementIds.length < 2) return;
 
     const selected = elements.filter(e => selectedElementIds.includes(e.id));
-    const minX = Math.min(...selected.map(e => Number(e.style.x)));
-    const minY = Math.min(...selected.map(e => Number(e.style.y)));
-    const maxX = Math.max(...selected.map(e => Number(e.style.x) + Number(e.style.width)));
-    const maxY = Math.max(...selected.map(e => Number(e.style.y) + Number(e.style.height)));
-    const parentId = selected[0]?.parentId;
+    // where each one is on the canvas (x/y are relative to a frame they sit in)
+    const abs = selected.map(e => {
+      const f = get().frames.find(fr => fr.id === e.parentId);
+      return { x: (f?.x || 0) + Number(e.style.x), y: (f?.y || 0) + Number(e.style.y), w: Number(e.style.width), h: Number(e.style.height) };
+    });
+    const minX = Math.min(...abs.map(a => a.x)), minY = Math.min(...abs.map(a => a.y));
+    const maxX = Math.max(...abs.map(a => a.x + a.w)), maxY = Math.max(...abs.map(a => a.y + a.h));
 
     const frameId = get().addCustomFrame(minX, minY, maxX - minX + 24, maxY - minY + 24, 'Auto Layout Group');
-    
+    get().updateFrame(frameId, { isGroup: true, backgroundColor: 'transparent', isStartingFrame: false });
+
     // Reparent all selected into this frame
-    selected.forEach(el => {
-      get().reparentElement(el.id, frameId, Number(el.style.x), Number(el.style.y));
+    selected.forEach((el, i) => {
+      get().reparentElement(el.id, frameId, abs[i].x, abs[i].y);
     });
 
+    // Keep the arrangement they were in, as Figma does: side by side becomes
+    // a row, one above another a column, with the gap that was between them.
+    const across = maxX - minX >= maxY - minY;
+    const order = abs.map((a, i) => ({ ...a, i })).sort((p, q) => across ? p.x - q.x : p.y - q.y);
+    const gaps = order.slice(1).map((a, k) => across ? a.x - (order[k].x + order[k].w) : a.y - (order[k].y + order[k].h));
+    const gap = Math.max(0, Math.round(gaps.reduce((t, g) => t + g, 0) / (gaps.length || 1)));
+    // children go into the frame in that order
+    set((state) => ({ elements: [
+      ...state.elements.filter(e => !selectedElementIds.includes(e.id)),
+      ...order.map(o => state.elements.find(e => e.id === selected[o.i].id)!)
+    ] }));
     get().toggleAutoLayout(frameId);
+    get().updateAutoLayout(frameId, {
+      direction: across ? 'horizontal' : 'vertical', gap,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 }, sizingH: 'hug', sizingV: 'hug'
+    });
+    set({ selectedFrameIds: [frameId], selectedElementIds: [] });
     pushHistory();
   },
 

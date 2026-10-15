@@ -58,7 +58,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     };
     sync();
     const ro = new ResizeObserver(sync);
-    ro.observe(el);
+    ro.observe(el, { box: 'border-box' });   // padding counts too (text with auto layout)
     return () => ro.disconnect();
   }, [isText, isInteractive, resizeMode, element.id, isInlineEditing]);
 
@@ -327,8 +327,22 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     case 'text':
     case 'heading': {
       const mode = textResizeOf(style);
+      // Text with auto layout is a box: its fill is the background and its
+      // auto-layout padding goes round the words. Plain text has no box - its
+      // fill is the letters (textColor), a gradient fill included.
+      const boxed = !!style.autoLayout?.enabled;
+      const pad = style.autoLayout?.padding;
+      const grad = style.fillGradient
+        ? (style.fillGradient.type === 'linear'
+            ? `linear-gradient(${style.fillGradient.angle ?? 90}deg, ${style.fillGradient.stops.map(x => `${x.color} ${x.offset}%`).join(', ')})`
+            : `radial-gradient(circle, ${style.fillGradient.stops.map(x => `${x.color} ${x.offset}%`).join(', ')})`)
+        : undefined;
       const textBox: React.CSSProperties = {
         ...getCommonStyles(),
+        ...(boxed
+          ? { paddingTop: pad?.top, paddingRight: pad?.right, paddingBottom: pad?.bottom, paddingLeft: pad?.left, display: 'block' }
+          : { background: undefined, backgroundColor: undefined,
+              ...(grad ? { backgroundImage: grad, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' } : null) }),
         ...(mode === 'auto'
           ? { width: 'max-content', height: 'max-content', whiteSpace: 'pre', minWidth: 2 }
           : mode === 'autoHeight'
@@ -367,7 +381,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             outlineOffset: '1px'
           }}
           onClick={handleClick}
-          onDoubleClick={() => !isInteractive && setInlineEditingElementId(element.id)}
+          // edits only once selected: in a group, the first double-click
+          // steps into the group and selects this text
+          onDoubleClick={() => {
+            if (!isInteractive && useProjectStore.getState().selectedElementIds.includes(element.id)) setInlineEditingElementId(element.id);
+          }}
           title="Double-click to edit text"
         >
           {element.isMasterComponent && (

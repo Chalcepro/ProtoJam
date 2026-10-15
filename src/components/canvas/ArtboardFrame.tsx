@@ -50,6 +50,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
   const autoLayout = frame.autoLayout?.enabled ? frame.autoLayout : null;
   const hugW = autoLayout?.sizingH === 'hug', hugH = autoLayout?.sizingV === 'hug';
   const outerRef = useRef<HTMLDivElement>(null);
+  const isGroup = !!frame.isGroup || frame.name === 'Auto Layout Group';
 
   // Auto layout decides some sizes - a frame hugging its contents, a child
   // filling the frame. Whatever it drew is written back, so the W/H fields,
@@ -171,7 +172,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           {frame.locked && (
             <Icons.Lock size={12} className="text-[rgb(235,235,236)]" />
           )}
-          {frame.isStartingFrame && (
+          {frame.isStartingFrame && !isGroup && (
             <span className="flex items-center gap-1 text-[10px] bg-[rgb(235,235,236)] text-[rgb(20,20,19)] px-1.5 py-0.2 rounded font-bold">
               <Icons.Play size={9} fill="currentColor" /> Flow Start
             </span>
@@ -183,7 +184,8 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
         </div>
 
         {/* Action icons on header */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* a group is an object, not a screen: no screen buttons */}
+        <div className={`${isGroup ? 'hidden' : 'flex'} items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
           <button
             title={frame.locked ? 'Unlock Frame' : 'Lock Frame'}
             onClick={(e) => {
@@ -264,14 +266,14 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           width: '100%',
           height: '100%',
           backgroundColor: frame.backgroundColor || '#141413',
-          borderRadius: frame.deviceType === 'mobile' ? 44 : frame.deviceType === 'tablet' ? 24 : 12,
+          borderRadius: isGroup ? 0 : frame.deviceType === 'mobile' ? 44 : frame.deviceType === 'tablet' ? 24 : 12,
           overflow: frame.clipContent === false ? 'visible' : 'hidden',
           ...frameBodyLayoutStyle
         }}
-        className={`relative transition-shadow shadow-2xl ${
+        className={`relative transition-shadow ${isGroup ? '' : 'shadow-2xl'} ${
           isFrameSelected 
-            ? 'ring-2 ring-[rgb(235,235,236)] ring-offset-2 ring-offset-[rgb(20,20,19)]' 
-            : 'ring-1 ring-[rgba(235,235,236,0.15)]'
+            ? (isGroup ? 'ring-[1.5px] ring-[#ff6b4a]' : 'ring-2 ring-[rgb(235,235,236)] ring-offset-2 ring-offset-[rgb(20,20,19)]') 
+            : (isGroup ? '' : 'ring-1 ring-[rgba(235,235,236,0.15)]')
         } ${isWiring ? 'hover:ring-4 hover:ring-[rgb(235,235,236)] cursor-crosshair' : ''}`}
       >
         {/* Dynamic Island / Notch Mockup for Mobile */}
@@ -351,12 +353,21 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
                   finishWiring(frame.id);
                   return;
                 }
+                // A group acts as one object: a click picks (and drags) the
+                // group, until something inside it is already selected.
+                // Ctrl+click is caught earlier by the canvas and picks the child.
+                if (isGroup && !frameElements.some(fe => selectedElementIds.includes(fe.id))) {
+                  handleFrameBodyPointerDown(e);
+                  return;
+                }
                 if (onStartDragElement) {
                   onStartDragElement(element, e);
                 } else {
                   selectElement(element.id, e.shiftKey);
                 }
               }}
+              // double-click a group to step in and pick the thing inside
+              onDoubleClick={isGroup ? (e) => { e.stopPropagation(); selectElement(element.id, false); } : undefined}
               style={{ ...positionStyle, mixBlendMode: blend, pointerEvents: activeTool !== 'select' ? 'none' : undefined }}
               className={`group/el relative ${element.locked ? 'cursor-default' : 'cursor-move'}`}
             >

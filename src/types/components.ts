@@ -335,6 +335,9 @@ export interface DeviceFrame {
   // true (matches prior hardcoded behavior) when unset.
   clipContent?: boolean;
   autoLayout?: AutoLayoutSettings;
+  // Made by Shift+A around a selection: it behaves as one object - a click
+  // picks the group, a double-click (or Ctrl+click) the thing inside.
+  isGroup?: boolean;
 }
 
 export interface SectionFrame {
