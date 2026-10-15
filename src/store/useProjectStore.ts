@@ -214,6 +214,8 @@ export interface ProjectState {
   removeVectorPoint: (pointId: string) => void;
   // Fill (or, with null, empty) one region of the vector being edited.
   setVectorRegion: (key: string, color: string | null) => void;
+  // Replace the points of the vector being edited (align, symmetrize, insert).
+  setVectorData: (vd: VectorData) => void;
   vectorBucketColor: string;
   // A look shown while hovering a menu (a font, a weight) - drawn, never saved.
   stylePreview: { ids: string[]; style: Partial<ElementStyle> } | null;
@@ -1494,6 +1496,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const data: VectorData = { ...vd, subpaths: [...(vd.subpaths || []), { points: vd.points, isClosed: true }], points: [], isClosed: false };
     set({ activeVectorData: data, selectedVectorPointIds: [] });
     get().updateElementStyle(id, { vectorData: data });
+  },
+
+  setVectorData: (vd) => {
+    const id = get().editingVectorId;
+    if (id) get().updateElementStyle(id, { vectorData: vd });
   },
 
   setVectorRegion: (key, color) => {

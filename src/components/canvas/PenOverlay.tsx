@@ -3,6 +3,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
 import { regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
+import { insertPoint, segmentAt } from '../../lib/vectorEdit';
 
 const ACCENT = '#ff6b4a';
 const SNAP = '#3ddc97';     // a handle that just snapped into line / length
@@ -12,7 +13,8 @@ const HIT = 8;   // px on screen
 // above it, so their clicks never land as points).
 //   Pen:  click = corner point, click-drag = curve, click the first point =
 //         close, Shift = 45 degree steps.
-//   Edit: drag points and curve handles. The two handles stay in line (lengths
+//   Edit: drag points (Shift-click picks several), click a line to add a
+//         point there, drag curve handles. The two handles stay in line (lengths
 //         free); Alt-drag moves one alone; a broken pair snaps back into line
 //         within 3 degrees, and lengths snap equal within 4px (shown green).
 //   Bend: click a point to switch it between sharp and smooth.
@@ -28,7 +30,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   const paths = vd ? vectorPaths(vd) : [];   // every path, finished ones too
   const allPoints = paths.flatMap(p => p.points);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean } | null>(null);
+  const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean;
+                       // moving points: where each selected one started
+                       orig?: Map<string, { x: number; y: number }> } | null>(null);
   // what the last handle move snapped to, so the handles can show it
   const [snapped, setSnapped] = useState(false);
   const z = viewport.zoom;
@@ -91,8 +95,25 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     }
 
     const hit = pointAt(w);
-    if (!hit) return;
-    setSelected(hit.id);
+    if (!hit) {
+      if (vectorTool !== 'select' || !vd) return;
+      // on a line: a new point there (the curve keeps its shape), ready to drag
+      const seg = segmentAt(vd, w.x, w.y, HIT / z);
+      if (!seg) { useProjectStore.setState({ selectedVectorPointIds: [] }); return; }
+      const r = insertPoint(vd, seg.path, seg.seg, seg.t);
+      useProjectStore.getState().setVectorData(r.vd);
+      setSelected(r.id);
+      const np = vectorPaths(r.vd).flatMap(p => p.points).find(p => p.id === r.id)!;
+      drag.current = { kind: 'point', id: r.id, ox: w.x, oy: w.y, alt: false, orig: new Map([[r.id, { x: np.x, y: np.y }]]) };
+      return;
+    }
+    // Shift-click adds a point to the selection (or takes it out)
+    if (e.shiftKey && vectorTool === 'select') {
+      const cur = useProjectStore.getState().selectedVectorPointIds;
+      useProjectStore.setState({ selectedVectorPointIds: cur.includes(hit.id) ? cur.filter(i => i !== hit.id) : [...cur, hit.id] });
+      return;
+    }
+    if (!selectedVectorPointIds.includes(hit.id)) setSelected(hit.id);
     if (vectorTool === 'bend') {
       if (hit.handleIn || hit.handleOut) updateVectorPoint(hit.id, { handleIn: undefined, handleOut: undefined, isCorner: true });
       else {
@@ -106,7 +127,10 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       }
       return;
     }
-    drag.current = { kind: 'point', id: hit.id, ox: w.x - hit.x, oy: w.y - hit.y, alt: false };
+    // every selected point moves together
+    const ids = selectedVectorPointIds.includes(hit.id) ? selectedVectorPointIds : [hit.id];
+    drag.current = { kind: 'point', id: hit.id, ox: w.x, oy: w.y, alt: false,
+                     orig: new Map(allPoints.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y }])) };
   };
 
   const move = (e: React.PointerEvent) => {
@@ -115,7 +139,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     const d = drag.current;
     if (!d) return;
     if (d.kind === 'point') {
-      updateVectorPoint(d.id, { x: Math.round(w.x - d.ox), y: Math.round(w.y - d.oy) });
+      d.orig?.forEach((o, id) => updateVectorPoint(id, { x: Math.round(o.x + w.x - d.ox), y: Math.round(o.y + w.y - d.oy) }));
       return;
     }
     const hx = w.x - d.ox, hy = w.y - d.oy;
@@ -180,8 +204,8 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       if (e.key === 'Enter' || e.key === 'Escape') s.finishVectorEditing();
       else if (e.key === 'Backspace' || e.key === 'Delete') {
         const pts = s.elements.find(x => x.id === s.editingVectorId)?.style.vectorData?.points || [];
-        const id = s.selectedVectorPointIds[0] || pts[pts.length - 1]?.id;
-        if (id) s.removeVectorPoint(id);
+        const ids = s.selectedVectorPointIds.length ? s.selectedVectorPointIds : pts.length ? [pts[pts.length - 1].id] : [];
+        ids.forEach(id => s.removeVectorPoint(id));
       }
       else if (k === 'p') s.setVectorTool('pen');
       else if (k === 'v' || k === 'a') s.setVectorTool('select');
@@ -230,7 +254,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         {selected && handleLines(selected)}
         {vectorTool === 'pen' && last && last !== selected && handleLines(last)}
         {allPoints.map((p) => {
-          const sel = p.id === selectedVectorPointIds[0];
+          const sel = selectedVectorPointIds.includes(p.id);
           const first = p === points[0] && closing;
           return (
             <rect key={p.id} x={sx(p.x) - (first ? 5 : 4)} y={sy(p.y) - (first ? 5 : 4)}

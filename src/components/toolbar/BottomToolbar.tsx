@@ -3,6 +3,8 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ToolMode } from '../../types/canvas';
 import * as Icons from 'lucide-react';
+import { alignPoints, symmetrize } from '../../lib/vectorEdit';
+import type { VectorData } from '../../types/components';
 
 export const BottomToolbar: React.FC = () => {
   const {
@@ -18,10 +20,11 @@ export const BottomToolbar: React.FC = () => {
     addSection,
     activeVectorData,
     bucketColor,
+    pointIds,
     frames,
     viewport,
     addPredefinedElement
-  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, bucketColor: s.vectorBucketColor, frames: s.frames, viewport: s.viewport, addPredefinedElement: s.addPredefinedElement })));
+  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, bucketColor: s.vectorBucketColor, pointIds: s.selectedVectorPointIds, frames: s.frames, viewport: s.viewport, addPredefinedElement: s.addPredefinedElement })));
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -122,6 +125,12 @@ export const BottomToolbar: React.FC = () => {
   };
 
   // ---------------- VECTOR PEN TOOLBAR MODE ----------------
+  // a change to the points of the vector being edited
+  const vecEdit = (fn: (vd: VectorData) => VectorData) => {
+    const st = useProjectStore.getState();
+    const vd = st.elements.find(e => e.id === st.editingVectorId)?.style.vectorData;
+    if (vd) st.setVectorData(fn(vd));
+  };
   if (isVectorEditing) {
     return (
       <div
@@ -151,7 +160,7 @@ export const BottomToolbar: React.FC = () => {
         {/* Point Select Tool */}
         <button
           onClick={() => setVectorTool('select')}
-          title="Point Select (Move Vertices)"
+          title="Edit points (V): move points, Shift-click several, click a line to add a point"
           className={`p-2 rounded-xl transition-all flex items-center gap-1 ${
             vectorTool === 'select'
               ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow'
@@ -202,6 +211,30 @@ export const BottomToolbar: React.FC = () => {
           <Icons.CheckCircle2 size={14} />
           <span>Close Path</span>
         </button>
+
+        {/* Symmetrize: one half drawn, mirrored across its outer edge */}
+        <button onClick={() => vecEdit(vd => symmetrize(vd, 'x'))} title="Symmetrize left / right: mirror the path across its outer edge"
+                className="p-2 rounded-xl hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)]">
+          <Icons.FlipHorizontal2 size={16} />
+        </button>
+        <button onClick={() => vecEdit(vd => symmetrize(vd, 'y'))} title="Symmetrize top / bottom"
+                className="p-2 rounded-xl hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)]">
+          <Icons.FlipVertical2 size={16} />
+        </button>
+
+        {/* line up the selected points (Shift-click to pick several in Edit) */}
+        {pointIds.length > 1 && (
+          <>
+            <div className="h-4 w-px bg-[rgba(235,235,236,0.15)] mx-1" />
+            {([['left', Icons.AlignStartVertical, 'Align points left'], ['center', Icons.AlignCenterVertical, 'Align points to their centre'], ['right', Icons.AlignEndVertical, 'Align points right'],
+               ['top', Icons.AlignStartHorizontal, 'Align points top'], ['middle', Icons.AlignCenterHorizontal, 'Align points to their middle'], ['bottom', Icons.AlignEndHorizontal, 'Align points bottom']] as const).map(([how, Ic, label]) => (
+              <button key={how} onClick={() => vecEdit(vd => alignPoints(vd, pointIds, how))} title={label}
+                      className="p-1.5 rounded-lg hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)]">
+                <Ic size={14} />
+              </button>
+            ))}
+          </>
+        )}
 
         <div className="h-4 w-px bg-[rgba(235,235,236,0.15)] mx-1" />
 
