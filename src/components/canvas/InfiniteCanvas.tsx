@@ -49,6 +49,15 @@ export const InfiniteCanvas: React.FC = () => {
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState({ x: 0, y: 0 });
   const [drawCurrent, setDrawCurrent] = useState({ x: 0, y: 0 });
+  // Alt while drawing: from the centre out
+  const [drawFromCentre, setDrawFromCentre] = useState(false);
+  // the box being drawn, Alt (centre) included
+  const drawBox = () => {
+    const dx = drawCurrent.x - drawStart.x, dy = drawCurrent.y - drawStart.y;
+    return drawFromCentre
+      ? { x0: drawStart.x - dx, y0: drawStart.y - dy, x1: drawStart.x + dx, y1: drawStart.y + dy }
+      : { x0: drawStart.x, y0: drawStart.y, x1: drawCurrent.x, y1: drawCurrent.y };
+  };
 
   // Pending comment pin — a world-space point awaiting its first message
   const [draftCommentPos, setDraftCommentPos] = useState<{ x: number; y: number } | null>(null);
@@ -499,7 +508,19 @@ export const InfiniteCanvas: React.FC = () => {
     }
 
     if (isDrawing) {
-      const { x, y } = getWorldCoords(e.clientX, e.clientY);
+      let { x, y } = getWorldCoords(e.clientX, e.clientY);
+      // Shift: a square / circle / even shape - a line in 45-degree steps
+      if (e.shiftKey) {
+        const dx = x - drawStart.x, dy = y - drawStart.y;
+        if (activeTool === 'line' || activeTool === 'arrow') {
+          const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), len = Math.hypot(dx, dy);
+          x = drawStart.x + Math.cos(a) * len; y = drawStart.y + Math.sin(a) * len;
+        } else {
+          const m = Math.max(Math.abs(dx), Math.abs(dy));
+          x = drawStart.x + (dx < 0 ? -m : m); y = drawStart.y + (dy < 0 ? -m : m);
+        }
+      }
+      setDrawFromCentre(e.altKey);
       setDrawCurrent({ x, y });
       return;
     }
@@ -594,8 +615,10 @@ export const InfiniteCanvas: React.FC = () => {
     if (isDrawing) {
       setIsDrawing(false);
       const dist = Math.hypot(drawCurrent.x - drawStart.x, drawCurrent.y - drawStart.y);
+      setDrawFromCentre(false);
       if (dist > 15) {
-        finishDrawingShape(activeTool, drawStart.x, drawStart.y, drawCurrent.x, drawCurrent.y);
+        const b = drawBox();
+        finishDrawingShape(activeTool, b.x0, b.y0, b.x1, b.y1);
         if (activeTool === 'text') setInlineEditingElementId(useProjectStore.getState().selectedElementIds[0] ?? null);
         setActiveTool('select');
       } else {
@@ -848,21 +871,34 @@ export const InfiniteCanvas: React.FC = () => {
           <FlowConnectorLines frames={frames} elements={elements} />
         )}
 
-        {/* 5. Live Shape / Frame / Section Drawing Box Preview */}
-        {isDrawing && (
-          <div
-            style={{
-              position: 'absolute',
-              left: Math.min(drawStart.x, drawCurrent.x),
-              top: Math.min(drawStart.y, drawCurrent.y),
-              width: Math.abs(drawCurrent.x - drawStart.x),
-              height: Math.abs(drawCurrent.y - drawStart.y)
-            }}
-            className="border-2 border-[rgb(235,235,236)] bg-[rgba(235,235,236,0.08)] rounded border-dashed pointer-events-none z-50 flex items-center justify-center text-[10px] font-mono text-[rgb(235,235,236)]"
-          >
-            <span>{Math.round(Math.abs(drawCurrent.x - drawStart.x))} × {Math.round(Math.abs(drawCurrent.y - drawStart.y))}</span>
-          </div>
-        )}
+        {/* 5. What is being drawn, in its own shape, with its size */}
+        {isDrawing && (() => {
+          const d = drawBox();
+          const x = Math.min(d.x0, d.x1), y = Math.min(d.y0, d.y1), w = Math.abs(d.x1 - d.x0), h = Math.abs(d.y1 - d.y0);
+          const z = viewport.zoom, line = activeTool === 'line' || activeTool === 'arrow';
+          const stroke = 'rgb(235,235,236)', fill = 'rgba(235,235,236,0.08)';
+          const poly = activeTool === 'star' ? '50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36' : '50,5 95,95 5,95';
+          return (
+            <div className="absolute pointer-events-none z-50" style={{ left: x, top: y, width: w, height: h }}>
+              {line ? (
+                <svg className="absolute inset-0 overflow-visible" width="100%" height="100%">
+                  <line x1={d.x0 - x} y1={d.y0 - y} x2={d.x1 - x} y2={d.y1 - y} stroke={stroke} strokeWidth={2 / z} strokeDasharray={`${6 / z} ${4 / z}`} />
+                </svg>
+              ) : activeTool === 'polygon' || activeTool === 'star' ? (
+                <svg className="absolute inset-0 overflow-visible" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+                  <polygon points={poly} fill={fill} stroke={stroke} strokeWidth={2 / z} strokeDasharray={`${6 / z} ${4 / z}`} vectorEffect="non-scaling-stroke" />
+                </svg>
+              ) : (
+                <div className={`absolute inset-0 border-dashed ${activeTool === 'ellipse' ? 'rounded-full' : 'rounded'}`}
+                     style={{ borderWidth: 2 / z, borderColor: stroke, background: fill }} />
+              )}
+              <span className="absolute left-1/2 -translate-x-1/2 font-mono text-white bg-[#ff6b4a] rounded whitespace-nowrap"
+                    style={{ top: h + 6 / z, fontSize: 10 / z, padding: `${1 / z}px ${4 / z}px` }}>
+                {line ? Math.round(Math.hypot(d.x1 - d.x0, d.y1 - d.y0)) : `${Math.round(w)} × ${Math.round(h)}`}
+              </span>
+            </div>
+          );
+        })()}
 
         {/* 6. Comment Pins */}
         {comments.map(c => (

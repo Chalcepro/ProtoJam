@@ -1,5 +1,5 @@
 import { vectorBounds } from '../lib/vector';
-import { absBoxOf, chainOf, flowsChildren, isContainer, originOf, subtreeIds } from '../lib/tree';
+import { absBoxOf, chainOf, flowsChildren, inFlow, isContainer, originOf, subtreeIds } from '../lib/tree';
 import { BOOLEANABLE, dToVectorData, shapeD } from '../lib/boolean';
 import { create } from 'zustand';
 import {
@@ -1437,8 +1437,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     // back into canvas coordinates: undo the fit and the scaling
     const vd = existing.style.vectorData || { points: [], faces: [], isClosed: false };
-    const f = frames.find(fr => fr.id === existing.parentId);
-    const ox = (f?.x || 0) + Number(existing.style.x), oy = (f?.y || 0) + Number(existing.style.y);
+    // where its parent's 0,0 is - a screen, or a frame inside one at any depth
+    const po = originOf(existing.parentId, elements, frames);
+    let ox = po.x + Number(existing.style.x), oy = po.y + Number(existing.style.y);
+    // laid out by auto layout, only the page knows where it is: read it there
+    const node = typeof document !== 'undefined' ? document.querySelector(`[data-el-id="${existing.id}"]`) : null;
+    const canvas = typeof document !== 'undefined' ? document.querySelector('[data-canvas]') : null;
+    if (node && canvas && inFlow(existing, elements, frames)) {
+      const r = node.getBoundingClientRect(), c = canvas.getBoundingClientRect(), v = get().viewport;
+      ox = (r.left - c.left - v.x) / v.zoom; oy = (r.top - c.top - v.y) / v.zoom;
+    }
     const sx = vd.w ? Number(existing.style.width) / vd.w : 1, sy = vd.h ? Number(existing.style.height) / vd.h : 1;
     const scaleH = (h?: { x: number; y: number }) => h && { x: h.x * sx, y: h.y * sy };
     const place = (pts: VectorPoint[]) => pts.map(p => ({ ...p, x: ox + p.x * sx, y: oy + p.y * sy, handleIn: scaleH(p.handleIn), handleOut: scaleH(p.handleOut) }));
@@ -1666,7 +1674,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   finishVectorEditing: () => {
-    const { editingVectorId: id, elements, frames } = get();
+    const { editingVectorId: id, elements, frames, vectorOriginal } = get();
     const el = id ? elements.find(e => e.id === id) : undefined;
     const vd = el?.style.vectorData;
     const end = { isVectorEditing: false, editingVectorId: null, activeVectorData: null, vectorOriginal: null, selectedVectorPointIds: [], activeTool: 'select' as const };
@@ -1681,16 +1689,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       ? { ...vd, points: paths[0].points, isClosed: paths[0].isClosed, subpaths: undefined }
       : { ...vd, points: paths[paths.length - 1].points, isClosed: paths[paths.length - 1].isClosed, subpaths: paths.slice(0, -1) };
     const b = vectorBounds(merged);
-    const f = frames.find(fr => !fr.hidden && !fr.isGroup && b.x0 >= fr.x && b.y0 >= fr.y && b.x0 <= fr.x + fr.width && b.y0 <= fr.y + fr.height);
+    // an edited path goes back where it was; a new one into the deepest frame
+    // (screen or frame inside one) it was drawn in
+    const parentId = vectorOriginal ? vectorOriginal.parentId : get().parentAt(b.x0, b.y0).id;
+    const po = originOf(parentId, elements, frames);
+    const inScreen = frames.some(fr => fr.id === parentId);
     const shift = (pts: VectorPoint[]) => pts.map(p => ({ ...p, x: p.x - b.x0, y: p.y - b.y0 }));
     const data: VectorData = { ...merged, w: b.w, h: b.h, points: shift(merged.points), subpaths: merged.subpaths?.map(sp => ({ ...sp, points: shift(sp.points) })) };
     set((state) => ({
       ...end,
       elements: state.elements.map(e => e.id === id ? {
-        ...e, parentId: f?.id,
-        style: { ...e.style, x: Math.round(b.x0 - (f?.x || 0)), y: Math.round(b.y0 - (f?.y || 0)), width: Math.round(b.w), height: Math.round(b.h), vectorData: data }
+        ...e, parentId,
+        style: { ...e.style, x: Math.round(b.x0 - po.x), y: Math.round(b.y0 - po.y), width: Math.round(b.w), height: Math.round(b.h), vectorData: data }
       } : e),
-      frames: f ? state.frames.map(fr => fr.id === f.id ? { ...fr, elementIds: [...fr.elementIds, id!] } : fr) : state.frames,
+      frames: inScreen ? state.frames.map(fr => fr.id === parentId && !fr.elementIds.includes(id!) ? { ...fr, elementIds: [...fr.elementIds, id!] } : fr) : state.frames,
       selectedElementIds: [id!]
     }));
   },
