@@ -55,7 +55,7 @@ export const flexLayoutCss = (al: AutoLayoutSettings): React.CSSProperties => ({
   flexWrap: al.wrap ? 'wrap' : 'nowrap',
   gap: al.gap,
   justifyContent: ({ start: 'flex-start', center: 'center', end: 'flex-end', spaceBetween: 'space-between' } as const)[al.align] || 'flex-start',
-  alignItems: 'flex-start',
+  alignItems: ({ start: 'flex-start', center: 'center', end: 'flex-end' } as const)[al.alignCross || 'start'],
   paddingTop: al.padding?.top, paddingRight: al.padding?.right,
   paddingBottom: al.padding?.bottom, paddingLeft: al.padding?.left
 });

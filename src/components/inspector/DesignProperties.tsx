@@ -16,7 +16,7 @@ const BOOL_OPS = [
   ['union', 'Union', Icons.SquaresUnite, 'U'], ['subtract', 'Subtract', Icons.SquaresSubtract, 'S'],
   ['intersect', 'Intersect', Icons.SquaresIntersect, 'I'], ['exclude', 'Exclude', Icons.SquaresExclude, 'X']
 ] as const;
-import { EffectLayer } from '../../types/components';
+import { AutoLayoutSettings, EffectLayer } from '../../types/components';
 
 
 // A small Fixed / Hug / Fill menu, as in Figma's W and H fields.
@@ -27,6 +27,38 @@ const SizingSelect: React.FC<{ value: string; options: ('fixed' | 'hug' | 'fill'
     {options.map(o => <option key={o} value={o} className="bg-[rgb(20,20,19)]">{o === 'fixed' ? 'Fixed' : o === 'hug' ? 'Hug' : 'Fill'}</option>)}
   </select>
 );
+
+// Auto layout alignment as Figma shows it: a 3 x 3 grid - left / centre /
+// right by top / middle / bottom - whichever way the row or column runs,
+// and "Space between" to spread them along it.
+const AlignGrid: React.FC<{ al: AutoLayoutSettings; onChange: (u: Partial<AutoLayoutSettings>) => void }> = ({ al, onChange }) => {
+  const row = al.direction === 'horizontal';
+  const idx = { start: 0, center: 1, end: 2 } as const;
+  const keys = ['start', 'center', 'end'] as const;
+  const main = al.align === 'spaceBetween' ? -1 : idx[al.align as 'start'];
+  const cross = idx[al.alignCross || 'start'];
+  return (
+    <div className="flex items-center gap-3">
+      <div className="grid grid-cols-3 gap-0.5 p-1 rounded-lg bg-[rgba(235,235,236,0.04)] border border-[rgba(235,235,236,0.08)]" title="Where the contents sit in the frame">
+        {[0, 1, 2].map(r => [0, 1, 2].map(c => {
+          // a row runs left to right (columns = along it); a column runs down
+          const m = row ? c : r, x = row ? r : c;
+          const on = (main === m || main === -1) && cross === x;
+          return (
+            <button key={`${r}${c}`} onClick={() => onChange({ align: al.align === 'spaceBetween' ? 'spaceBetween' : keys[m], alignCross: keys[x] })}
+                    className="w-5 h-5 flex items-center justify-center rounded hover:bg-[rgba(235,235,236,0.1)]">
+              <span className={`rounded-full ${on ? 'w-2 h-2 bg-[#ff6b4a]' : 'w-1 h-1 bg-[rgba(235,235,236,0.35)]'}`} />
+            </button>
+          );
+        }))}
+      </div>
+      <button onClick={() => onChange({ align: al.align === 'spaceBetween' ? 'start' : 'spaceBetween' })}
+              className={`px-2 py-1 rounded text-[10px] font-bold ${al.align === 'spaceBetween' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.55)] hover:text-[rgb(235,235,236)]'}`}>
+        Space between
+      </button>
+    </div>
+  );
+};
 
 const EFFECT_LABEL: Record<EffectLayer['type'], string> = {
   dropShadow: 'Drop shadow', innerShadow: 'Inner shadow', layerBlur: 'Layer blur', backgroundBlur: 'Background blur'
@@ -464,20 +496,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Align</span>
-                <div className="flex bg-[rgba(235,235,236,0.06)] rounded p-0.5 border border-[rgba(235,235,236,0.08)]">
-                  {(['start', 'center', 'end', 'spaceBetween'] as const).map(a => (
-                    <button
-                      key={a}
-                      onClick={() => updateAutoLayout(frame.id, { align: a })}
-                      title={a === 'spaceBetween' ? 'Space Between' : a}
-                      className={`px-2 py-1 rounded text-[10px] ${
-                        frame.autoLayout!.align === a ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-                      }`}
-                    >
-                      {a === 'spaceBetween' ? 'Between' : a.charAt(0).toUpperCase() + a.slice(1)}
-                    </button>
-                  ))}
-                </div>
+                <AlignGrid al={frame.autoLayout} onChange={(u) => updateAutoLayout(frame.id, u)} />
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Wrap</span>
@@ -1059,6 +1078,11 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               />
             </div>
 
+            <div className="flex items-center justify-between">
+              <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Align</span>
+              <AlignGrid al={style.autoLayout} onChange={(u) => updateAutoLayout(element!.id, u)} />
+            </div>
+
             {/* Padding Controls */}
             <div className="space-y-1 pt-1 border-t border-[rgba(235,235,236,0.06)]">
               <div className="flex items-center justify-between text-[11px]">
@@ -1226,6 +1250,13 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               />
 
               <div className="flex items-center justify-around bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.08)] px-1">
+                {(['top', 'middle', 'bottom'] as const).map(v => (
+                  <button key={v} title={`Text at the ${v} of its box`}
+                          onClick={() => updateElementStyle(element!.id, { textAlignV: v })}
+                          className={`p-1 rounded ${(style.textAlignV || 'top') === v ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.4)]'}`}>
+                    {v === 'top' ? <Icons.AlignVerticalJustifyStart size={12} /> : v === 'middle' ? <Icons.AlignVerticalJustifyCenter size={12} /> : <Icons.AlignVerticalJustifyEnd size={12} />}
+                  </button>
+                ))}
                 {(['left', 'center', 'right', 'justify'] as const).map(align => (
                   <button
                     key={align}

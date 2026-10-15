@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { DeviceFrame, UIElement } from '../../types/components';
 import { ElementNode } from './ElementNode';
+import { flexLayoutCss } from '../../lib/styleCss';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
@@ -60,26 +61,8 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
   });
 
   if (frame.hidden) return null;
-  const justifyContentMap: Record<string, React.CSSProperties['justifyContent']> = {
-    start: 'flex-start',
-    center: 'center',
-    end: 'flex-end',
-    spaceBetween: 'space-between'
-  };
-  const frameBodyLayoutStyle: React.CSSProperties = autoLayout
-    ? {
-        display: 'flex',
-        flexDirection: autoLayout.direction === 'horizontal' ? 'row' : 'column',
-        flexWrap: autoLayout.wrap ? 'wrap' : 'nowrap',
-        gap: autoLayout.gap,
-        justifyContent: justifyContentMap[autoLayout.align] || 'flex-start',
-        alignItems: 'flex-start',
-        paddingTop: autoLayout.padding?.top,
-        paddingRight: autoLayout.padding?.right,
-        paddingBottom: autoLayout.padding?.bottom,
-        paddingLeft: autoLayout.padding?.left
-      }
-    : {};
+  // the same flex layout frames inside screens use (both axes aligned)
+  const frameBodyLayoutStyle: React.CSSProperties = autoLayout ? flexLayoutCss(autoLayout) : {};
 
   const handleFrameBodyPointerDown = (e: React.PointerEvent) => {
     // a right-press opens the context menu; it used to start dragging the frame

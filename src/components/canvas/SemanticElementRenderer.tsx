@@ -360,6 +360,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           : mode === 'autoHeight'
           ? { width: '100%', height: 'max-content', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }
           : { whiteSpace: 'pre-wrap', overflowWrap: 'break-word', overflow: style.clipContent ? 'hidden' : 'visible' }),
+        // up / down in a box taller than the text (a fixed box, or text with
+        // auto layout): a column the text sits at the top, middle or bottom of
+        ...((mode === 'fixed' || boxed) && style.textAlignV && style.textAlignV !== 'top'
+          ? { display: 'flex', flexDirection: 'column' as const, justifyContent: style.textAlignV === 'middle' ? 'center' : 'flex-end' }
+          : null),
         // vertical trim: the box is exactly cap height to baseline
         ...(style.trimText ? ({ textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic' } as React.CSSProperties) : null)
       };

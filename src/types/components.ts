@@ -130,7 +130,9 @@ export interface AutoLayoutSettings {
   direction: 'horizontal' | 'vertical';
   gap: number;
   padding: { top: number; right: number; bottom: number; left: number };
-  align: 'start' | 'center' | 'end' | 'spaceBetween';
+  align: 'start' | 'center' | 'end' | 'spaceBetween';      // along the row / column
+  // across it (Figma's 9-point grid with align): start = top of a row / left of a column
+  alignCross?: 'start' | 'center' | 'end';
   wrap?: boolean;
   sizingH: 'fixed' | 'hug' | 'fill';
   sizingV: 'fixed' | 'hug' | 'fill';
@@ -229,6 +231,8 @@ export interface ElementStyle {
   lineHeight?: number | string;
   letterSpacing?: number;
   textAlign?: 'left' | 'center' | 'right' | 'justify';
+  // where the text sits up / down in a box taller than it
+  textAlignV?: 'top' | 'middle' | 'bottom';
   textColor?: string;
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 
