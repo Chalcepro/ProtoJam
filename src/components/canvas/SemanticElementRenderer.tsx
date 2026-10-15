@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { effectsCss, textResizeOf } from '../../lib/styleCss';
 import { VideoView } from './VideoView';
-import { vectorPathD } from '../../lib/vector';
+import { vectorAllD, vectorRegions } from '../../lib/boolean';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -272,8 +272,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // drawn by the pen overlay while editing, never here.
     case 'vectorPath': {
       const vd = style.vectorData;
-      if (!vd || !vd.points.length) return <div />;
-      const filled = vd.isClosed && style.fillColor && style.fillColor !== 'transparent';
+      if (!vd || (!vd.points.length && !vd.subpaths?.length)) return <div />;
+      const anyClosed = vd.isClosed || !!vd.subpaths?.some(sp => sp.isClosed);
+      const filled = anyClosed && style.fillColor && style.fillColor !== 'transparent';
+      const regionKeys = Object.keys(vd.regions || {});
+      const regions = regionKeys.length ? vectorRegions(vd).filter(r => vd.regions![r.key]) : [];
       return (
         <svg width="100%" height="100%" overflow="visible" onClick={handleClick}
              // double-click a selected path to edit its points
@@ -283,9 +286,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
              }}
              viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none"
              style={{ display: 'block', opacity: style.opacity ?? 1, transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined, ...effectsCss(style, false), boxShadow: undefined }}>
+          {/* regions filled one by one (paint bucket), each its own colour */}
+          {regions.map(r => <path key={r.key} d={r.d} fill={vd.regions![r.key]} stroke="none" />)}
           <path
-            d={vectorPathD(vd)}
-            fill={filled ? style.fillColor : 'none'}
+            d={vectorAllD(vd)}
+            fill={filled && !regions.length ? style.fillColor : 'none'}
             stroke={style.borderWidth === 0 ? 'none' : (style.borderColor || '#ebebec')}
             strokeWidth={style.borderWidth ?? 2}
             strokeLinecap={style.strokeCap || 'round'}

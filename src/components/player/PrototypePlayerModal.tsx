@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
 import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
 import { isContainer } from '../../lib/tree';
+import { BooleanShape } from '../canvas/BooleanShape';
 import type { AutoLayoutSettings } from '../../types/components';
 import { UIElement } from '../../types/components';
 import confetti from 'canvas-confetti';
@@ -154,7 +155,9 @@ export const PrototypePlayerModal: React.FC = () => {
         onMouseDown={(e) => { e.stopPropagation(); setPressedElementId(element.id); }}
         onMouseUp={() => setPressedElementId(prev => prev === element.id ? null : prev)}
       >
-        {isContainer(element) ? (
+        {isContainer(element) && element.style.booleanOp ? (
+          <BooleanShape group={element} elements={elements} />
+        ) : isContainer(element) ? (
           <>
             <div className="absolute inset-0">
               <SemanticElementRenderer element={element} isInteractive={true} isHovering={hoveredElementId === element.id}

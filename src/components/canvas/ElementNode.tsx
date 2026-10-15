@@ -4,6 +4,7 @@ import { AutoLayoutSettings, UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
+import { BooleanShape } from './BooleanShape';
 import { TransformSelectionBox } from './TransformSelectionBox';
 import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
 import { isContainer, stepInto } from '../../lib/tree';
@@ -20,11 +21,14 @@ interface Props {
   boxInside: boolean;
   frameId?: string;
   frameOffset: { x: number; y: number };
+  // inside a boolean group: drawn unseen (the group draws the result) but
+  // still there to click, drag and show a selection box
+  ghost?: boolean;
 }
 
 // One element on the canvas - and, for a container (a frame inside a frame),
 // everything inside it, laid out by its own auto layout or placed by x/y.
-export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onPress, boxInside, frameId, frameOffset }) => {
+export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onPress, boxInside, frameId, frameOffset, ghost }) => {
   const { elements, selectedElementIds, activeTool, editorMode, isWiring, finishWiring, startWiring, updateElementStyle, setSelection } =
     useProjectStore(useShallow((s) => ({ elements: s.elements, selectedElementIds: s.selectedElementIds, activeTool: s.activeTool, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateElementStyle: s.updateElementStyle, setSelection: s.setSelection })));
   const ref = useRef<HTMLDivElement>(null);
@@ -50,6 +54,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
 
   if (element.hidden) return null;
   const kids = container ? elements.filter(e => e.parentId === element.id) : [];
+  const bool = container && !!element.style.booleanOp;
   const blend = element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined;
   const position: React.CSSProperties = flow
     ? { position: 'relative', flexShrink: 0 }
@@ -72,7 +77,8 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       onDoubleClick={(e) => {
         e.stopPropagation();
         const st = useProjectStore.getState();
-        const next = stepInto(element.id, st.elements, st.selectedElementIds);
+        const from = element.id;
+        const next = stepInto(from, st.elements, st.selectedElementIds);
         if (!st.selectedElementIds.includes(next)) setSelection([next]);
       }}
       style={{
@@ -85,10 +91,13 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
     >
       {container ? (
         <>
-          {/* the container's own box: fill, stroke, corners, effects */}
-          <div className="absolute inset-0 pointer-events-none">
-            <SemanticElementRenderer element={element} isInteractive={false} />
-          </div>
+          {/* the container's own box: fill, stroke, corners, effects - or,
+              for a boolean group, the result of its shapes */}
+          {bool ? (!ghost && <BooleanShape group={element} elements={elements} />) : (
+            <div className="absolute inset-0 pointer-events-none" style={{ opacity: ghost ? 0 : undefined }}>
+              <SemanticElementRenderer element={element} isInteractive={false} />
+            </div>
+          )}
           {/* its children */}
           <div
             style={{
@@ -102,16 +111,18 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
           >
             {kids.map((k, i) => (
               <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={i} onPress={onPress}
-                           boxInside frameId={frameId} frameOffset={frameOffset} />
+                           boxInside frameId={frameId} frameOffset={frameOffset} ghost={ghost || bool} />
             ))}
           </div>
         </>
       ) : (
-        <SemanticElementRenderer element={element} isInteractive={false} />
+        ghost
+          ? <div style={{ width: '100%', height: '100%', opacity: 0 }}><SemanticElementRenderer element={element} isInteractive={false} /></div>
+          : <SemanticElementRenderer element={element} isInteractive={false} />
       )}
 
       {isSelected && activeTool === 'select' && (boxInside || flow) && (
-        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000 }}>
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000, visibility: 'visible' }}>
           <TransformSelectionBox element={element} parentFrameOffset={frameOffset} />
         </div>
       )}

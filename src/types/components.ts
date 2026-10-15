@@ -117,6 +117,12 @@ export interface VectorData {
   // element's width/height, so resizing a finished path stretches it.
   w?: number;
   h?: number;
+  // More paths in the same vector, finished ones (points/isClosed above is
+  // the one being drawn). Where closed paths overlap they cut each other into
+  // regions, and each region can be filled on its own - regions maps a
+  // region's key (the paths containing it, "0,2") to its colour.
+  subpaths?: { points: VectorPoint[]; isClosed: boolean }[];
+  regions?: Record<string, string>;
 }
 
 export interface AutoLayoutSettings {

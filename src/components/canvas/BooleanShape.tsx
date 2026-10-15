@@ -1,0 +1,26 @@
+import React, { useMemo } from 'react';
+import { UIElement } from '../../types/components';
+import { booleanD, shapeD } from '../../lib/boolean';
+import { effectsCss } from '../../lib/styleCss';
+
+// A boolean group drawn as its result: the shapes inside it, united /
+// subtracted / intersected / excluded, in the group's own fill and stroke.
+// Live - edit a shape inside and the result follows.
+export const BooleanShape: React.FC<{ group: UIElement; elements: UIElement[] }> = ({ group, elements }) => {
+  const s = group.style;
+  const kids = elements.filter(e => e.parentId === group.id && !e.hidden);
+  const d = useMemo(
+    () => booleanD(s.booleanOp!, kids.map(k => shapeD(k, 0, 0, elements))),
+    // the shapes' geometry is all that matters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [s.booleanOp, JSON.stringify(kids.map(k => [k.type, k.style.x, k.style.y, k.style.width, k.style.height, k.style.borderRadius, k.style.vectorData, k.style.booleanOp])), kids.length]
+  );
+  return (
+    <svg width="100%" height="100%" overflow="visible" className="absolute inset-0 pointer-events-none"
+         style={{ opacity: s.opacity ?? 1, ...effectsCss(s, false), boxShadow: undefined }}>
+      <path d={d} fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : 'none'} fillRule="evenodd"
+            stroke={s.borderWidth ? (s.borderColor || '#ebebec') : 'none'} strokeWidth={s.borderWidth || 0}
+            style={{ pointerEvents: 'visiblePainted' }} />
+    </svg>
+  );
+};

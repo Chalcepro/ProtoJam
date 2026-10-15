@@ -48,6 +48,11 @@ export const App: React.FC = () => {
       }
 
       if (mod) {
+        // Ctrl+Alt+U / S / I / X: union, subtract, intersect, exclude
+        if (e.altKey && ({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']) {
+          done(); s.booleanSelection(({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']);
+          return;
+        }
         if (k === 's') { done(); s.saveCurrentProject(); }
         else if (k === 'o') { done(); s.openProjectMenu(); }
         else if (k === 'z') { done(); if (e.shiftKey) s.redo(); else s.undo(); }

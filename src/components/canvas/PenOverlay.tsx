@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
+import { regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
 
 const ACCENT = '#ff6b4a';
 const HIT = 8;   // px on screen
@@ -12,22 +13,25 @@ const HIT = 8;   // px on screen
 //         close, Shift = 45 degree steps.
 //   Edit: drag points and curve handles; Alt-drag a handle breaks the mirror.
 //   Bend: click a point to switch it between sharp and smooth.
+//   Bucket: click a region where closed shapes overlap to fill it (again to empty).
 //   Enter / Esc: done.  Backspace / Delete: remove the selected point.
-//   P / V / B: pen / edit / bend.
+//   P / V / B: pen / edit / bucket.
 export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: number; y: number }; spaceDown: React.MutableRefObject<boolean> }> = ({ toWorld, spaceDown }) => {
   const { elements, editingVectorId, vectorTool, viewport, selectedVectorPointIds,
           addVectorPoint, updateVectorPoint, closeVectorPath, finishVectorEditing } =
     useProjectStore(useShallow((s) => ({ elements: s.elements, editingVectorId: s.editingVectorId, vectorTool: s.vectorTool, viewport: s.viewport, selectedVectorPointIds: s.selectedVectorPointIds, addVectorPoint: s.addVectorPoint, updateVectorPoint: s.updateVectorPoint, closeVectorPath: s.closeVectorPath, finishVectorEditing: s.finishVectorEditing })));
   const vd = elements.find(e => e.id === editingVectorId)?.style.vectorData;
-  const points = vd?.points || [];
+  const points = vd?.points || [];          // the path being drawn
+  const paths = vd ? vectorPaths(vd) : [];   // every path, finished ones too
+  const allPoints = paths.flatMap(p => p.points);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out'; id: string; ox: number; oy: number; alt: boolean } | null>(null);
   const z = viewport.zoom;
   const sx = (x: number) => x * z + viewport.x, sy = (y: number) => y * z + viewport.y;
-  const selected = points.find(p => p.id === selectedVectorPointIds[0]);
+  const selected = allPoints.find(p => p.id === selectedVectorPointIds[0]);
 
   const near = (w: { x: number; y: number }, p: { x: number; y: number }) => Math.hypot(w.x - p.x, w.y - p.y) * z <= HIT;
-  const pointAt = (w: { x: number; y: number }) => points.find(p => near(w, p));
+  const pointAt = (w: { x: number; y: number }) => allPoints.find(p => near(w, p));
   const setSelected = (id: string) => useProjectStore.setState({ selectedVectorPointIds: [id] });
 
   // Shift: the new point lies at a 45-degree step from the last one
@@ -46,8 +50,20 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     const w = toWorld(e.clientX, e.clientY);
 
+    if (vectorTool === 'bucket') {
+      // fill the region under the pointer with the bucket colour; again to empty it
+      if (!vd) return;
+      const key = regionAt(vectorRegions(vd), w.x, w.y);
+      if (!key) return;
+      const st = useProjectStore.getState();
+      st.setVectorRegion(key, vd.regions?.[key] === st.vectorBucketColor ? null : st.vectorBucketColor);
+      return;
+    }
+
     if (vectorTool === 'pen') {
-      if (points.length > 2 && !vd?.isClosed && near(w, points[0])) { closeVectorPath(); finishVectorEditing(); return; }
+      // closing a shape finishes it; the pen carries on with a new one in the
+      // same vector (Enter / Esc when done)
+      if (points.length > 2 && !vd?.isClosed && near(w, points[0])) { closeVectorPath(); return; }
       const p = snap(w, e.shiftKey);
       addVectorPoint(p.x, p.y);
       const id = useProjectStore.getState().selectedVectorPointIds[0];
@@ -72,9 +88,10 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       if (hit.handleIn || hit.handleOut) updateVectorPoint(hit.id, { handleIn: undefined, handleOut: undefined, isCorner: true });
       else {
         // smooth: handles along the line from the previous to the next point
-        const i = points.indexOf(hit);
-        const prev = points[i - 1] || (vd?.isClosed ? points[points.length - 1] : hit);
-        const next = points[i + 1] || (vd?.isClosed ? points[0] : hit);
+        const path = paths.find(p => p.points.includes(hit))!;
+        const pts = path.points, i = pts.indexOf(hit);
+        const prev = pts[i - 1] || (path.isClosed ? pts[pts.length - 1] : hit);
+        const next = pts[i + 1] || (path.isClosed ? pts[0] : hit);
         const dx = (next.x - prev.x) / 6, dy = (next.y - prev.y) / 6;
         updateVectorPoint(hit.id, { handleIn: { x: -dx, y: -dy }, handleOut: { x: dx, y: dy }, isCorner: false });
       }
@@ -123,7 +140,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       }
       else if (k === 'p') s.setVectorTool('pen');
       else if (k === 'v' || k === 'a') s.setVectorTool('select');
-      else if (k === 'b') s.setVectorTool('bend');
+      else if (k === 'b' || k === 'f') s.setVectorTool('bucket');
       else handled = false;
       if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     };
@@ -147,13 +164,13 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   return (
     <div
       className="absolute inset-0 z-[35]"
-      style={{ cursor: vectorTool === 'pen' ? (closing ? 'pointer' : 'crosshair') : 'default' }}
+      style={{ cursor: vectorTool === 'pen' ? (closing ? 'pointer' : 'crosshair') : vectorTool === 'bucket' ? 'cell' : 'default' }}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
       onPointerLeave={() => setCursor(null)}
       onMouseDown={(e) => { if (e.button === 0 && !spaceDown.current) e.stopPropagation(); }}
-      onDoubleClick={(e) => { e.stopPropagation(); if (vectorTool === 'pen' && points.length > 1) finishVectorEditing(); }}
+      onDoubleClick={(e) => { e.stopPropagation(); if (vectorTool === 'pen' && (points.length > 1 || paths.length)) finishVectorEditing(); }}
       onContextMenu={(e) => e.preventDefault()}
     >
       <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
@@ -167,9 +184,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         )}
         {selected && handleLines(selected)}
         {vectorTool === 'pen' && last && last !== selected && handleLines(last)}
-        {points.map((p, i) => {
+        {allPoints.map((p) => {
           const sel = p.id === selectedVectorPointIds[0];
-          const first = i === 0 && closing;
+          const first = p === points[0] && closing;
           return (
             <rect key={p.id} x={sx(p.x) - (first ? 5 : 4)} y={sy(p.y) - (first ? 5 : 4)}
                   width={first ? 10 : 8} height={first ? 10 : 8} rx={p.isCorner === false ? 5 : 1.5}
@@ -179,7 +196,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       </svg>
       {vectorTool === 'pen' && !points.length && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[11px] text-[rgba(235,235,236,0.7)] bg-[rgba(20,20,19,0.9)] border border-[rgba(235,235,236,0.12)] rounded-lg px-3 py-1.5 pointer-events-none">
-          Click to place points, drag for curves. Click the first point to close; Enter or Esc when done.
+          {paths.length
+            ? 'Draw another shape in this vector, or Enter / Esc when done. Overlaps make regions the paint bucket can fill.'
+            : 'Click to place points, drag for curves. Click the first point to close a shape; Enter or Esc when done.'}
         </div>
       )}
     </div>

@@ -20,7 +20,7 @@ export const vectorPathD = (vd: VectorData): string => {
 // Box round the points and their handles.
 export const vectorBounds = (vd: VectorData) => {
   const xs: number[] = [], ys: number[] = [];
-  vd.points.forEach(p => {
+  [...(vd.subpaths || []).flatMap(sp => sp.points), ...vd.points].forEach(p => {
     xs.push(p.x); ys.push(p.y);
     [p.handleIn, p.handleOut].forEach(h => { if (h) { xs.push(p.x + h.x); ys.push(p.y + h.y); } });
   });

@@ -13,15 +13,15 @@ export const BottomToolbar: React.FC = () => {
     setVectorTool,
     finishVectorEditing,
     cancelVectorEditing,
-    fillVectorFace,
     closeVectorPath,
     addFrame,
     addSection,
     activeVectorData,
+    bucketColor,
     frames,
     viewport,
     addPredefinedElement
-  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, fillVectorFace: s.fillVectorFace, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, frames: s.frames, viewport: s.viewport, addPredefinedElement: s.addPredefinedElement })));
+  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, bucketColor: s.vectorBucketColor, frames: s.frames, viewport: s.viewport, addPredefinedElement: s.addPredefinedElement })));
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -163,11 +163,8 @@ export const BottomToolbar: React.FC = () => {
 
         {/* Paint Bucket Tool (B / F) */}
         <button
-          onClick={() => {
-            setVectorTool('bucket');
-            fillVectorFace();
-          }}
-          title="Paint Bucket (Fill/Unfill Faces - B or F)"
+          onClick={() => setVectorTool('bucket')}
+          title="Paint bucket (B): click a region to fill it, again to empty it"
           className={`p-2 rounded-xl transition-all flex items-center gap-1 ${
             vectorTool === 'bucket'
               ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold shadow'
@@ -176,6 +173,12 @@ export const BottomToolbar: React.FC = () => {
         >
           <Icons.PaintBucket size={16} />
         </button>
+
+        {vectorTool === 'bucket' && (
+          <input type="color" value={bucketColor} title="Bucket colour"
+                 onChange={(e) => useProjectStore.setState({ vectorBucketColor: e.target.value })}
+                 className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border border-[rgba(235,235,236,0.2)]" />
+        )}
 
         {/* Bend / Curve Tool */}
         <button

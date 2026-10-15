@@ -916,6 +916,13 @@ export const InfiniteCanvas: React.FC = () => {
           items.push({ label: 'Send to back', hint: 'Ctrl+Shift+[', run: () => selectedElementIds.forEach(id => sendToBack(id)) });
           items.push({ divider: true });
           items.push({ label: 'Add auto layout', hint: 'Shift+A', run: () => groupSelectedIntoAutoLayout() });
+          if (n > 1) {
+            const b = (op: 'union' | 'subtract' | 'intersect' | 'exclude') => () => useProjectStore.getState().booleanSelection(op);
+            items.push({ label: 'Boolean', run: () => {}, children: [
+              { label: 'Union', hint: 'Ctrl+Alt+U', run: b('union') }, { label: 'Subtract', hint: 'Ctrl+Alt+S', run: b('subtract') },
+              { label: 'Intersect', hint: 'Ctrl+Alt+I', run: b('intersect') }, { label: 'Exclude', hint: 'Ctrl+Alt+X', run: b('exclude') }
+            ] });
+          }
           if (n === 1) items.push({ label: 'Create component', run: () => createMasterComponent(selectedElementIds[0]) });
           items.push({ label: 'Hide', run: () => selectedElementIds.forEach(id => toggleElementHidden(id)) });
           items.push({ label: 'Lock / unlock', run: () => selectedElementIds.forEach(id => toggleElementLock(id)) });

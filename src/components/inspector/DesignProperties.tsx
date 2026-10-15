@@ -8,6 +8,12 @@ import { FontPicker } from './FontPicker';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { BLEND_MODES, textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
+import { BOOLEANABLE } from '../../lib/boolean';
+
+const BOOL_OPS = [
+  ['union', 'Union', Icons.SquaresUnite, 'U'], ['subtract', 'Subtract', Icons.SquaresSubtract, 'S'],
+  ['intersect', 'Intersect', Icons.SquaresIntersect, 'I'], ['exclude', 'Exclude', Icons.SquaresExclude, 'X']
+] as const;
 import { EffectLayer, BlendMode } from '../../types/components';
 
 const field = 'bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] font-mono text-xs outline-none';
@@ -328,8 +334,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     instantiateComponent,
     detachInstance,
     bringToFront,
-    sendToBack
-  } = useProjectStore(useShallow((s) => ({ frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
+    sendToBack,
+    booleanSelection
+  } = useProjectStore(useShallow((s) => ({ booleanSelection: s.booleanSelection, frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
 
   const [fillType, setFillType] = useState<'solid' | 'gradient' | 'image'>('solid');
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
@@ -747,6 +754,25 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <Icons.SendToBack size={13} />
         </button>
       </div>
+
+      {/* 1b. BOOLEANS - two or more shapes selected, or a boolean group */}
+      {(() => {
+        const st = useProjectStore.getState();
+        const shapes = st.elements.filter(e => st.selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
+        const op = element?.type === 'container' ? style.booleanOp : undefined;
+        if (shapes.length < 2 && !op) return null;
+        return (
+          <div className="flex items-center gap-1 bg-[rgba(235,235,236,0.03)] p-1 rounded-xl border border-[rgba(235,235,236,0.08)]">
+            <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider px-1.5 mr-auto">Boolean</span>
+            {BOOL_OPS.map(([o, label, Ic, key]) => (
+              <button key={o} onClick={() => booleanSelection(o)} title={`${label} (Ctrl+Alt+${key})`}
+                      className={`p-1.5 rounded ${op === o ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]'}`}>
+                <Ic size={14} />
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* 2. MASTER COMPONENT BAR */}
       <div className="bg-[rgba(235,235,236,0.02)] p-2 rounded-xl border border-[rgba(235,235,236,0.08)]">

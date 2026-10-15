@@ -1,5 +1,6 @@
 import { vectorBounds } from '../lib/vector';
 import { absBoxOf, chainOf, flowsChildren, isContainer, originOf, subtreeIds } from '../lib/tree';
+import { BOOLEANABLE } from '../lib/boolean';
 import { create } from 'zustand';
 import {
   DeviceFrame,
@@ -211,6 +212,12 @@ export interface ProjectState {
   setVectorTool: (tool: 'pen' | 'select' | 'bucket' | 'bend') => void;
   addVectorPoint: (x: number, y: number) => void;
   removeVectorPoint: (pointId: string) => void;
+  // Fill (or, with null, empty) one region of the vector being edited.
+  setVectorRegion: (key: string, color: string | null) => void;
+  vectorBucketColor: string;
+  // Union / Subtract / Intersect / Exclude the selected shapes into a live
+  // boolean group (or change the op of a selected boolean group).
+  booleanSelection: (op: 'union' | 'subtract' | 'intersect' | 'exclude') => void;
   updateVectorPoint: (pointId: string, updates: Partial<VectorPoint>) => void;
   closeVectorPath: () => void;
   fillVectorFace: (pointIds?: string[], color?: string) => void;
@@ -388,6 +395,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   vectorTool: 'pen',
   activeVectorData: null,
   vectorOriginal: null,
+  vectorBucketColor: '#31C3F3',
 
   // Inline text
   inlineEditingElementId: null,
@@ -1419,9 +1427,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const ox = (f?.x || 0) + Number(existing.style.x), oy = (f?.y || 0) + Number(existing.style.y);
     const sx = vd.w ? Number(existing.style.width) / vd.w : 1, sy = vd.h ? Number(existing.style.height) / vd.h : 1;
     const scaleH = (h?: { x: number; y: number }) => h && { x: h.x * sx, y: h.y * sy };
+    const place = (pts: VectorPoint[]) => pts.map(p => ({ ...p, x: ox + p.x * sx, y: oy + p.y * sy, handleIn: scaleH(p.handleIn), handleOut: scaleH(p.handleOut) }));
+    const subs = (vd.subpaths || []).map(sp => ({ ...sp, points: place(sp.points) }));
+    const cur = { points: place(vd.points), isClosed: vd.isClosed };
     const data: VectorData = {
       ...vd, w: undefined, h: undefined,
-      points: vd.points.map(p => ({ ...p, x: ox + p.x * sx, y: oy + p.y * sy, handleIn: scaleH(p.handleIn), handleOut: scaleH(p.handleOut) }))
+      ...(cur.isClosed ? { subpaths: [...subs, cur], points: [], isClosed: false } : { subpaths: subs, points: cur.points })
     };
     set((state) => ({
       elements: state.elements.map(e => e.id === existing.id
@@ -1448,7 +1459,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = get().editingVectorId;
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd) return;
-    const data: VectorData = { ...vd, points: vd.points.map(p => p.id === pointId ? { ...p, ...updates } : p) };
+    const upd = (pts: VectorPoint[]) => pts.map(p => p.id === pointId ? { ...p, ...updates } : p);
+    const data: VectorData = { ...vd, points: upd(vd.points), subpaths: vd.subpaths?.map(sp => ({ ...sp, points: upd(sp.points) })) };
     set({ activeVectorData: data });
     get().updateElementStyle(id, { vectorData: data });
   },
@@ -1458,7 +1470,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd) return;
     const points = vd.points.filter(p => p.id !== pointId);
-    const data: VectorData = { ...vd, points, isClosed: vd.isClosed && points.length > 2 };
+    const subpaths = vd.subpaths?.map(sp => {
+      const pts = sp.points.filter(p => p.id !== pointId);
+      return { points: pts, isClosed: sp.isClosed && pts.length > 2 };
+    }).filter(sp => sp.points.length);
+    const data: VectorData = { ...vd, points, subpaths, isClosed: vd.isClosed && points.length > 2 };
     set({ activeVectorData: data, selectedVectorPointIds: points.length ? [points[points.length - 1].id] : [] });
     get().updateElementStyle(id, { vectorData: data });
   },
@@ -1469,9 +1485,62 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = get().editingVectorId;
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd || vd.points.length < 3) return;
-    const data: VectorData = { ...vd, isClosed: true };
-    set({ activeVectorData: data });
+    const data: VectorData = { ...vd, subpaths: [...(vd.subpaths || []), { points: vd.points, isClosed: true }], points: [], isClosed: false };
+    set({ activeVectorData: data, selectedVectorPointIds: [] });
     get().updateElementStyle(id, { vectorData: data });
+  },
+
+  setVectorRegion: (key, color) => {
+    const id = get().editingVectorId;
+    const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
+    if (!id || !vd) return;
+    const regions = { ...(vd.regions || {}) };
+    if (color) regions[key] = color; else delete regions[key];
+    get().updateElementStyle(id, { vectorData: { ...vd, regions } });
+  },
+
+  booleanSelection: (op) => {
+    const { elements, frames, selectedElementIds } = get();
+    const sel = elements.filter(e => selectedElementIds.includes(e.id));
+    // a boolean group selected: change what it does
+    if (sel.length === 1 && sel[0].type === 'container' && sel[0].style.booleanOp) {
+      get().updateElementStyle(sel[0].id, { booleanOp: op });
+      get().updateElement(sel[0].id, { name: op[0].toUpperCase() + op.slice(1) });
+      return;
+    }
+    const shapes = sel.filter(e => BOOLEANABLE.has(e.type));
+    if (shapes.length < 2) return;
+    // bottom first, as in the layer order; the group sits where the bottom one is
+    const order = elements.filter(e => shapes.includes(e));
+    const parentId = order[0].parentId;
+    const boxes = order.map(e => absBoxOf(e, elements, frames));
+    const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+    const x1 = Math.max(...boxes.map(b => b.x + b.w)), y1 = Math.max(...boxes.map(b => b.y + b.h));
+    const o = originOf(parentId, elements, frames);
+    const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const base = order[0].style;
+    const group: UIElement = {
+      id, name: op[0].toUpperCase() + op.slice(1), type: 'container', parentId, interactions: [], semanticProps: {},
+      style: {
+        x: Math.round(x0 - o.x), y: Math.round(y0 - o.y), width: Math.round(x1 - x0), height: Math.round(y1 - y0),
+        booleanOp: op,
+        // it wears the bottom shape's paint, as in Figma
+        fillColor: base.fillColor && base.fillColor !== 'transparent' ? base.fillColor : '#ebebec',
+        borderColor: base.borderColor, borderWidth: order[0].type === 'vectorPath' ? 0 : base.borderWidth
+      }
+    };
+    const moved = new Set(order.map(e => e.id));
+    set((state) => {
+      const at = state.elements.findIndex(e => moved.has(e.id));
+      const rest = state.elements.filter(e => !moved.has(e.id));
+      rest.splice(Math.min(at, rest.length), 0, group);
+      const kids = order.map((e, i) => ({ ...e, parentId: id, style: { ...e.style, x: Math.round(boxes[i].x - x0), y: Math.round(boxes[i].y - y0) } }));
+      return {
+        elements: [...rest, ...kids],
+        frames: state.frames.map(f => ({ ...f, elementIds: [...f.elementIds.filter(e => !moved.has(e)), ...(f.id === parentId ? [id] : [])] })),
+        selectedElementIds: [id], selectedFrameIds: [], isSaved: false
+      };
+    });
   },
 
   fillVectorFace: (_pointIds, color = '#ebebec') => {
@@ -1496,14 +1565,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const el = id ? elements.find(e => e.id === id) : undefined;
     const vd = el?.style.vectorData;
     const end = { isVectorEditing: false, editingVectorId: null, activeVectorData: null, vectorOriginal: null, selectedVectorPointIds: [], activeTool: 'select' as const };
-    if (!el || !vd || vd.points.length < 2) {
+    // the path being drawn joins the finished ones (a lone point is dropped)
+    const paths = [...(vd?.subpaths || []), ...(vd && vd.points.length > 1 ? [{ points: vd.points, isClosed: vd.isClosed }] : [])];
+    if (!el || !vd || !paths.length) {
       // nothing drawn worth keeping
       set((state) => ({ ...end, elements: state.elements.filter(e => e.id !== id), selectedElementIds: [] }));
       return;
     }
-    const b = vectorBounds(vd);
+    const merged: VectorData = paths.length === 1
+      ? { ...vd, points: paths[0].points, isClosed: paths[0].isClosed, subpaths: undefined }
+      : { ...vd, points: paths[paths.length - 1].points, isClosed: paths[paths.length - 1].isClosed, subpaths: paths.slice(0, -1) };
+    const b = vectorBounds(merged);
     const f = frames.find(fr => !fr.hidden && !fr.isGroup && b.x0 >= fr.x && b.y0 >= fr.y && b.x0 <= fr.x + fr.width && b.y0 <= fr.y + fr.height);
-    const data: VectorData = { ...vd, w: b.w, h: b.h, points: vd.points.map(p => ({ ...p, x: p.x - b.x0, y: p.y - b.y0 })) };
+    const shift = (pts: VectorPoint[]) => pts.map(p => ({ ...p, x: p.x - b.x0, y: p.y - b.y0 }));
+    const data: VectorData = { ...merged, w: b.w, h: b.h, points: shift(merged.points), subpaths: merged.subpaths?.map(sp => ({ ...sp, points: shift(sp.points) })) };
     set((state) => ({
       ...end,
       elements: state.elements.map(e => e.id === id ? {
