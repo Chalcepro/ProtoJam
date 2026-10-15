@@ -216,3 +216,75 @@ export const continueFrom = (vd: VectorData, id: string): VectorData => {
   const rest = paths.filter((_, k) => k !== i);
   return { ...vd, subpaths: rest, points: pts, isClosed: false };
 };
+
+// ---- delete and heal --------------------------------------------------------
+// Figma's "delete and heal": the point goes, its two neighbours stay where
+// they are and their handles are reshaped so one curve follows the two old
+// ones as closely as it can - sampled along the old curves and fitted with
+// Philip J. Schneider's least-squares method (Graphics Gems), the tangents
+// at both ends kept. Lines with no curves stay straight; an end of an open
+// path just goes.
+type V = { x: number; y: number };
+const sub = (a: V, b: V) => ({ x: a.x - b.x, y: a.y - b.y });
+const dot = (a: V, b: V) => a.x * b.x + a.y * b.y;
+const len = (a: V) => Math.hypot(a.x, a.y);
+const unit = (a: V) => { const l = len(a) || 1; return { x: a.x / l, y: a.y / l }; };
+
+const healOne = (pts: VectorPoint[], closed: boolean, i: number): VectorPoint[] | null => {
+  const n = pts.length;
+  if (!closed && (i === 0 || i === n - 1)) {
+    const out = pts.filter((_, k) => k !== i);
+    // the new end has no line beyond it any more
+    if (out.length) { if (i === 0) out[0] = { ...out[0], handleIn: undefined }; else out[out.length - 1] = { ...out[out.length - 1], handleOut: undefined }; }
+    return out;
+  }
+  const ia = (i - 1 + n) % n, ib = (i + 1) % n;
+  const A = pts[ia], P = pts[i], B = pts[ib];
+  const out = [...pts];
+  if (!A.handleOut && !P.handleIn && !P.handleOut && !B.handleIn) {
+    // all corners: a straight line between the neighbours
+    return out.filter((_, k) => k !== i);
+  }
+  const [a0, a1, a2, a3] = ctrl(A, P), [b0, b1, b2, b3] = ctrl(P, B);
+  // the old shape, sampled; parameter by distance along it
+  const samples: V[] = [];
+  for (let k = 0; k <= 16; k++) samples.push(bez(a0, a1, a2, a3, k / 16));
+  for (let k = 1; k <= 16; k++) samples.push(bez(b0, b1, b2, b3, k / 16));
+  const d: number[] = [0];
+  for (let k = 1; k < samples.length; k++) d.push(d[k - 1] + len(sub(samples[k], samples[k - 1])));
+  const total = d[d.length - 1] || 1;
+  // tangents leaving A and arriving at B, as the old curves had them
+  const tA = unit(len(sub(a1, a0)) > 1e-6 ? sub(a1, a0) : len(sub(a2, a0)) > 1e-6 ? sub(a2, a0) : sub(a3, a0));
+  const tB = unit(len(sub(b2, b3)) > 1e-6 ? sub(b2, b3) : len(sub(b1, b3)) > 1e-6 ? sub(b1, b3) : sub(b0, b3));
+  let c00 = 0, c01 = 0, c11 = 0, x0 = 0, x1 = 0;
+  samples.forEach((p, k) => {
+    const u = d[k] / total, m = 1 - u;
+    const B0 = m * m * m, B1 = 3 * u * m * m, B2 = 3 * u * u * m, B3 = u * u * u;
+    const v1 = { x: tA.x * B1, y: tA.y * B1 }, v2 = { x: tB.x * B2, y: tB.y * B2 };
+    c00 += dot(v1, v1); c01 += dot(v1, v2); c11 += dot(v2, v2);
+    const tmp = { x: p.x - (a0.x * (B0 + B1) + b3.x * (B2 + B3)), y: p.y - (a0.y * (B0 + B1) + b3.y * (B2 + B3)) };
+    x0 += dot(v1, tmp); x1 += dot(v2, tmp);
+  });
+  const det = c00 * c11 - c01 * c01;
+  const chord = len(sub(b3, a0));
+  let al1 = Math.abs(det) > 1e-9 ? (x0 * c11 - x1 * c01) / det : 0;
+  let al2 = Math.abs(det) > 1e-9 ? (c00 * x1 - c01 * x0) / det : 0;
+  // degenerate or backwards: the usual fallback, a third of the way
+  if (!(al1 > 1e-6 && al2 > 1e-6) || al1 > chord * 3 || al2 > chord * 3) { al1 = al2 = chord / 3; }
+  out[ia] = { ...A, handleOut: { x: tA.x * al1, y: tA.y * al1 } };
+  out[ib] = { ...B, handleIn: { x: tB.x * al2, y: tB.y * al2 } };
+  return out.filter((_, k) => k !== i);
+};
+
+export const healDelete = (vd: VectorData, ids: string[]): VectorData => {
+  let paths = pathsOf(vd).filter(p => p.points.length);
+  for (const id of ids) {
+    paths = paths.map(p => {
+      const i = p.points.findIndex(q => q.id === id);
+      if (i < 0) return p;
+      const pts = healOne(p.points, p.isClosed, i) || p.points;
+      return { points: pts, isClosed: p.isClosed && pts.length > 2 };
+    }).filter(p => p.points.length > 1 || (p.points.length === 1 && !p.isClosed && pathsOf(vd).length === 1));
+  }
+  return fromPaths(vd, paths);
+};

@@ -151,7 +151,21 @@ export const dToVectorData = (d: string): VectorData => {
       handleOut: sg.handleOut.isZero() ? undefined : { x: sg.handleOut.x, y: sg.handleOut.y },
       isCorner: sg.handleIn.isZero() && sg.handleOut.isZero()
     }))
-  })).filter(p => p.points.length);
+  })).map(p => {
+    // paper can leave two points on one spot (where an arc meets a line, or
+    // a closed path's start repeated at its end): one point, both handles
+    const out: typeof p.points = [];
+    for (const q of p.points) {
+      const prev = out[out.length - 1];
+      if (prev && Math.abs(prev.x - q.x) < 0.01 && Math.abs(prev.y - q.y) < 0.01) out[out.length - 1] = { ...prev, handleOut: q.handleOut, isCorner: prev.isCorner && q.isCorner };
+      else out.push(q);
+    }
+    if (p.isClosed && out.length > 1) {
+      const f = out[0], l = out[out.length - 1];
+      if (Math.abs(f.x - l.x) < 0.01 && Math.abs(f.y - l.y) < 0.01) { out[0] = { ...f, handleIn: l.handleIn }; out.pop(); }
+    }
+    return { ...p, points: out };
+  }).filter(p => p.points.length);
   item.remove();
   const last = paths.pop() || { points: [], isClosed: false };
   return { points: last.points, isClosed: last.isClosed, subpaths: paths, faces: [] };

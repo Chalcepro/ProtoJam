@@ -1,6 +1,7 @@
 import { vectorBounds } from '../lib/vector';
 import { absBoxOf, chainOf, flowsChildren, inFlow, isContainer, originOf, subtreeIds } from '../lib/tree';
 import { BOOLEANABLE, dToVectorData, shapeD } from '../lib/boolean';
+import { healDelete } from '../lib/vectorEdit';
 import { create } from 'zustand';
 import {
   DeviceFrame,
@@ -1499,12 +1500,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = get().editingVectorId;
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd) return;
-    const points = vd.points.filter(p => p.id !== pointId);
-    const subpaths = vd.subpaths?.map(sp => {
-      const pts = sp.points.filter(p => p.id !== pointId);
-      return { points: pts, isClosed: sp.isClosed && pts.length > 2 };
-    }).filter(sp => sp.points.length);
-    const data: VectorData = { ...vd, points, subpaths, isClosed: vd.isClosed && points.length > 2 };
+    // delete and heal (as Figma): the neighbours reshape to keep the curve
+    const data: VectorData = healDelete(vd, [pointId]);
+    const points = data.points;
     set({ activeVectorData: data, selectedVectorPointIds: points.length ? [points[points.length - 1].id] : [] });
     get().updateElementStyle(id, { vectorData: data });
   },

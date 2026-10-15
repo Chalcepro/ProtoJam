@@ -110,7 +110,7 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Arrow keys / Shift+Arrow keys | Nudge selected points 1px / 10px |
 | Ctrl+J | Join the selected points (two loose ends join; otherwise a new line between them) |
 | Ctrl (moving points / pen) | No snapping to other points' alignment |
-| Delete or Backspace | Delete selected points (or the selected line) |
+| Delete or Backspace | Delete selected points - delete and heal: the neighbours reshape to keep the curve (or the selected line) |
 | Enter or Esc / double-click | Done |
 
 ## Text

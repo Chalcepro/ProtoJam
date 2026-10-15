@@ -317,7 +317,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
    ],
    [
     "Delete or Backspace",
-    "Delete selected points (or the selected line)"
+    "Delete selected points - delete and heal: the neighbours reshape to keep the curve (or the selected line)"
    ],
    [
     "Enter or Esc / double-click",
