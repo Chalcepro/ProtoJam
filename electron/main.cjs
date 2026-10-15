@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 let mainWindow = null;
+const isMac = process.platform === 'darwin';
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -12,7 +13,10 @@ function createWindow() {
     minHeight: 700,
     title: 'ProtoJam — UI/UX Prototyping Suite',
     backgroundColor: '#121316',
-    titleBarStyle: 'hiddenInset',
+    // No OS title bar or File/Edit/View/Window menu: ProtoJam's own top bar
+    // is the title bar and draws its own minimise / maximise / close buttons.
+    // macOS keeps its native traffic lights, inset into that bar.
+    ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -22,6 +26,21 @@ function createWindow() {
 
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+  // Tell the top bar when the window is maximised, so its middle button
+  // can show "restore" instead of "maximise".
+  const sendMaximized = () => mainWindow.webContents.send('win:maximized', mainWindow.isMaximized());
+  mainWindow.on('maximize', sendMaximized);
+  mainWindow.on('unmaximize', sendMaximized);
+
+  // With the menu gone, its F12 / Ctrl+R shortcuts go too; keep them in dev.
+  if (isDev) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      if (input.key === 'F12') mainWindow.webContents.toggleDevTools();
+      else if (input.control && input.key.toLowerCase() === 'r') mainWindow.webContents.reload();
+    });
+  }
+
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
   } else {
@@ -30,6 +49,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (!isMac) Menu.setApplicationMenu(null);
   createWindow();
 
   app.on('activate', () => {
@@ -73,3 +93,12 @@ ipcMain.handle('open-project-file', async () => {
   }
   return null;
 });
+
+// Window buttons drawn by the top bar
+ipcMain.on('win:minimize', () => mainWindow?.minimize());
+ipcMain.on('win:toggle-maximize', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize(); else mainWindow.maximize();
+});
+ipcMain.on('win:close', () => mainWindow?.close());
+ipcMain.handle('win:is-maximized', () => mainWindow?.isMaximized() ?? false);

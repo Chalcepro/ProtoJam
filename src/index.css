@@ -178,3 +178,10 @@ input:focus, select:focus, textarea:focus {
   background: rgba(235, 235, 236, 0.2);
   color: rgb(235, 235, 236);
 }
+
+/* Frameless desktop window: the top bar is the title bar. */
+.drag-region { -webkit-app-region: drag; app-region: drag; }
+.no-drag,
+.drag-region button,
+.drag-region input,
+.drag-region select { -webkit-app-region: no-drag; app-region: no-drag; }

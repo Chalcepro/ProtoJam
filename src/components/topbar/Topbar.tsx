@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ProjectMenuModal } from './ProjectMenuModal';
+import { WindowControls, hasOwnWindowControls } from './WindowControls';
 import * as Icons from 'lucide-react';
 
 export const Topbar: React.FC = () => {
@@ -28,10 +29,13 @@ export const Topbar: React.FC = () => {
   } = useProjectStore(useShallow((s) => ({ projectName: s.projectName, setProjectName: s.setProjectName, viewport: s.viewport, setZoom: s.setZoom, resetZoom: s.resetZoom, zoomToFit: s.zoomToFit, undo: s.undo, redo: s.redo, historyIndex: s.historyIndex, history: s.history, startPlaying: s.startPlaying, canvasSettings: s.canvasSettings, updateCanvasSettings: s.updateCanvasSettings, editorMode: s.editorMode, setEditorMode: s.setEditorMode, openProjectMenu: s.openProjectMenu, saveCurrentProject: s.saveCurrentProject, isSaved: s.isSaved, lastSavedAt: s.lastSavedAt })));
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const isMac = window.electronAPI?.platform === 'darwin';
 
   return (
     <>
-      <header className="h-11 bg-[rgb(20,20,19)] border-b border-[rgba(235,235,236,0.08)] flex items-center justify-between px-3 text-xs select-none z-30 shrink-0 text-[rgb(235,235,236)]">
+      {/* The bar doubles as the window's title bar: drag it to move the
+          window, double-click to maximise. */}
+      <header className={`drag-region h-11 bg-[rgb(20,20,19)] border-b border-[rgba(235,235,236,0.08)] flex items-center justify-between ${isMac ? 'pl-20' : 'pl-3'} ${hasOwnWindowControls() ? 'pr-1.5' : 'pr-3'} text-xs select-none z-30 shrink-0 text-[rgb(235,235,236)]`}>
         
         {/* LEFT: Brand + Title + Save */}
         <div className="flex items-center gap-2 min-w-0">
@@ -66,7 +70,7 @@ export const Topbar: React.FC = () => {
           ) : (
             <div
               onClick={() => setIsEditingTitle(true)}
-              className="text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)] font-medium cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-[rgba(235,235,236,0.06)] transition-all duration-150 truncate max-w-[140px] text-[11px]"
+              className="no-drag text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)] font-medium cursor-pointer px-1.5 py-0.5 rounded-md hover:bg-[rgba(235,235,236,0.06)] transition-all duration-150 truncate max-w-[140px] text-[11px]"
               title="Click to rename project"
             >
               {projectName}
@@ -200,6 +204,8 @@ export const Topbar: React.FC = () => {
             <Icons.Play size={11} fill="currentColor" />
             <span>PLAY</span>
           </button>
+
+          <WindowControls />
         </div>
       </header>
 
