@@ -34,59 +34,38 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
     const initialH = Number(style.height);
     const zoom = viewport.zoom;
 
+    // Which way each axis moves: +1 the right / bottom edge, -1 the left / top.
+    const sx = handle.includes('e') ? 1 : handle.includes('w') ? -1 : 0;
+    const sy = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0;
+    const ratio = initialW / (initialH || 1);
+    const cx = initialElX + initialW / 2, cy = initialElY + initialH / 2;
+    // Pictures keep their shape unless Ctrl is held; anything else keeps it
+    // while Shift is held.
+    const media = type === 'image' || type === 'video';
+    const isText = type === 'text' || type === 'heading';
+    // Pulling a text box's size by hand fixes that side, as in Figma:
+    // width only -> it wraps and grows down; height too -> fixed box.
+    let moved = false;
+
     const onPointerMove = (moveEvent: PointerEvent) => {
+      if (!moved && isText) updateElementStyle(element.id, { textResize: sy ? 'fixed' : 'autoHeight', autoSize: false });
+      moved = true;
       const dx = (moveEvent.clientX - startX) / zoom;
       const dy = (moveEvent.clientY - startY) / zoom;
-
-      let newX = initialElX;
-      let newY = initialElY;
-      let newW = initialW;
-      let newH = initialH;
-
-      // Calculate new dimensions based on handle dragged
-      if (handle.includes('e')) {
-        newW = Math.max(10, initialW + dx);
+      const k = moveEvent.altKey ? 2 : 1;             // Alt: both sides move, centre stays
+      let w = Math.max(1, initialW + sx * dx * k);
+      let h = Math.max(1, initialH + sy * dy * k);
+      const keep = media ? !(moveEvent.ctrlKey || moveEvent.metaKey) : moveEvent.shiftKey;
+      if (keep) {
+        if (sx && sy) { if (w / initialW > h / initialH) h = w / ratio; else w = h * ratio; }
+        else if (sx) h = w / ratio;
+        else w = h * ratio;
       }
-      if (handle.includes('s')) {
-        newH = Math.max(10, initialH + dy);
-      }
-      if (handle.includes('w')) {
-        const potentialW = initialW - dx;
-        if (potentialW > 10) {
-          newW = potentialW;
-          newX = initialElX + dx;
-        } else {
-          newW = 10;
-          newX = initialElX + initialW - 10;
-        }
-      }
-      if (handle.includes('n')) {
-        const potentialH = initialH - dy;
-        if (potentialH > 10) {
-          newH = potentialH;
-          newY = initialElY + dy;
-        } else {
-          newH = 10;
-          newY = initialElY + initialH - 10;
-        }
-      }
-
-      // Proportional scaling if Shift key is pressed
-      if (moveEvent.shiftKey && (handle === 'nw' || handle === 'ne' || handle === 'se' || handle === 'sw')) {
-        const aspect = initialW / (initialH || 1);
-        if (newW / aspect > newH) {
-          newH = newW / aspect;
-        } else {
-          newW = newH * aspect;
-        }
-      }
-
-      updateElementStyle(element.id, {
-        x: Math.round(newX),
-        y: Math.round(newY),
-        width: Math.round(newW),
-        height: Math.round(newH)
-      });
+      // Position: the opposite edge stays put (or the centre, with Alt). A side
+      // handle that also changes the other dimension grows it from the middle.
+      const x = moveEvent.altKey ? cx - w / 2 : sx === 1 ? initialElX : sx === -1 ? initialElX + initialW - w : cx - w / 2;
+      const y = moveEvent.altKey ? cy - h / 2 : sy === 1 ? initialElY : sy === -1 ? initialElY + initialH - h : cy - h / 2;
+      updateElementStyle(element.id, { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
     };
 
     const onPointerUp = () => {
@@ -198,6 +177,7 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
 
   const handle = (h: string, cursor: string, pos: React.CSSProperties, title: string) => (
     <div
+      data-handle={h}
       onPointerDown={(e) => handleScaleStart(h, e)}
       title={title}
       style={{
@@ -235,7 +215,7 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
       )}
 
       {/* corners always; edge handles only when there is room for them */}
-      {handle('nw', 'nwse-resize', { left: o, top: o }, 'Scale top-left')}
+      {handle('nw', 'nwse-resize', { left: o, top: o }, 'Scale (Shift keeps shape, Alt from centre; pictures: Ctrl stretches)')}
       {handle('ne', 'nesw-resize', { right: o, top: o }, 'Scale top-right')}
       {handle('se', 'nwse-resize', { right: o, bottom: o }, 'Scale bottom-right')}
       {handle('sw', 'nesw-resize', { left: o, bottom: o }, 'Scale bottom-left')}

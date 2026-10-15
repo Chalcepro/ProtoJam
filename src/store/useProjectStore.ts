@@ -545,7 +545,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const newFrame: DeviceFrame = {
       id,
       name: `${preset.name} ${frames.length + 1}`,
-      deviceType: preset.category as any,
+      // only phones, tablets, desktops and watches get device chrome
+      deviceType: preset.category === 'laptop' ? 'desktop'
+        : (['mobile', 'tablet', 'desktop', 'watch'] as string[]).includes(preset.category) ? preset.category as DeviceFrame['deviceType'] : 'custom',
       presetName: preset.name,
       x: posX,
       y: posY,

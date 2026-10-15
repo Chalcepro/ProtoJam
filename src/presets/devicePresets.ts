@@ -1,7 +1,7 @@
 export interface DevicePreset {
   id: string;
   name: string;
-  category: 'mobile' | 'tablet' | 'desktop' | 'watch' | 'paper' | 'social' | 'custom';
+  category: 'mobile' | 'tablet' | 'laptop' | 'desktop' | 'watch' | 'presentation' | 'video' | 'social' | 'paper' | 'custom';
   width: number;
   height: number;
   density: number;
@@ -194,7 +194,7 @@ export const DEVICE_PRESETS: DevicePreset[] = [
   {
     id: 'macbook-pro-16',
     name: 'MacBook Pro 16"',
-    category: 'desktop',
+    category: 'laptop',
     width: 1728,
     height: 1117,
     density: 2,
@@ -205,7 +205,7 @@ export const DEVICE_PRESETS: DevicePreset[] = [
   {
     id: 'macbook-pro-14',
     name: 'MacBook Pro 14"',
-    category: 'desktop',
+    category: 'laptop',
     width: 1512,
     height: 982,
     density: 2,
@@ -216,7 +216,7 @@ export const DEVICE_PRESETS: DevicePreset[] = [
   {
     id: 'macbook-air-13',
     name: 'MacBook Air 13"',
-    category: 'desktop',
+    category: 'laptop',
     width: 1280,
     height: 832,
     density: 2,
@@ -313,8 +313,8 @@ export const DEVICE_PRESETS: DevicePreset[] = [
   // Social Media & Presentation
   {
     id: 'presentation-16-9',
-    name: 'Presentation Slide (16:9)',
-    category: 'social',
+    name: 'Slide 16:9 (1920 × 1080)',
+    category: 'presentation',
     width: 1920,
     height: 1080,
     density: 1,
@@ -381,6 +381,177 @@ export const DEVICE_PRESETS: DevicePreset[] = [
     height: 792,
     density: 1,
     bezelRadius: 4,
+    iconName: 'FileText'
+  },
+
+  {
+    id: 'laptop-1366',
+    name: 'Laptop (1366 × 768)',
+    category: 'laptop',
+    width: 1366,
+    height: 768,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Laptop'
+  },
+  {
+    id: 'surface-laptop',
+    name: 'Surface Laptop (1500 × 1000)',
+    category: 'laptop',
+    width: 1500,
+    height: 1000,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Laptop'
+  },
+  {
+    id: 'presentation-4-3',
+    name: 'Slide 4:3 (1024 × 768)',
+    category: 'presentation',
+    width: 1024,
+    height: 768,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Presentation'
+  },
+  {
+    id: 'presentation-google',
+    name: 'Google Slides (1280 × 720)',
+    category: 'presentation',
+    width: 1280,
+    height: 720,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Presentation'
+  },
+  {
+    id: 'video-1080p',
+    name: 'Video 1080p (1920 × 1080)',
+    category: 'video',
+    width: 1920,
+    height: 1080,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Video'
+  },
+  {
+    id: 'video-4k',
+    name: 'Video 4K (3840 × 2160)',
+    category: 'video',
+    width: 3840,
+    height: 2160,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Video'
+  },
+  {
+    id: 'video-720p',
+    name: 'Video 720p (1280 × 720)',
+    category: 'video',
+    width: 1280,
+    height: 720,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Video'
+  },
+  {
+    id: 'video-vertical',
+    name: 'Vertical video / Shorts / TikTok (1080 × 1920)',
+    category: 'video',
+    width: 1080,
+    height: 1920,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Smartphone'
+  },
+  {
+    id: 'video-square',
+    name: 'Square video (1080 × 1080)',
+    category: 'video',
+    width: 1080,
+    height: 1080,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Square'
+  },
+  {
+    id: 'youtube-thumbnail',
+    name: 'YouTube thumbnail (1280 × 720)',
+    category: 'video',
+    width: 1280,
+    height: 720,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Video'
+  },
+  {
+    id: 'youtube-banner',
+    name: 'YouTube banner (2560 × 1440)',
+    category: 'video',
+    width: 2560,
+    height: 1440,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Video'
+  },
+  {
+    id: 'instagram-portrait',
+    name: 'Instagram Portrait (1080 × 1350)',
+    category: 'social',
+    width: 1080,
+    height: 1350,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Square'
+  },
+  {
+    id: 'facebook-post',
+    name: 'Facebook Post (1200 × 630)',
+    category: 'social',
+    width: 1200,
+    height: 630,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Layout'
+  },
+  {
+    id: 'linkedin-post',
+    name: 'LinkedIn Post (1200 × 627)',
+    category: 'social',
+    width: 1200,
+    height: 627,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Layout'
+  },
+  {
+    id: 'whatsapp-status',
+    name: 'WhatsApp Status (1080 × 1920)',
+    category: 'social',
+    width: 1080,
+    height: 1920,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'Smartphone'
+  },
+  {
+    id: 'paper-a3',
+    name: 'A3 (842 × 1191 pt)',
+    category: 'paper',
+    width: 842,
+    height: 1191,
+    density: 1,
+    bezelRadius: 0,
+    iconName: 'FileText'
+  },
+  {
+    id: 'paper-a5',
+    name: 'A5 (420 × 595 pt)',
+    category: 'paper',
+    width: 420,
+    height: 595,
+    density: 1,
+    bezelRadius: 0,
     iconName: 'FileText'
   },
 

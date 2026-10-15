@@ -4,6 +4,96 @@ import { UIElement, DeviceFrame, SectionFrame } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { FontPicker } from './FontPicker';
+import { familyOf, findFont, fontStack } from '../../lib/fonts';
+import { BLEND_MODES, textResizeOf } from '../../lib/styleCss';
+import { EffectLayer, BlendMode } from '../../types/components';
+
+const field = 'bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] font-mono text-xs outline-none';
+
+// A small Fixed / Hug / Fill menu, as in Figma's W and H fields.
+const SizingSelect: React.FC<{ value: string; options: ('fixed' | 'hug' | 'fill')[]; onChange: (v: 'fixed' | 'hug' | 'fill') => void }> =
+  ({ value, options, onChange }) => (
+  <select value={value} onChange={e => onChange(e.target.value as any)} title="How this side is sized"
+          className="bg-transparent text-[10px] text-[rgba(235,235,236,0.55)] outline-none cursor-pointer ml-1 shrink-0">
+    {options.map(o => <option key={o} value={o} className="bg-[rgb(20,20,19)]">{o === 'fixed' ? 'Fixed' : o === 'hug' ? 'Hug' : 'Fill'}</option>)}
+  </select>
+);
+
+const EFFECT_LABEL: Record<EffectLayer['type'], string> = {
+  dropShadow: 'Drop shadow', innerShadow: 'Inner shadow', layerBlur: 'Layer blur', backgroundBlur: 'Background blur'
+};
+
+// The effects list: any number of shadows and blurs, each with an eye and a remove.
+const EffectsSection: React.FC<{ element: UIElement }> = ({ element }) => {
+  const { updateElementStyle } = useProjectStore(useShallow((s) => ({ updateElementStyle: s.updateElementStyle })));
+  const fx = element.style.effects || [];
+  const set = (next: EffectLayer[]) => updateElementStyle(element.id, { effects: next });
+  const patch = (id: string, p: Partial<EffectLayer>) => set(fx.map(e => e.id === id ? { ...e, ...p } : e));
+  const add = () => set([...fx, { id: `fx-${Date.now()}`, type: 'dropShadow', x: 0, y: 4, blur: 12, spread: 0, color: 'rgba(0, 0, 0, 0.25)', visible: true }]);
+  const num = (e: EffectLayer, key: 'x' | 'y' | 'blur' | 'spread', label: string) => (
+    <label className="flex items-center gap-1 bg-[rgba(235,235,236,0.04)] rounded px-1.5 py-1 border border-[rgba(235,235,236,0.08)]">
+      <span className="text-[9px] text-[rgba(235,235,236,0.4)]">{label}</span>
+      <NumberInput value={(e[key] as number) ?? 0} onChange={ev => patch(e.id, { [key]: Number(ev.target.value) })}
+                   className="bg-transparent outline-none w-full font-mono text-[11px] text-[rgb(235,235,236)]" />
+    </label>
+  );
+  return (
+    <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider">Effects</span>
+        <button onClick={add} title="Add effect" className="p-1 rounded hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]">
+          <Icons.Plus size={13} />
+        </button>
+      </div>
+      <div className="space-y-2">
+        {fx.map(e => {
+          const shadow = e.type === 'dropShadow' || e.type === 'innerShadow';
+          return (
+            <div key={e.id} className={`space-y-1.5 bg-[rgba(235,235,236,0.02)] p-2 rounded-lg border border-[rgba(235,235,236,0.08)] ${e.visible ? '' : 'opacity-50'}`}>
+              <div className="flex items-center gap-1.5">
+                <select value={e.type} onChange={ev => patch(e.id, { type: ev.target.value as EffectLayer['type'] })}
+                        className="bg-transparent text-xs text-[rgb(235,235,236)] outline-none flex-1 cursor-pointer">
+                  {(Object.keys(EFFECT_LABEL) as EffectLayer['type'][]).map(t => <option key={t} value={t} className="bg-[rgb(20,20,19)]">{EFFECT_LABEL[t]}</option>)}
+                </select>
+                <button onClick={() => patch(e.id, { visible: !e.visible })} title={e.visible ? 'Hide' : 'Show'}
+                        className="p-1 rounded hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)]">
+                  {e.visible ? <Icons.Eye size={12} /> : <Icons.EyeOff size={12} />}
+                </button>
+                <button onClick={() => set(fx.filter(x => x.id !== e.id))} title="Remove"
+                        className="p-1 rounded hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)]">
+                  <Icons.Minus size={12} />
+                </button>
+              </div>
+              {shadow ? (
+                <>
+                  <div className="grid grid-cols-4 gap-1">{num(e, 'x', 'X')}{num(e, 'y', 'Y')}{num(e, 'blur', 'B')}{num(e, 'spread', 'S')}</div>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={toHex(parseColorToRgba(e.color))}
+                           onChange={ev => patch(e.id, { color: toRgbaString({ ...parseColorToRgba(ev.target.value), a: parseColorToRgba(e.color).a }) })}
+                           className="w-6 h-6 rounded cursor-pointer bg-transparent" />
+                    <ColorAlphaSlider color={e.color} onChange={c => patch(e.id, { color: c })} />
+                  </div>
+                </>
+              ) : (
+                <div className="grid grid-cols-2 gap-1">{num(e, 'blur', 'Blur')}</div>
+              )}
+            </div>
+          );
+        })}
+        {!fx.length && !element.style.boxShadow && !element.style.backdropBlur && (
+          <div className="text-[10px] text-[rgba(235,235,236,0.35)]">Shadows, layer blur, background (glass) blur</div>
+        )}
+        {(element.style.boxShadow || element.style.backdropBlur) ? (
+          <button onClick={() => updateElementStyle(element.id, { boxShadow: undefined, backdropBlur: undefined })}
+                  className="text-[10px] text-[rgba(235,235,236,0.45)] hover:text-[rgb(235,235,236)]">
+            Remove older shadow / glass setting
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+};
 
 interface DesignPropertiesProps {
   element?: UIElement;
@@ -36,6 +126,11 @@ const parseColorToRgba = (color: string | undefined): { r: number; g: number; b:
     };
   }
   return { r: 235, g: 235, b: 236, a: 1 };
+};
+
+const WEIGHT_NAME: Record<number, string> = {
+  100: 'Thin', 200: 'Extra Light', 300: 'Light', 400: 'Regular', 500: 'Medium',
+  600: 'Semi Bold', 700: 'Bold', 800: 'Extra Bold', 900: 'Black'
 };
 
 const toHex = ({ r, g, b }: { r: number; g: number; b: number }): string =>
@@ -296,17 +391,23 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">W</span>
               <NumberInput
                 value={frame.width}
-                onChange={(e) => updateFrame(frame.id, { width: Number(e.target.value) })}
+                onChange={(e) => { updateFrame(frame.id, { width: Number(e.target.value) }); if (frame.autoLayout?.sizingH === 'hug') updateAutoLayout(frame.id, { sizingH: 'fixed' }); }}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
               />
+              {frame.autoLayout?.enabled && (
+                <SizingSelect value={frame.autoLayout.sizingH || 'fixed'} options={['fixed', 'hug']} onChange={v => updateAutoLayout(frame.id, { sizingH: v })} />
+              )}
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">H</span>
               <NumberInput
                 value={frame.height}
-                onChange={(e) => updateFrame(frame.id, { height: Number(e.target.value) })}
+                onChange={(e) => { updateFrame(frame.id, { height: Number(e.target.value) }); if (frame.autoLayout?.sizingV === 'hug') updateAutoLayout(frame.id, { sizingV: 'fixed' }); }}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
               />
+              {frame.autoLayout?.enabled && (
+                <SizingSelect value={frame.autoLayout.sizingV || 'fixed'} options={['fixed', 'hug']} onChange={v => updateAutoLayout(frame.id, { sizingV: v })} />
+              )}
             </div>
           </div>
         </div>
@@ -547,6 +648,26 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
   const paddingObj = style.padding || { top: 12, right: 12, bottom: 12, left: 12 };
 
+  // In an auto-layout frame, W and H each say Fixed, Hug (text) or Fill.
+  const inFlow = !!frames.find(f => f.id === element!.parentId)?.autoLayout?.enabled && !style.absolutePosition;
+  const isTextEl = element!.type === 'text' || element!.type === 'heading';
+  const tMode = textResizeOf(style);
+  const sizingOf = (axis: 'H' | 'V'): 'fixed' | 'hug' | 'fill' => {
+    const v = axis === 'H' ? style.layoutSizingH : style.layoutSizingV;
+    if (v === 'fill') return 'fill';
+    if (isTextEl && (tMode === 'auto' || (axis === 'V' && tMode === 'autoHeight'))) return 'hug';
+    return 'fixed';
+  };
+  const setSizing = (axis: 'H' | 'V', v: 'fixed' | 'hug' | 'fill') => {
+    const upd: Partial<typeof style> = axis === 'H' ? { layoutSizingH: v } : { layoutSizingV: v };
+    if (isTextEl) {
+      const h = axis === 'H' ? v : sizingOf('H'), vv = axis === 'V' ? v : sizingOf('V');
+      upd.textResize = h === 'hug' ? 'auto' : vv === 'hug' ? 'autoHeight' : 'fixed';
+    }
+    updateElementStyle(element!.id, upd);
+  };
+  const sizingOptions: ('fixed' | 'hug' | 'fill')[] = isTextEl ? ['fixed', 'hug', 'fill'] : ['fixed', 'fill'];
+
   return (
     <div className="p-3.5 space-y-4 text-xs text-[rgb(235,235,236)] overflow-y-auto select-none">
       
@@ -686,17 +807,19 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">W</span>
             <NumberInput
               value={Number(style.width)}
-              onChange={(e) => updateElementStyle(element!.id, { width: Number(e.target.value) })}
+              onChange={(e) => updateElementStyle(element!.id, { width: Number(e.target.value), layoutSizingH: 'fixed', ...(isTextEl && tMode === 'auto' ? { textResize: 'autoHeight' as const } : {}) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
+            {inFlow && <SizingSelect value={sizingOf('H')} options={sizingOptions} onChange={v => setSizing('H', v)} />}
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">H</span>
             <NumberInput
               value={Number(style.height)}
-              onChange={(e) => updateElementStyle(element!.id, { height: Number(e.target.value) })}
+              onChange={(e) => updateElementStyle(element!.id, { height: Number(e.target.value), layoutSizingV: 'fixed', ...(isTextEl && tMode !== 'fixed' ? { textResize: 'fixed' as const } : {}) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
+            {inFlow && <SizingSelect value={sizingOf('V')} options={sizingOptions} onChange={v => setSizing('V', v)} />}
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">∠</span>
@@ -718,6 +841,15 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             />
             <span className="text-[10px] text-[rgba(235,235,236,0.4)] font-mono">%</span>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2 mt-2 bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
+          <Icons.Blend size={12} className="text-[rgba(235,235,236,0.4)] shrink-0" />
+          <select value={style.blendMode || 'normal'} title="Blend mode"
+                  onChange={(e) => updateElementStyle(element!.id, { blendMode: e.target.value as BlendMode })}
+                  className="bg-transparent text-xs text-[rgb(235,235,236)] outline-none flex-1 cursor-pointer">
+            {BLEND_MODES.map(([v, label]) => <option key={v} value={v} className="bg-[rgb(20,20,19)]">{label}</option>)}
+          </select>
         </div>
 
         {/* Absolute Position — opt this child out of its parent frame's auto-layout flow */}
@@ -1114,43 +1246,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         </div>
       </div>
 
-      {/* 7. EFFECTS & SHADOWS */}
-      <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
-        <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
-          Effects & Blur
-        </div>
-        <div className="space-y-2 bg-[rgba(235,235,236,0.02)] p-2.5 rounded-xl border border-[rgba(235,235,236,0.08)]">
-          <div className="flex items-center justify-between">
-            <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Drop Shadow</span>
-            <select
-              value={style.boxShadow ? 'on' : 'none'}
-              onChange={(e) => {
-                if (e.target.value === 'on') {
-                  updateElementStyle(element!.id, { boxShadow: '0 8px 30px rgba(0, 0, 0, 0.6)' });
-                } else {
-                  updateElementStyle(element!.id, { boxShadow: undefined });
-                }
-              }}
-              className="bg-[rgba(235,235,236,0.06)] text-[rgb(235,235,236)] px-2 py-1 rounded text-xs outline-none"
-            >
-              <option value="none" className="bg-[rgb(20,20,19)]">None</option>
-              <option value="on" className="bg-[rgb(20,20,19)]">Elevation Shadow</option>
-            </select>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Backdrop Blur (Glass)</span>
-            <NumberInput
-              min="0"
-              max="40"
-              value={style.backdropBlur || 0}
-              onChange={(e) => updateElementStyle(element!.id, { backdropBlur: Number(e.target.value) })}
-              placeholder="0px"
-              className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
-            />
-          </div>
-        </div>
-      </div>
+      {/* 7. EFFECTS */}
+      {element && <EffectsSection element={element} />}
 
       {/* 8. TYPOGRAPHY (IF TEXT-ENABLED) */}
       {element?.semanticProps.label !== undefined && (
@@ -1159,18 +1256,15 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             Typography
           </div>
           <div className="space-y-2">
-            <select
-              value={style.fontFamily || 'Inter, sans-serif'}
-              onChange={(e) => updateElementStyle(element!.id, { fontFamily: e.target.value })}
-              className="w-full bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] text-xs outline-none"
-            >
-              <option value="Inter, sans-serif" className="bg-[rgb(20,20,19)]">Inter (Modern Sans)</option>
-              <option value="Roboto, sans-serif" className="bg-[rgb(20,20,19)]">Roboto</option>
-              <option value="Outfit, sans-serif" className="bg-[rgb(20,20,19)]">Outfit (Display)</option>
-              <option value="'JetBrains Mono', monospace" className="bg-[rgb(20,20,19)]">JetBrains Mono (Code)</option>
-              <option value="Playfair Display, serif" className="bg-[rgb(20,20,19)]">Playfair Display (Serif)</option>
-              <option value="'Caveat', cursive" className="bg-[rgb(20,20,19)]">Caveat (Handwritten)</option>
-            </select>
+            <FontPicker
+              value={style.fontFamily || '"Inter", sans-serif'}
+              onPick={(f) => {
+                // keep the weight if the new font has it, else its nearest
+                const w = Number(style.fontWeight) || 400;
+                const near = f.weights.length ? f.weights.reduce((a, b) => Math.abs(b - w) < Math.abs(a - w) ? b : a) : w;
+                updateElementStyle(element!.id, { fontFamily: fontStack(f), fontWeight: near });
+              }}
+            />
 
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
@@ -1194,23 +1288,54 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <label className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Line height (blank = auto)">
+                <Icons.ArrowUpDown size={11} className="text-[rgba(235,235,236,0.4)] mr-1.5 shrink-0" />
+                <input value={style.lineHeight ?? ''} placeholder="Auto"
+                       onChange={(e) => updateElementStyle(element!.id, { lineHeight: e.target.value === '' ? undefined : (isNaN(Number(e.target.value)) ? e.target.value : Number(e.target.value)) })}
+                       className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
+              </label>
+              <label className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Letter spacing (px)">
+                <Icons.MoveHorizontal size={11} className="text-[rgba(235,235,236,0.4)] mr-1.5 shrink-0" />
+                <NumberInput value={style.letterSpacing ?? 0} step="0.1"
+                             onChange={(e) => updateElementStyle(element!.id, { letterSpacing: Number(e.target.value) })}
+                             className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
+              </label>
+            </div>
+
+            {(element!.type === 'text' || element!.type === 'heading') && (
+              <div className="flex items-center gap-2">
+                <div className="flex flex-1 bg-[rgba(235,235,236,0.04)] rounded-lg p-0.5 border border-[rgba(235,235,236,0.08)]">
+                  {([['auto', 'Auto width', Icons.MoveHorizontal], ['autoHeight', 'Auto height', Icons.MoveVertical], ['fixed', 'Fixed size', Icons.Square]] as const).map(([m, label, Ic]) => (
+                    <button key={m} title={label}
+                            onClick={() => updateElementStyle(element!.id, { textResize: m, autoSize: m === 'auto' })}
+                            className={`flex-1 flex justify-center py-1 rounded ${textResizeOf(style) === m ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.4)]'}`}>
+                      <Ic size={12} />
+                    </button>
+                  ))}
+                </div>
+                <button title="Vertical trim: box is exactly the text's height, line spacing above and below removed"
+                        onClick={() => updateElementStyle(element!.id, { trimText: !style.trimText })}
+                        className={`px-2 py-1 rounded-lg border text-[10px] ${style.trimText ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] border-[rgb(235,235,236)] font-bold' : 'border-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.5)]'}`}>
+                  Trim
+                </button>
+              </div>
+            )}
+
             {/* Font Weight & Alignment */}
             <div className="grid grid-cols-2 gap-2">
               <select
-                value={style.fontWeight || '400'}
-                onChange={(e) => updateElementStyle(element!.id, { fontWeight: e.target.value })}
+                value={String(style.fontWeight || 400)}
+                onChange={(e) => updateElementStyle(element!.id, { fontWeight: Number(e.target.value) })}
                 className="bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1.5 rounded-lg border border-[rgba(235,235,236,0.08)] text-xs outline-none"
               >
-                <option value="300" className="bg-[rgb(20,20,19)]">Light (300)</option>
-                <option value="400" className="bg-[rgb(20,20,19)]">Regular (400)</option>
-                <option value="500" className="bg-[rgb(20,20,19)]">Medium (500)</option>
-                <option value="600" className="bg-[rgb(20,20,19)]">SemiBold (600)</option>
-                <option value="700" className="bg-[rgb(20,20,19)]">Bold (700)</option>
-                <option value="900" className="bg-[rgb(20,20,19)]">Black (900)</option>
+                {(findFont(familyOf(style.fontFamily))?.weights || [100, 200, 300, 400, 500, 600, 700, 800, 900]).map(w => (
+                  <option key={w} value={w} className="bg-[rgb(20,20,19)]">{WEIGHT_NAME[w] || w} ({w})</option>
+                ))}
               </select>
 
               <div className="flex items-center justify-around bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.08)] px-1">
-                {(['left', 'center', 'right'] as const).map(align => (
+                {(['left', 'center', 'right', 'justify'] as const).map(align => (
                   <button
                     key={align}
                     onClick={() => updateElementStyle(element!.id, { textAlign: align })}
@@ -1219,6 +1344,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                     {align === 'left' && <Icons.AlignLeft size={12} />}
                     {align === 'center' && <Icons.AlignCenter size={12} />}
                     {align === 'right' && <Icons.AlignRight size={12} />}
+                    {align === 'justify' && <Icons.AlignJustify size={12} />}
                   </button>
                 ))}
               </div>

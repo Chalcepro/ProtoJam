@@ -12,6 +12,8 @@ import { CommentPin } from './CommentPin';
 import { UIElement, UIElementType } from '../../types/components';
 import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
 import { Rulers, RULER } from './Rulers';
+import { wrapperSize, isTextEl } from '../../lib/styleCss';
+import { putAsset } from '../../lib/assets';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -21,6 +23,8 @@ type SnapLine = { axis: 'x' | 'y'; at: number; from: number; to: number; gap?: {
 // What Ctrl+C / Ctrl+X last took. Kept outside React state: it is not
 // something anything renders, and it must survive the canvas re-rendering.
 let CLIPBOARD: UIElement[] = [];
+
+const isMedia = (type: string) => type.startsWith('image/') || type.startsWith('video/');
 
 const isTyping = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
@@ -57,6 +61,9 @@ export const InfiniteCanvas: React.FC = () => {
   // (start + offset) - adding a rounded step per mouse move drifted, and
   // snapping needs the true offset to work from.
   const dragOrig = useRef<Map<string, { x: number; y: number }> | null>(null);
+  // The press was on a text that was already the only thing selected: let go
+  // without dragging and it opens for editing, as in Figma.
+  const pressedSelectedText = useRef(false);
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
   // For the rulers: the pointer in canvas space, and the canvas's size.
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
@@ -253,6 +260,14 @@ export const InfiniteCanvas: React.FC = () => {
         updateCanvasSettings({ showRulers: !canvasSettings.showRulers });
         return;
       }
+      // Enter or Ctrl+A on one selected text: edit it, all its text selected -
+      // not select everything in the project
+      const one = selectedElementIds.length === 1 ? elements.find(el => el.id === selectedElementIds[0]) : undefined;
+      if (one && isTextEl(one) && (e.key === 'Enter' || (mod && e.key.toLowerCase() === 'a'))) {
+        e.preventDefault();
+        setInlineEditingElementId(one.id);
+        return;
+      }
       if (!mod) return;
       // Ctrl+] / Ctrl+[ one step forward / back; with Shift, all the way
       if (e.code === 'BracketRight' || e.code === 'BracketLeft') {
@@ -282,12 +297,12 @@ export const InfiniteCanvas: React.FC = () => {
     const paste = (e: ClipboardEvent) => {
       if (isTyping(e.target)) return;
       const items = Array.from(e.clipboardData?.items || []);
-      const images = items.filter(it => it.kind === 'file' && it.type.startsWith('image/'))
-                          .map(it => it.getAsFile()).filter((f): f is File => !!f);
-      if (images.length) {
+      const media = items.filter(it => it.kind === 'file' && isMedia(it.type))
+                         .map(it => it.getAsFile()).filter((f): f is File => !!f);
+      if (media.length) {
         e.preventDefault();
         const at = lastWorld.current || centreWorld();
-        images.forEach((file, i) => placeImageFileAt(file, at.x + i * 32, at.y + i * 32));
+        media.forEach((file, i) => placeMediaFileAt(file, at.x + i * 32, at.y + i * 32));
         return;
       }
       if (CLIPBOARD.length) { e.preventDefault(); pasteClipboard(); }
@@ -500,12 +515,15 @@ export const InfiniteCanvas: React.FC = () => {
       const dist = Math.hypot(drawCurrent.x - drawStart.x, drawCurrent.y - drawStart.y);
       if (dist > 15) {
         finishDrawingShape(activeTool, drawStart.x, drawStart.y, drawCurrent.x, drawCurrent.y);
+        if (activeTool === 'text') setInlineEditingElementId(useProjectStore.getState().selectedElementIds[0] ?? null);
         setActiveTool('select');
       } else {
         // Single click placement
         const { x, y } = getWorldCoords(e.clientX, e.clientY);
         if (activeTool === 'text') {
-          const elId = addElement('text', Math.round(x), Math.round(y));
+          const f = frames.find(fr => !fr.hidden && x >= fr.x && x <= fr.x + fr.width && y >= fr.y && y <= fr.y + fr.height);
+          const elId = f ? addElement('text', Math.round(x - f.x), Math.round(y - f.y), f.id)
+                         : addElement('text', Math.round(x), Math.round(y));
           setInlineEditingElementId(elId);
         } else if (activeTool === 'frame') {
           finishDrawingShape('frame', x, y, x + 393, y + 852);
@@ -520,6 +538,8 @@ export const InfiniteCanvas: React.FC = () => {
 
     // Reparenting check on finishing element drag - a real drag only: a
     // plain click used to move whatever was clicked into the frame under it
+    if (draggingElementId && !dragMoved && pressedSelectedText.current) setInlineEditingElementId(draggingElementId);
+    pressedSelectedText.current = false;
     if (draggingElementId) {
       const el = dragMoved ? elements.find(item => item.id === draggingElementId) : undefined;
       if (el) {
@@ -556,49 +576,62 @@ export const InfiniteCanvas: React.FC = () => {
     if (snapLines.length) setSnapLines([]);
   };
 
-  // Places a dropped/uploaded image file onto the canvas at the given world coordinates,
-  // parenting it into whichever frame occupies that point (mirrors dropComponentAt's frame lookup).
-  const placeImageFileAt = (file: File, worldX: number, worldY: number) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const src = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const MAX_DIM = 360;
-        const scale = Math.min(1, MAX_DIM / Math.max(img.naturalWidth, img.naturalHeight));
-        const width = Math.max(20, Math.round(img.naturalWidth * scale));
-        const height = Math.max(20, Math.round(img.naturalHeight * scale));
+  // Places a dropped / pasted image or video at the given world point, inside
+  // whichever frame is there, at most 360px on its long side. Images go into
+  // the project as data; videos are too big for that and go to the asset store.
+  const placeMediaFileAt = async (file: File, worldX: number, worldY: number) => {
+    const video = file.type.startsWith('video/');
+    const url = URL.createObjectURL(file);
+    const size = await new Promise<{ w: number; h: number }>((resolve) => {
+      if (video) {
+        const v = document.createElement('video');
+        v.onloadedmetadata = () => resolve({ w: v.videoWidth || 640, h: v.videoHeight || 360 });
+        v.onerror = () => resolve({ w: 640, h: 360 });
+        v.src = url;
+      } else {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = () => resolve({ w: 200, h: 200 });
+        img.src = url;
+      }
+    });
+    URL.revokeObjectURL(url);
+    const src = video ? await putAsset(file) : await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
 
-        const targetFrame = frames.find(f =>
-          worldX >= f.x && worldX <= f.x + f.width && worldY >= f.y && worldY <= f.y + f.height
-        );
-        const x = Math.round(targetFrame ? worldX - targetFrame.x : worldX);
-        const y = Math.round(targetFrame ? worldY - targetFrame.y : worldY);
-
-        const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-        addPredefinedElement({
-          id,
-          name: file.name.replace(/\.[^/.]+$/, '') || 'Image',
-          type: 'image',
-          parentId: targetFrame?.id,
-          interactions: [],
-          style: { x, y, width, height },
-          semanticProps: { src, alt: file.name }
-        });
-      };
-      img.src = src;
-    };
-    reader.readAsDataURL(file);
+    const MAX_DIM = 360;
+    const scale = Math.min(1, MAX_DIM / Math.max(size.w, size.h));
+    const width = Math.max(20, Math.round(size.w * scale));
+    const height = Math.max(20, Math.round(size.h * scale));
+    const targetFrame = frames.find(f =>
+      worldX >= f.x && worldX <= f.x + f.width && worldY >= f.y && worldY <= f.y + f.height
+    );
+    addPredefinedElement({
+      id: `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      name: file.name.replace(/\.[^/.]+$/, '') || (video ? 'Video' : 'Image'),
+      type: video ? 'video' : 'image',
+      parentId: targetFrame?.id,
+      interactions: [],
+      style: {
+        x: Math.round(targetFrame ? worldX - targetFrame.x : worldX),
+        y: Math.round(targetFrame ? worldY - targetFrame.y : worldY),
+        width, height
+      },
+      semanticProps: video ? { videoSrc: src, alt: file.name } : { src, alt: file.name }
+    });
   };
 
   // Drag-and-drop from sidebar component library, or image files dragged in from the OS
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
 
-    const files = Array.from(e.dataTransfer.files || []).filter(f => f.type.startsWith('image/'));
+    const files = Array.from(e.dataTransfer.files || []).filter(f => isMedia(f.type));
     if (files.length > 0) {
       const { x, y } = getWorldCoords(e.clientX, e.clientY);
-      files.forEach((file, i) => placeImageFileAt(file, x + i * 32, y + i * 32));
+      files.forEach((file, i) => placeMediaFileAt(file, x + i * 32, y + i * 32));
       return;
     }
 
@@ -628,6 +661,7 @@ export const InfiniteCanvas: React.FC = () => {
       // down so nothing in between gets the click first.
       onPointerDownCapture={(e) => {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0 || activeTool !== 'select') return;
+        if ((e.target as HTMLElement).closest('[data-handle]')) return;   // Ctrl+drag on a handle stretches
         const hit = document.elementsFromPoint(e.clientX, e.clientY)
           .find(n => (n as HTMLElement).dataset?.elId) as HTMLElement | undefined;
         if (!hit) return;
@@ -699,6 +733,8 @@ export const InfiniteCanvas: React.FC = () => {
               setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: frame.x, origY: frame.y });
             }}
             onStartDragElement={(el, e) => {
+              pressedSelectedText.current = isTextEl(el) && !e.shiftKey &&
+                selectedElementIds.length === 1 && selectedElementIds[0] === el.id;
               dragOrigin.current = { x: e.clientX, y: e.clientY };
               setDraggingElementId(el.id);
               if (e.shiftKey || !selectedElementIds.includes(el.id)) selectElement(el.id, e.shiftKey);
@@ -709,8 +745,6 @@ export const InfiniteCanvas: React.FC = () => {
 
         {/* 3. Free Canvas Elements (Detached / Outside Frames) */}
         {freeElements.map((element, layer) => {
-          const isSelected = selectedElementIds.includes(element.id);
-          const isAutoSizeText = (element.type === 'text' || element.type === 'heading') && element.style.autoSize;
           return (
             <div
               key={element.id}
@@ -720,6 +754,8 @@ export const InfiniteCanvas: React.FC = () => {
                 // otherwise you can never draw or place something on top of it.
                 if (activeTool !== 'select' || e.button !== 0) return;
                 e.stopPropagation();
+                pressedSelectedText.current = isTextEl(element) && !e.shiftKey &&
+                  selectedElementIds.length === 1 && selectedElementIds[0] === element.id;
                 if (e.shiftKey || !selectedElementIds.includes(element.id)) selectElement(element.id, e.shiftKey);
                 dragOrigin.current = { x: e.clientX, y: e.clientY };
                 setDraggingElementId(element.id);
@@ -731,9 +767,8 @@ export const InfiniteCanvas: React.FC = () => {
                 position: 'absolute',
                 left: Number(element.style.x),
                 top: Number(element.style.y),
-                ...(isAutoSizeText
-                  ? { width: 'max-content', height: 'max-content', maxWidth: 'none' as const }
-                  : { width: Number(element.style.width), height: Number(element.style.height) }),
+                ...wrapperSize(element),
+                mixBlendMode: element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined,
                 // strictly by layer order, selected or not (see ArtboardFrame)
                 zIndex: 5 + layer,
                 pointerEvents: activeTool !== 'select' ? 'none' : undefined

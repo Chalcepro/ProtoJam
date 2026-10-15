@@ -5,13 +5,23 @@ import { DesignProperties } from './DesignProperties';
 import { SemanticPropsEditor } from './SemanticPropsEditor';
 import { PrototypeInteractionEditor } from './PrototypeInteractionEditor';
 import * as Icons from 'lucide-react';
+import { FramePresetsPanel } from '../sidebar/FramePresetsPanel';
 
 export const RightInspector: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'design' | 'semantic' | 'prototype'>('design');
-  const { elements, frames, selectedElementIds, selectedFrameIds } = useProjectStore(useShallow((s) => ({ elements: s.elements, frames: s.frames, selectedElementIds: s.selectedElementIds, selectedFrameIds: s.selectedFrameIds })));
+  const { elements, frames, selectedElementIds, selectedFrameIds, activeTool, setActiveTool } = useProjectStore(useShallow((s) => ({ elements: s.elements, frames: s.frames, selectedElementIds: s.selectedElementIds, selectedFrameIds: s.selectedFrameIds, activeTool: s.activeTool, setActiveTool: s.setActiveTool })));
 
   const selectedElement = elements.find(el => selectedElementIds.includes(el.id));
   const selectedFrame = frames.find(f => selectedFrameIds.includes(f.id));
+
+  // The frame tool shows every frame size here, as Figma does.
+  if (activeTool === 'frame') {
+    return (
+      <aside className="w-80 bg-[rgb(20,20,19)] border-l border-[rgba(235,235,236,0.1)] flex flex-col h-full select-none z-20 shrink-0 text-[rgb(235,235,236)]">
+        <FramePresetsPanel onPicked={() => setActiveTool('select')} />
+      </aside>
+    );
+  }
 
   return (
     <aside className="w-80 bg-[rgb(20,20,19)] border-l border-[rgba(235,235,236,0.1)] flex flex-col h-full select-none z-20 shrink-0 text-[rgb(235,235,236)]">

@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import { effectsCss, textResizeOf } from '../../lib/styleCss';
+import { VideoView } from './VideoView';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -29,13 +31,51 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         ...(isPressed ? element.states.pressed : null)
       }
     : element.style;
-  const { inlineEditingElementId, setInlineEditingElementId, updateElementSemanticProps } = useProjectStore(useShallow((s) => ({ inlineEditingElementId: s.inlineEditingElementId, setInlineEditingElementId: s.setInlineEditingElementId, updateElementSemanticProps: s.updateElementSemanticProps })));
+  const { inlineEditingElementId, setInlineEditingElementId, updateElementSemanticProps, updateElementStyle, deleteElement } = useProjectStore(useShallow((s) => ({ inlineEditingElementId: s.inlineEditingElementId, setInlineEditingElementId: s.setInlineEditingElementId, updateElementSemanticProps: s.updateElementSemanticProps, updateElementStyle: s.updateElementStyle, deleteElement: s.deleteElement })));
 
   const [internalValue, setInternalValue] = useState<any>(semanticProps.value ?? '');
   const [internalChecked, setInternalChecked] = useState<boolean>(!!semanticProps.checked);
   const [selectedTab, setSelectedTab] = useState<string>(semanticProps.value?.toString() || 'home');
 
   const isInlineEditing = inlineEditingElementId === element.id;
+
+  // Text that sizes itself writes its drawn size back into width/height, so
+  // the selection box, snapping and the W/H fields match the text - bigger
+  // font, bigger box. Watched, so a font finishing loading counts too.
+  const textRef = useRef<HTMLDivElement>(null);
+  const isText = type === 'text' || type === 'heading';
+  const resizeMode = isText ? textResizeOf(element.style) : 'fixed';
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    if (!isText || isInteractive || resizeMode === 'fixed' || !el) return;
+    const sync = () => {
+      const cur = useProjectStore.getState().elements.find(x => x.id === element.id);
+      if (!cur) return;
+      const upd: { width?: number; height?: number } = {};
+      if (resizeMode === 'auto' && Math.abs(el.offsetWidth - Number(cur.style.width)) >= 1) upd.width = el.offsetWidth;
+      if (Math.abs(el.offsetHeight - Number(cur.style.height)) >= 1) upd.height = el.offsetHeight;
+      if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(element.id, upd);
+    };
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isText, isInteractive, resizeMode, element.id, isInlineEditing]);
+
+  // Going into editing: the text in, focused, all of it selected - so typing
+  // replaces it and Ctrl+A / a click work as in any text field.
+  useLayoutEffect(() => {
+    const el = textRef.current;
+    if (!isText || !isInlineEditing || isInteractive || !el) return;
+    el.innerText = semanticProps.label || '';
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isInlineEditing]);
 
   // Double-click a field, a search bar or a button in design mode to type its
   // text right there - the placeholder of a field, the label of a button.
@@ -74,12 +114,13 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       opacity: style.opacity ?? 1,
       transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined,
       color: style.textColor,
+      fontFamily: style.fontFamily,
       fontSize: style.fontSize,
       fontWeight: style.fontWeight,
       textAlign: style.textAlign,
       letterSpacing: style.letterSpacing,
       lineHeight: style.lineHeight,
-      boxShadow: style.boxShadow,
+      ...effectsCss(style, type === 'text' || type === 'heading'),
       borderWidth: style.borderWidth,
       borderColor: style.borderColor,
       borderStyle: style.borderStyle || (style.borderWidth ? 'solid' : undefined),
@@ -87,7 +128,6 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       paddingRight: style.padding?.right,
       paddingBottom: style.padding?.bottom,
       paddingLeft: style.padding?.left,
-      backdropFilter: style.backdropBlur ? `blur(${style.backdropBlur}px)` : undefined,
       display: style.display,
       flexDirection: style.flexDirection,
       justifyContent: style.justifyContent,
@@ -131,7 +171,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         <div
           style={getCommonStyles()}
           onClick={handleClick}
-          className="transition-all"
+          className=""
         />
       );
 
@@ -150,7 +190,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         <div
           style={getCommonStyles()}
           onClick={handleClick}
-          className="transition-all"
+          className=""
         />
       );
 
@@ -163,7 +203,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             borderRadius: '9999px'
           }}
           onClick={handleClick}
-          className="transition-all overflow-hidden"
+          className="overflow-hidden"
         />
       );
 
@@ -281,59 +321,53 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         </svg>
       );
 
-    // ---------------- TEXT / HEADING WITH INLINE EDITING ----------------
+    // ---------------- TEXT / HEADING ----------------
+    // Edited in place, in its own font and size - the box you see is the box
+    // you type in. Ctrl+A inside selects its text only.
     case 'text':
-    case 'heading':
+    case 'heading': {
+      const mode = textResizeOf(style);
+      const textBox: React.CSSProperties = {
+        ...getCommonStyles(),
+        ...(mode === 'auto'
+          ? { width: 'max-content', height: 'max-content', whiteSpace: 'pre', minWidth: 2 }
+          : mode === 'autoHeight'
+          ? { width: '100%', height: 'max-content', whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }
+          : { whiteSpace: 'pre-wrap', overflowWrap: 'break-word', overflow: style.clipContent ? 'hidden' : 'visible' }),
+        // vertical trim: the box is exactly cap height to baseline
+        ...(style.trimText ? ({ textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic' } as React.CSSProperties) : null)
+      };
       if (isInlineEditing && !isInteractive) {
         return (
-          <textarea
-            autoFocus
-            // the caret at the end, so typing adds to the text rather than
-            // landing in front of it
-            onFocus={(e) => { const n = e.target.value.length; e.target.setSelectionRange(n, n); }}
-            value={semanticProps.label || ''}
-            onChange={(e) => updateElementSemanticProps(element.id, { label: e.target.value })}
-            onBlur={() => setInlineEditingElementId(null)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') setInlineEditingElementId(null);
+          <div
+            key="edit"
+            ref={textRef}
+            contentEditable="plaintext-only"
+            suppressContentEditableWarning
+            onInput={(e) => updateElementSemanticProps(element.id, { label: e.currentTarget.innerText })}
+            onBlur={(e) => {
+              setInlineEditingElementId(null);
+              // as in Figma, text left empty goes away
+              if (!e.currentTarget.innerText.trim()) deleteElement(element.id);
             }}
-            style={{
-              ...getCommonStyles(),
-              background: 'rgba(20, 20, 19, 0.9)',
-              border: '1px solid rgb(235, 235, 236)',
-              outline: 'none',
-              resize: 'none',
-              color: 'rgb(235, 235, 236)'
-            }}
-            className="rounded p-1 font-sans shadow-lg select-text"
+            onKeyDown={(e) => { if (e.key === 'Escape') e.currentTarget.blur(); }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{ ...textBox, outline: 'none', cursor: 'text', userSelect: 'text', caretColor: style.textColor }}
           />
         );
       }
-
-      {
-        // A fixed-size box (drag-created) lets its content spill past the
-        // boundary instead of clipping it, and keeps a faint outline visible
-        // at all times — not just while selected — so the fixed bounds this
-        // will eventually clip/scroll against stay legible.
-      }
       return (
         <div
+          key="view"
+          ref={textRef}
           style={{
-            ...getCommonStyles(),
-            // width/height:100% (from getCommonStyles) would fight a max-content
-            // sized parent in a circular way — auto-size boxes need the inner
-            // element to size itself from its own text, not from the parent.
-            ...(style.autoSize === true
-              ? { width: 'max-content', height: 'max-content', whiteSpace: 'pre', paddingRight: 4 }
-              : {
-                  overflow: style.clipContent ? 'auto' : 'visible',
-                  outline: !style.borderWidth ? '1px dashed rgba(235,235,236,0.3)' : undefined,
-                  outlineOffset: '1px'
-                })
+            ...textBox,
+            outline: mode === 'fixed' && !style.borderWidth ? '1px dashed rgba(235,235,236,0.3)' : undefined,
+            outlineOffset: '1px'
           }}
           onClick={handleClick}
           onDoubleClick={() => !isInteractive && setInlineEditingElementId(element.id)}
-          className="flex items-center select-text cursor-text"
           title="Double-click to edit text"
         >
           {element.isMasterComponent && (
@@ -342,13 +376,12 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           {element.isInstance && (
             <span className="text-[10px] text-[rgb(235,235,236)] mr-1 opacity-60">◇</span>
           )}
-          {semanticProps.label ? (
-            <span>{semanticProps.label}</span>
-          ) : (
+          {semanticProps.label ? semanticProps.label : (
             <span className="italic opacity-40 select-none">Type something...</span>
           )}
         </div>
       );
+    }
 
     // ---------------- BUTTON ----------------
     case 'button':
@@ -358,7 +391,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           style={getCommonStyles()}
           onClick={handleClick}
           onDoubleClick={editOnDoubleClick}
-          className={`flex items-center justify-center font-bold transition-all ${
+          className={`flex items-center justify-center font-bold transition-[filter,transform] ${
             isInteractive ? 'active:scale-95 cursor-pointer hover:brightness-110' : ''
           }`}
         >
@@ -696,6 +729,10 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           onClick={handleClick}
         />
       );
+
+    // ---------------- VIDEO ----------------
+    case 'video':
+      return <VideoView element={element} style={getCommonStyles()} />;
 
     // ---------------- AVATAR ----------------
     case 'avatar':

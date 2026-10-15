@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
+import { wrapperSize } from '../../lib/styleCss';
 import { DeviceFrame, UIElement } from '../../types/components';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { TransformSelectionBox } from './TransformSelectionBox';
@@ -38,15 +39,40 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     updateFrameDimensions,
     viewport,
     pushHistory,
-    activeTool
-  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateFrameDimensions: s.updateFrameDimensions, viewport: s.viewport, pushHistory: s.pushHistory, activeTool: s.activeTool })));
+    activeTool,
+    updateElementStyle,
+    updateAutoLayout
+  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateFrameDimensions: s.updateFrameDimensions, updateElementStyle: s.updateElementStyle, updateAutoLayout: s.updateAutoLayout, viewport: s.viewport, pushHistory: s.pushHistory, activeTool: s.activeTool })));
 
   const isFrameSelected = selectedFrameIds.includes(frame.id);
   const frameElements = elements.filter(el => frame.elementIds.includes(el.id) || el.parentId === frame.id);
 
-  if (frame.hidden) return null;
-
   const autoLayout = frame.autoLayout?.enabled ? frame.autoLayout : null;
+  const hugW = autoLayout?.sizingH === 'hug', hugH = autoLayout?.sizingV === 'hug';
+  const outerRef = useRef<HTMLDivElement>(null);
+
+  // Auto layout decides some sizes - a frame hugging its contents, a child
+  // filling the frame. Whatever it drew is written back, so the W/H fields,
+  // snapping and the selection box tell the truth.
+  useLayoutEffect(() => {
+    const outer = outerRef.current;
+    if (!autoLayout || !outer) return;
+    const st = useProjectStore.getState();
+    outer.querySelectorAll<HTMLElement>('[data-flow-child]').forEach(n => {
+      const el = st.elements.find(x => x.id === n.dataset.elId);
+      if (!el || (el.style.layoutSizingH !== 'fill' && el.style.layoutSizingV !== 'fill')) return;
+      const upd: { width?: number; height?: number } = {};
+      if (el.style.layoutSizingH === 'fill' && Math.abs(n.offsetWidth - Number(el.style.width)) >= 1) upd.width = n.offsetWidth;
+      if (el.style.layoutSizingV === 'fill' && Math.abs(n.offsetHeight - Number(el.style.height)) >= 1) upd.height = n.offsetHeight;
+      if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(el.id, upd);
+    });
+    if (hugW || hugH) {
+      const w = hugW ? outer.offsetWidth : frame.width, h = hugH ? outer.offsetHeight : frame.height;
+      if (Math.abs(w - frame.width) >= 1 || Math.abs(h - frame.height) >= 1) updateFrameDimensions(frame.id, w, h);
+    }
+  });
+
+  if (frame.hidden) return null;
   const justifyContentMap: Record<string, React.CSSProperties['justifyContent']> = {
     start: 'flex-start',
     center: 'center',
@@ -90,6 +116,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     const initialW = frame.width;
     const initialH = frame.height;
     const zoom = viewport.zoom;
+    if (hugW || hugH) updateAutoLayout(frame.id, { sizingH: 'fixed', sizingV: 'fixed' });
 
     const onPointerMove = (moveEvt: PointerEvent) => {
       const dx = (moveEvt.clientX - startX) / zoom;
@@ -113,13 +140,14 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
 
   return (
     <div
+      ref={outerRef}
       data-frame-id={frame.id}
       style={{
         position: 'absolute',
         left: frame.x,
         top: frame.y,
-        width: frame.width,
-        height: frame.height
+        width: hugW ? 'max-content' : frame.width,
+        height: hugH ? 'max-content' : frame.height
       }}
       className={`group select-none transition-shadow ${
         frame.locked ? 'cursor-default' : ''
@@ -243,7 +271,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
         className={`relative transition-shadow shadow-2xl ${
           isFrameSelected 
             ? 'ring-2 ring-[rgb(235,235,236)] ring-offset-2 ring-offset-[rgb(20,20,19)]' 
-            : 'border border-[rgba(235,235,236,0.15)]'
+            : 'ring-1 ring-[rgba(235,235,236,0.15)]'
         } ${isWiring ? 'hover:ring-4 hover:ring-[rgb(235,235,236)] cursor-crosshair' : ''}`}
       >
         {/* Dynamic Island / Notch Mockup for Mobile */}
@@ -274,15 +302,22 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           // Inside an auto-layout frame, children flow in flex order and ignore
           // stored x/y — unless explicitly opted out via "Absolute Position".
           const participatesInFlow = !!autoLayout && !element.style.absolutePosition;
-          const isAutoSizeText = (element.type === 'text' || element.type === 'heading') && element.style.autoSize;
-          const sizeStyle: React.CSSProperties = isAutoSizeText
-            ? { width: 'max-content', height: 'max-content', maxWidth: 'none' }
-            : { width: Number(element.style.width), height: Number(element.style.height) };
+          const sizeStyle: React.CSSProperties = wrapperSize(element);
+          // Fill container: along the flow it takes the free space, across it
+          // stretches to the frame's inner size.
+          if (participatesInFlow) {
+            const row = autoLayout!.direction === 'horizontal';
+            const fillMain = row ? element.style.layoutSizingH === 'fill' : element.style.layoutSizingV === 'fill';
+            const fillCross = row ? element.style.layoutSizingV === 'fill' : element.style.layoutSizingH === 'fill';
+            if (fillMain) Object.assign(sizeStyle, { flex: '1 1 0', [row ? 'width' : 'height']: 'auto', [row ? 'minWidth' : 'minHeight']: 0 });
+            if (fillCross) Object.assign(sizeStyle, { alignSelf: 'stretch', [row ? 'height' : 'width']: 'auto' });
+          }
+          const blend = element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined;
           const positionStyle: React.CSSProperties = participatesInFlow
             ? {
                 position: 'relative',
-                ...sizeStyle,
                 flexShrink: 0,
+                ...sizeStyle,
                 // stacked strictly by layer order - selecting something must
                 // not lift it above what is in front of it (it used to jump
                 // to 35, so a layer sent back still showed on top while
@@ -304,6 +339,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
             <div
               key={element.id}
               data-el-id={element.id}
+              data-flow-child={participatesInFlow ? '' : undefined}
               onPointerDown={(e) => {
                 // Let a drawing/placement tool pass straight through to the frame
                 // body beneath instead of this existing element hijacking the
@@ -321,8 +357,8 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
                   selectElement(element.id, e.shiftKey);
                 }
               }}
-              style={{ ...positionStyle, pointerEvents: activeTool !== 'select' ? 'none' : undefined }}
-              className={`group/el relative ${element.locked ? 'cursor-default' : 'cursor-move'} transition-all`}
+              style={{ ...positionStyle, mixBlendMode: blend, pointerEvents: activeTool !== 'select' ? 'none' : undefined }}
+              className={`group/el relative ${element.locked ? 'cursor-default' : 'cursor-move'}`}
             >
               <SemanticElementRenderer element={element} isInteractive={false} />
 
