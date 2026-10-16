@@ -53,7 +53,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
     if ((fillH || hugH) && Math.abs(n.offsetHeight - Number(s.height)) >= 1) upd.height = n.offsetHeight;
     if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(element.id, upd);
     // a group's box follows what is in it
-    if (s.isGroup) useProjectStore.getState().fitGroup(element.id);
+    if (s.isGroup && !ownLayout) useProjectStore.getState().fitGroup(element.id);
   });
 
   if (element.hidden) return null;

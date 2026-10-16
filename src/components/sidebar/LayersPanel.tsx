@@ -1,14 +1,19 @@
-import React, { useEffect, useReducer, useState } from 'react';
+import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
-import { chainOf, isContainer } from '../../lib/tree';
+import { chainOf, isContainer, subtreeIds } from '../../lib/tree';
 import { UIElement } from '../../types/components';
 
 // Frames, groups and auto layouts inside a screen open only when asked (or
 // when something inside them is selected). Kept outside the panel so it
 // survives switching sidebar tabs.
 const OPEN = new Set<string>();
+
+// Where a dragged layer would land: above / below a row, or into a frame,
+// group or screen ('in'). 'canvas' = loose on the canvas.
+type Drop = { id: string; kind: 'el' | 'frame' | 'canvas'; where: 'before' | 'after' | 'in' };
+const BLUE = '#31C3F3';
 
 export const LayersPanel: React.FC = () => {
   const {
@@ -46,6 +51,53 @@ export const LayersPanel: React.FC = () => {
     if (added) redraw();
   }, [selectedElementIds]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Drag rows to reorder, or to move things into / out of frames and groups
+  const [drop, setDrop] = useState<Drop | null>(null);
+  const [dragOn, setDragOn] = useState(false);
+  const dragged = useRef(false);
+  const dropAt = (x: number, y: number, ids: string[]): Drop | null => {
+    const row = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('[data-layer-id]');
+    if (!row) return null;
+    const id = row.dataset.layerId!, kind = row.dataset.layerKind as Drop['kind'];
+    if (kind !== 'el') return { id, kind, where: 'in' };
+    const st = useProjectStore.getState().elements;
+    // never into itself or something inside it
+    if (ids.some(m => subtreeIds(m, st).includes(id))) return null;
+    const r = row.getBoundingClientRect(), f = (y - r.top) / r.height;
+    const holds = isContainer(st.find(e => e.id === id));
+    return { id, kind, where: holds ? (f < 0.25 ? 'before' : f > 0.75 ? 'after' : 'in') : (f < 0.5 ? 'before' : 'after') };
+  };
+  const startDrag = (e: React.PointerEvent, el: UIElement) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest('button')) return;
+    const ids = selectedElementIds.includes(el.id) ? selectedElementIds : [el.id];
+    const x0 = e.clientX, y0 = e.clientY;
+    let on = false, last: Drop | null = null, hoverAt = 0;
+    dragged.current = false;
+    const move = (ev: PointerEvent) => {
+      if (!on && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      if (!on) setDragOn(true);
+      on = dragged.current = true;
+      const d = dropAt(ev.clientX, ev.clientY, ids);
+      // resting over a closed frame opens it
+      if (d?.where !== 'in' || d.id !== last?.id || last?.where !== 'in') hoverAt = Date.now();
+      else if (d.kind === 'el' && !OPEN.has(d.id) && Date.now() - hoverAt > 600) { OPEN.add(d.id); redraw(); }
+      last = d; setDrop(d);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      setDrop(null); setDragOn(false);
+      if (!on || !last) return;
+      const s = useProjectStore.getState();
+      if (last.where === 'in') s.moveLayers(ids, last.kind === 'canvas' ? undefined : last.id);
+      else s.moveLayers(ids, s.elements.find(x => x.id === last!.id)?.parentId, last.id, last.where);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
+  const dropLook = (id: string): React.CSSProperties | undefined =>
+    drop?.id !== id ? undefined
+      : drop.where === 'in' ? { boxShadow: `inset 0 0 0 1.5px ${BLUE}` }
+      : { boxShadow: `inset 0 ${drop.where === 'before' ? 2 : -2}px 0 ${BLUE}` };
+
   // Free canvas elements (not inside any frame)
   const freeElements = elements.filter(el => !el.parentId);
 
@@ -69,8 +121,12 @@ export const LayersPanel: React.FC = () => {
     return (
       <React.Fragment key={el.id}>
       <div
+        data-layer-id={el.id} data-layer-kind="el"
+        onPointerDown={(e) => startDrag(e, el)}
+        style={dropLook(el.id)}
         onClick={(e) => {
           e.stopPropagation();
+          if (dragged.current) { dragged.current = false; return; }
           selectElement(el.id, e.shiftKey);
         }}
         className={`flex items-center justify-between px-2 py-1 rounded-lg cursor-pointer group transition-colors ${
@@ -157,6 +213,7 @@ export const LayersPanel: React.FC = () => {
       <div key={frame.id} className="space-y-0.5">
         {/* Frame Row */}
         <div
+          data-layer-id={frame.id} data-layer-kind="frame" style={dropLook(frame.id)}
           onClick={(e) => {
             e.stopPropagation();
             selectFrame(frame.id, e.shiftKey);
@@ -371,9 +428,10 @@ export const LayersPanel: React.FC = () => {
         {filteredFrames.map(frame => renderFrameRow(frame))}
 
         {/* 3. FREE CANVAS ELEMENTS (PLACED DIRECTLY ON INFINITE CANVAS) */}
-        {filteredFreeElements.length > 0 && (
+        {(filteredFreeElements.length > 0 || dragOn) && (
           <div className="pt-2">
-            <div className="text-[10px] font-bold text-[rgba(235,235,236,0.35)] uppercase tracking-wider mb-1 px-1 flex items-center gap-1">
+            <div data-layer-id="canvas" data-layer-kind="canvas" style={dropLook('canvas')} title="Drop a layer here to take it out onto the canvas"
+                 className="text-[10px] font-bold text-[rgba(235,235,236,0.35)] uppercase tracking-wider mb-1 px-1 py-0.5 rounded flex items-center gap-1">
               <Icons.Layers size={11} />
               <span>Canvas Objects ({filteredFreeElements.length})</span>
             </div>

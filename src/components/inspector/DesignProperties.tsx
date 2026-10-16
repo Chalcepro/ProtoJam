@@ -942,9 +942,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
         {/* Frames: Convert a shape into one; Clip content cuts what is inside
             at the frame's edge (its shape's edge, for a circle or a star) */}
-        {element && ['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(element.type) && (
+        {element && (['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(element.type) || style.isGroup) && (
           <button onClick={() => useProjectStore.getState().convertToFrame()}
-                  title="Turn this shape into a frame: things can go inside it, cut to its shape (Ctrl+Alt+F)"
+                  title={style.isGroup ? "Turn this group into a frame (Ctrl+Alt+F)" : "Turn this shape into a frame: things can go inside it, cut to its shape (Ctrl+Alt+F)"}
                   className="w-full mt-2 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-[rgba(235,235,236,0.04)] hover:bg-[rgba(235,235,236,0.08)] text-[rgb(235,235,236)] text-[11px] font-semibold border border-[rgba(235,235,236,0.08)]">
             <Icons.Frame size={12} /> Convert to frame
           </button>

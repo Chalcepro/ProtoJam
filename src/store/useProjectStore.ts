@@ -228,7 +228,8 @@ export interface ProjectState {
   // Double-click / Enter on a shape: its points, ready to edit (a rectangle,
   // circle, triangle or star becomes a vector first, as in Figma).
   editShapePoints: (id: string) => void;
-  // The selected shapes become frames (things can go inside; Clip content on).
+  // The selected shapes become frames (things can go inside; Clip content on);
+  // selected groups become frames as they are.
   convertToFrame: () => void;
   // Ctrl+G group / Ctrl+Alt+G frame the selection; Ctrl+Shift+G ungroup.
   wrapSelection: (as: 'group' | 'frame') => void;
@@ -237,6 +238,10 @@ export interface ProjectState {
   fitGroup: (id: string) => void;
   // Put an element into an auto-layout parent at a place in its row / column.
   moveToFlow: (id: string, parentId: string, index: number) => void;
+  // Layers panel drag: into `parentId` (a screen, frame or group; undefined =
+  // the canvas), before / after `refId` among its children or, without one,
+  // in front of them all. They stay where they are on the canvas.
+  moveLayers: (ids: string[], parentId: string | undefined, refId?: string, where?: 'before' | 'after') => void;
   updateVectorPoint: (pointId: string, updates: Partial<VectorPoint>) => void;
   closeVectorPath: () => void;
   fillVectorFace: (pointIds?: string[], color?: string) => void;
@@ -351,6 +356,17 @@ const getInitialProjectData = () => {
 };
 
 const initialProject = getInitialProjectData();
+
+// Keep the arrangement things are in, as Figma does when they get auto layout:
+// side by side becomes a row, one above another a column, with the gap that
+// was between them.
+const arrangementOf = (abs: { x: number; y: number; w: number; h: number }[]) => {
+  const x0 = Math.min(...abs.map(a => a.x)), y0 = Math.min(...abs.map(a => a.y));
+  const across = Math.max(...abs.map(a => a.x + a.w)) - x0 >= Math.max(...abs.map(a => a.y + a.h)) - y0;
+  const order = abs.map((a, i) => ({ ...a, i })).sort((p, q) => across ? p.x - q.x : p.y - q.y);
+  const gaps = order.slice(1).map((a, k) => across ? a.x - (order[k].x + order[k].w) : a.y - (order[k].y + order[k].h));
+  return { across, order, gap: Math.max(0, Math.round(gaps.reduce((t, g) => t + g, 0) / (gaps.length || 1))) };
+};
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projectId: initialProject.projectId,
@@ -1288,30 +1304,47 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         isSaved: false
       }));
     } else {
-      set((state) => ({
-        elements: state.elements.map(e => {
-          if (e.id === targetId) {
-            const cur = e.style.autoLayout?.enabled;
-            return {
-              ...e,
-              style: {
-                ...e.style,
-                autoLayout: {
-                  enabled: !cur,
-                  direction: e.style.autoLayout?.direction || 'horizontal',
-                  gap: e.style.autoLayout?.gap ?? 12,
-                  padding: e.style.autoLayout?.padding || { top: 12, right: 12, bottom: 12, left: 12 },
-                  align: e.style.autoLayout?.align || 'center',
-                  sizingH: e.style.autoLayout?.sizingH || 'hug',
-                  sizingV: e.style.autoLayout?.sizingV || 'hug'
+      // a group can't lay things out: it becomes a frame first, in the
+      // arrangement its things already have (as Figma does)
+      const g = elements.find(e => e.id === targetId);
+      const kids = g?.style.isGroup ? elements.filter(e => e.parentId === targetId).map(e => absBoxOf(e, elements, frames)) : [];
+      const arr = kids.length ? arrangementOf(kids) : null;
+      // its things flow in layer order: put them in the order they stand in
+      const kidIds = elements.filter(e => e.parentId === targetId).map(e => e.id);
+      const sorted = arr ? arr.order.map(o => kidIds[o.i]) : kidIds;
+      const byId = new Map(elements.map(e => [e.id, e]));
+      set((state) => {
+        let k = 0;
+        return {
+          elements: state.elements.map(e => e.parentId === targetId && arr ? byId.get(sorted[k++])! : e).map(e => {
+            if (e.id === targetId && arr) {
+              return { ...e, name: e.name === 'Group' ? 'Frame' : e.name, style: { ...e.style, isGroup: undefined,
+                autoLayout: { enabled: true, direction: arr.across ? 'horizontal' : 'vertical', gap: arr.gap, align: 'start',
+                              padding: { top: 0, right: 0, bottom: 0, left: 0 }, sizingH: 'hug', sizingV: 'hug' } } };
+            }
+            if (e.id === targetId) {
+              const cur = e.style.autoLayout?.enabled;
+              return {
+                ...e,
+                style: {
+                  ...e.style,
+                  autoLayout: {
+                    enabled: !cur,
+                    direction: e.style.autoLayout?.direction || 'horizontal',
+                    gap: e.style.autoLayout?.gap ?? 12,
+                    padding: e.style.autoLayout?.padding || { top: 12, right: 12, bottom: 12, left: 12 },
+                    align: e.style.autoLayout?.align || 'center',
+                    sizingH: e.style.autoLayout?.sizingH || 'hug',
+                    sizingV: e.style.autoLayout?.sizingV || 'hug'
+                  }
                 }
-              }
-            };
-          }
-          return e;
-        }),
-        isSaved: false
-      }));
+              };
+            }
+            return e;
+          }),
+          isSaved: false
+        };
+      });
     }
     pushHistory();
   },
@@ -1334,12 +1367,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const minX = Math.min(...abs.map(a => a.x)), minY = Math.min(...abs.map(a => a.y));
     const maxX = Math.max(...abs.map(a => a.x + a.w)), maxY = Math.max(...abs.map(a => a.y + a.h));
 
-    // Keep the arrangement they were in, as Figma does: side by side becomes
-    // a row, one above another a column, with the gap that was between them.
-    const across = maxX - minX >= maxY - minY;
-    const order = abs.map((a, i) => ({ ...a, i })).sort((p, q) => across ? p.x - q.x : p.y - q.y);
-    const gaps = order.slice(1).map((a, k) => across ? a.x - (order[k].x + order[k].w) : a.y - (order[k].y + order[k].h));
-    const gap = Math.max(0, Math.round(gaps.reduce((t, g) => t + g, 0) / (gaps.length || 1)));
+    const { across, gap, order } = arrangementOf(abs);
 
     // the new frame goes where they are, in the parent they share (or, when
     // they come from different places, the first one's)
@@ -1598,10 +1626,42 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
   },
 
+  moveLayers: (ids, parentId, refId, where = 'before') => {
+    const { elements, frames } = get();
+    // never into itself or something inside it
+    if (parentId && ids.some(id => subtreeIds(id, elements).includes(parentId))) return;
+    const moving = elements.filter(e => ids.includes(e.id));   // keep their layer order
+    if (!moving.length || ids.includes(refId!)) return;
+    const o = originOf(parentId, elements, frames);
+    const flows = flowsChildren(parentId, elements, frames);
+    const moved = moving.map(e => {
+      if (e.parentId === parentId) return e;
+      const b = absBoxOf(e, elements, frames);
+      return { ...e, parentId, style: { ...e.style, x: Math.round(b.x - o.x), y: Math.round(b.y - o.y), ...(flows ? { absolutePosition: false } : {}) } };
+    });
+    let next = elements.filter(e => !ids.includes(e.id));
+    const ref = refId ? next.findIndex(e => e.id === refId) : -1;
+    const sibs = next.filter(e => e.parentId === parentId);
+    const at = ref >= 0 ? ref + (where === 'after' ? 1 : 0)
+             : sibs.length ? next.indexOf(sibs[sibs.length - 1]) + 1 : next.length;
+    next.splice(at, 0, ...moved);
+    // a group left with nothing in it goes, as in Figma
+    const left = new Set(moving.map(e => e.parentId));
+    const gone = new Set(next.filter(e => left.has(e.id) && e.style.isGroup && !next.some(k => k.parentId === e.id)).map(e => e.id));
+    next = next.filter(e => !gone.has(e.id));
+    set({
+      elements: next,
+      frames: frames.map(f => ({ ...f, elementIds: [...f.elementIds.filter(e => !ids.includes(e) && !gone.has(e)), ...(f.id === parentId ? ids : [])] })),
+      selectedElementIds: ids, selectedFrameIds: [], isSaved: false
+    });
+  },
+
   wrapSelection: (as) => {
     const { elements, frames, selectedElementIds } = get();
     const sel = elements.filter(e => selectedElementIds.includes(e.id));
     if (!sel.length) return;
+    // framing one group turns that group into the frame (as in Figma)
+    if (as === 'frame' && sel.length === 1 && sel[0].style.isGroup) { get().convertToFrame(); return; }
     const parentId = sel[0].parentId;
     const boxes = sel.map(e => absBoxOf(e, elements, frames));
     const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
@@ -1676,7 +1736,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const shapes = new Set(['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath']);
     set((state) => ({
       elements: state.elements.map(e => {
-        if (!selectedElementIds.includes(e.id) || !shapes.has(e.type)) return e;
+        if (!selectedElementIds.includes(e.id)) return e;
+        // a group: the same box and contents, now a frame (nothing changes on screen)
+        if (e.style.isGroup) return { ...e, name: e.name === 'Group' ? 'Frame' : e.name, style: { ...e.style, isGroup: undefined } };
+        if (!shapes.has(e.type)) return e;
         return {
           ...e, type: 'container' as const,
           style: {

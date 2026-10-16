@@ -1088,7 +1088,7 @@ export const InfiniteCanvas: React.FC = () => {
             ] });
           }
           const flat = elements.filter(e => selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
-          if (elements.some(e => selectedElementIds.includes(e.id) && ['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(e.type)))
+          if (elements.some(e => selectedElementIds.includes(e.id) && (['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(e.type) || e.style.isGroup)))
             items.push({ label: 'Convert to frame', hint: 'Ctrl+Alt+F', run: () => useProjectStore.getState().convertToFrame() });
           if (flat.length && (n > 1 || flat[0].style.booleanOp || flat[0].type !== 'vectorPath'))
             items.push({ label: 'Flatten', hint: 'Ctrl+E', run: () => useProjectStore.getState().flattenSelection() });

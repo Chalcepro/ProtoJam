@@ -63,9 +63,9 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Ctrl+Shift+[ | Send to back |
 | Ctrl+G | Group the selection (its box always fits what is in it) |
 | Ctrl+Shift+G | Ungroup (also takes things out of a frame) |
-| Ctrl+Alt+G | Wrap the selection in a frame |
-| Shift+A | Auto layout: wrap the selection in a frame (or turn it on for one frame) |
-| Ctrl+Alt+F | Convert the selected shape(s) to a frame |
+| Ctrl+Alt+G | Wrap the selection in a frame (one group selected: it becomes a frame) |
+| Shift+A | Auto layout: wrap the selection in a frame (or turn it on for one frame; a group becomes an auto layout frame) |
+| Ctrl+Alt+F | Convert the selected shape(s) or group(s) to a frame |
 
 ## Boolean & vector
 
@@ -141,6 +141,7 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Drag on a number field | Change it: right +1, left −1 |
 | Shift / Ctrl (dragging a number) | Fine: a tenth as fast, to 0.1 (as in Blender) / fast: ×10 |
 | Click a number field | Type a value (Enter to set) |
+| Drag a row in Layers | Reorder: drop above / below a row; on the middle of a frame, group or screen row = put it inside (rest there to open a closed one); on Canvas objects = out onto the canvas |
 | Ctrl+Z in a panel field | Undo the design change |
 | Hover in font / weight / blend menus | Live preview; Esc or leaving puts it back |
 | ↑ / ↓ and Enter in the font menu | Move and pick |

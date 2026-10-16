@@ -174,15 +174,15 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
    ],
    [
     "Ctrl+Alt+G",
-    "Wrap the selection in a frame"
+    "Wrap the selection in a frame (one group selected: it becomes a frame)"
    ],
    [
     "Shift+A",
-    "Auto layout: wrap the selection in a frame (or turn it on for one frame)"
+    "Auto layout: wrap the selection in a frame (or turn it on for one frame; a group becomes an auto layout frame)"
    ],
    [
     "Ctrl+Alt+F",
-    "Convert the selected shape(s) to a frame"
+    "Convert the selected shape(s) or group(s) to a frame"
    ]
   ]
  },
@@ -393,6 +393,10 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
    [
     "Click a number field",
     "Type a value (Enter to set)"
+   ],
+   [
+    "Drag a row in Layers",
+    "Reorder: drop above / below a row; on the middle of a frame, group or screen row = put it inside (rest there to open a closed one); on Canvas objects = out onto the canvas"
    ],
    [
     "Ctrl+Z in a panel field",
