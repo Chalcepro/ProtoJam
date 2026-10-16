@@ -1,6 +1,6 @@
 import React, { useId } from 'react';
 import type { FillLayer, StrokeLayer } from '../../types/components';
-import { paintRgba } from '../../lib/paint';
+import { blended, paintRgba } from '../../lib/paint';
 
 // A list of fills and strokes painted on one outline (path data) in SVG - for
 // shapes drawn as outlines: triangles, stars, vectors, boolean results,
@@ -50,7 +50,7 @@ export const SvgPaint: React.FC<{
       </defs>
       {vf.map((f, i) => (
         <path key={`f${i}`} d={d} fill={paintFor(f, i)} fillRule={fillRule} stroke="none"
-              style={{ mixBlendMode: f.blendMode && f.blendMode !== 'normal' ? f.blendMode : undefined }} />
+              style={{ mixBlendMode: blended(f) ? f.blendMode : undefined }} />
       ))}
       {vs.map((s, i) => (
         // inside / outside: twice as wide, then the half on the wrong side is cut away
@@ -59,7 +59,8 @@ export const SvgPaint: React.FC<{
               strokeDasharray={s.style === 'dashed' ? `${s.width * 3} ${s.width * 2}` : s.style === 'dotted' ? `0 ${s.width * 2}` : undefined}
               strokeLinecap={s.style === 'dotted' ? 'round' : undefined} strokeLinejoin="round" vectorEffect={ve}
               clipPath={s.position === 'inside' ? `url(#${uid}-in)` : undefined}
-              mask={s.position === 'outside' ? `url(#${uid}-out)` : undefined} />
+              mask={s.position === 'outside' ? `url(#${uid}-out)` : undefined}
+              style={{ mixBlendMode: blended(s) ? s.blendMode : undefined }} />
       ))}
     </g>
   );

@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { effectsCss, textResizeOf } from '../../lib/styleCss';
 import { VideoView } from './VideoView';
 import { SvgPaint } from './SvgPaint';
-import { fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
+import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
 import { vectorAllD, vectorRegions } from '../../lib/boolean';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
@@ -167,7 +167,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // strokes as rings that never change the box's size
     if (style.fills && !paintsLetters(element)) { delete css.background; Object.assign(css, fillsCss(style.fills)); }
     if (style.strokes) {
-      const sc = strokesCss(style.strokes);
+      const sc = strokesCss(style.strokes.filter(x => !blended(x)));     // blended ones are drawn on top (strokeOverlays)
       css.borderWidth = 0; css.borderStyle = undefined;
       css.boxShadow = [sc.boxShadow, css.boxShadow].filter(Boolean).join(', ') || undefined;
       css.outline = sc.outline; css.outlineOffset = sc.outlineOffset;
@@ -182,11 +182,23 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
   const fillStack = () => !videoFills ? null : (style.fills || []).filter(f => f.visible).slice().reverse().map(f => (
     <div key={f.id} className="absolute inset-0 overflow-hidden pointer-events-none"
          style={{ borderRadius: 'inherit', opacity: f.type === 'video' || f.type === 'image' ? f.opacity : undefined,
-                  mixBlendMode: f.blendMode && f.blendMode !== 'normal' ? f.blendMode : undefined, ...(f.type === 'video' ? {} : fillsCss([f])) }}>
+                  mixBlendMode: blended(f) ? f.blendMode : undefined, ...(f.type === 'video' ? {} : fillsCss([f])) }}>
       {f.type === 'video' && <VideoView element={{ ...element, semanticProps: { videoSrc: f.videoSrc } }}
                                         style={{ width: '100%', height: '100%', objectFit: f.fit === 'fit' ? 'contain' : 'cover' }} />}
     </div>
   ));
+  // A stroke with its own blend mode: a ring of its own laid over the box, so
+  // it blends with the fill and whatever is under the layer.
+  const strokeOverlays = (radius?: React.CSSProperties['borderRadius']) => (style.strokes || []).filter(x => x.visible && x.width > 0 && blended(x)).map(x => {
+    const c = getCommonStyles();
+    const corners = radius != null || c.borderRadius != null ? { borderRadius: radius ?? c.borderRadius }
+      : { borderTopLeftRadius: c.borderTopLeftRadius, borderTopRightRadius: c.borderTopRightRadius,
+          borderBottomRightRadius: c.borderBottomRightRadius, borderBottomLeftRadius: c.borderBottomLeftRadius };
+    return (
+      <div key={x.id} className="absolute inset-0 pointer-events-none"
+           style={{ ...corners, ...strokesCss([x]), mixBlendMode: x.blendMode }} />
+    );
+  });
   const boxStyle = (extra?: React.CSSProperties): React.CSSProperties => ({
     ...getCommonStyles(), ...extra,
     ...(videoFills ? { backgroundImage: 'none', backgroundColor: 'transparent', position: 'relative', isolation: 'isolate' } : null)
@@ -204,7 +216,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- RECTANGLE SHAPE ----------------
     case 'rectangle':
       return (
-        <div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>
+        <><div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>{strokeOverlays()}</>
       );
 
     // ---------------- DIVIDER ----------------
@@ -219,13 +231,13 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // ---------------- CONTAINER (plain auto-layout grouping box) ----------------
     case 'container':
       return (
-        <div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>
+        <><div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>{strokeOverlays()}</>
       );
 
     // ---------------- ELLIPSE / CIRCLE SHAPE ----------------
     case 'ellipse':
       return (
-        <div style={boxStyle({ borderRadius: '9999px' })} onClick={handleClick} className="overflow-hidden">{fillStack()}</div>
+        <><div style={boxStyle({ borderRadius: '9999px' })} onClick={handleClick} className="overflow-hidden">{fillStack()}</div>{strokeOverlays('9999px')}</>
       );
 
     // ---------------- LINE SHAPE ----------------

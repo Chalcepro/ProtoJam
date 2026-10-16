@@ -17,8 +17,9 @@ const NAME = Object.fromEntries(BLEND_MODES) as Record<BlendMode, string>;
 
 // A blend mode menu that shows each mode on the canvas while it is hovered;
 // leaving the menu puts the chosen one back, a click keeps the hovered one.
-export const BlendPicker: React.FC<{ value?: BlendMode; onPick: (m: BlendMode) => void; onPreview?: (m: BlendMode | null) => void; className?: string; title?: string }> =
-  ({ value = 'normal', onPick, onPreview, className, title }) => {
+// `icon`: just a blend icon (lit when not Normal), for a fill / stroke row.
+export const BlendPicker: React.FC<{ value?: BlendMode; onPick: (m: BlendMode) => void; onPreview?: (m: BlendMode | null) => void; className?: string; title?: string; icon?: boolean }> =
+  ({ value = 'normal', onPick, onPreview, className, title, icon }) => {
   const [open, setOpen] = useState(false);
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -44,10 +45,11 @@ export const BlendPicker: React.FC<{ value?: BlendMode; onPick: (m: BlendMode) =
   const H = 18 * 30 + 6 * 9;
   return (
     <>
-      <button ref={btn} onClick={() => (open ? close() : setOpen(true))} title={title}
+      <button ref={btn} onClick={() => (open ? close() : setOpen(true))} title={icon ? `${title} (now: ${NAME[value] || 'Normal'})` : title}
               className={`flex items-center justify-between gap-1 text-left outline-none ${className || ''}`}>
-        <span className="truncate">{NAME[value] || 'Normal'}</span>
-        <Icons.ChevronDown size={12} className="opacity-50 shrink-0" />
+        {icon
+          ? <Icons.Blend size={12} className={value === 'normal' ? 'opacity-45' : 'text-[#31C3F3]'} />
+          : <><span className="truncate">{NAME[value] || 'Normal'}</span><Icons.ChevronDown size={12} className="opacity-50 shrink-0" /></>}
       </button>
       {open && r && createPortal(
         <div ref={menu} onMouseLeave={() => onPreview?.(null)}

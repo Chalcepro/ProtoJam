@@ -111,4 +111,7 @@ export const strokesCss = (strokes: StrokeLayer[]): { boxShadow?: string; outlin
   return { boxShadow: shadows.length ? shadows.join(', ') : undefined, outline, outlineOffset };
 };
 
+// a paint with its own blend mode (not Normal)
+export const blended = (p: { blendMode?: string }) => !!p.blendMode && p.blendMode !== 'normal';
+
 export const hasLayeredPaint = (s: ElementStyle) => !!(s.fills || s.strokes);

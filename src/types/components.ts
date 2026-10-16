@@ -165,6 +165,7 @@ export interface StrokeLayer {
   style: 'solid' | 'dashed' | 'dotted';
   opacity: number;
   visible: boolean;
+  blendMode?: BlendMode;
 }
 
 // One row of a layer's Export list: what to save it as.

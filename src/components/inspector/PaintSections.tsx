@@ -3,7 +3,7 @@ import * as Icons from 'lucide-react';
 import { NumberInput } from './NumberInput';
 import { BlendPicker } from './BlendPicker';
 import { useProjectStore } from '../../store/useProjectStore';
-import { fillsOf, paintRgba, paintsLetters, strokesOf, fillsCss } from '../../lib/paint';
+import { blended, fillsOf, paintRgba, paintsLetters, strokesOf, fillsCss } from '../../lib/paint';
 import { putAsset } from '../../lib/assets';
 import { exportLayer } from '../../lib/exportImage';
 import type { ElementStyle, ExportSetting, FillLayer, StrokeLayer, UIElement } from '../../types/components';
@@ -42,7 +42,7 @@ export const FillsSection: React.FC<{ element: UIElement; update: (s: Partial<El
   // Saved as a list; a single plain colour stays the simple fill/text colour
   // so variables, components and everything else keep working with it.
   const save = (next: FillLayer[]) => {
-    const one = next.length === 1 && next[0].type === 'solid' && next[0].opacity >= 1 && next[0].visible && (!next[0].blendMode || next[0].blendMode === 'normal');
+    const one = next.length === 1 && next[0].type === 'solid' && next[0].opacity >= 1 && next[0].visible && !blended(next[0]);
     if (one) update({ fills: undefined, fillGradient: undefined, [letters ? 'textColor' : 'fillColor']: next[0].color });
     else update({ fills: next, fillGradient: undefined, ...(letters ? {} : { fillColor: next.length ? undefined : 'transparent' }) });
   };
@@ -68,6 +68,9 @@ export const FillsSection: React.FC<{ element: UIElement; update: (s: Partial<El
                            className="w-full bg-transparent text-[rgb(235,235,236)] font-mono text-[11px] outline-none text-right" />
               <span className="text-[9px] text-[rgba(235,235,236,0.4)]">%</span>
             </div>
+            <BlendPicker icon value={f.blendMode} onPick={m => patch(f.id, { blendMode: m })} className={iconBtn}
+                         onPreview={m => useProjectStore.setState({ stylePreview: m ? { ids: [element.id], style: { fills: fills.map(x => x.id === f.id ? { ...x, blendMode: m } : x) } } : null })}
+                         title="This colour's blend mode - hover a mode to see it" />
             <button onClick={() => patch(f.id, { visible: !f.visible })} className={iconBtn} title={f.visible ? 'Hide' : 'Show'}>
               {f.visible ? <Icons.Eye size={12} /> : <Icons.EyeOff size={12} />}
             </button>
@@ -191,7 +194,7 @@ export const StrokesSection: React.FC<{ element: UIElement; update: (s: Partial<
   const strokes = strokesOf(element);
   // one plain inside stroke stays the simple border; more are a list
   const save = (next: StrokeLayer[]) => {
-    const one = next.length === 1 && next[0].visible && next[0].opacity >= 1 && next[0].position === 'inside';
+    const one = next.length === 1 && next[0].visible && next[0].opacity >= 1 && next[0].position === 'inside' && !blended(next[0]);
     if (!next.length) update({ strokes: undefined, borderWidth: 0 });
     else if (one) update({ strokes: undefined, borderWidth: next[0].width, borderColor: next[0].color, borderStyle: next[0].style });
     else update({ strokes: next, borderWidth: 0 });
@@ -210,6 +213,9 @@ export const StrokesSection: React.FC<{ element: UIElement; update: (s: Partial<
                            className="w-full bg-transparent text-[rgb(235,235,236)] font-mono text-[11px] outline-none text-right" />
               <span className="text-[9px] text-[rgba(235,235,236,0.4)]">%</span>
             </div>
+            <BlendPicker icon value={s.blendMode} onPick={m => patch(s.id, { blendMode: m })} className={iconBtn}
+                         onPreview={m => useProjectStore.setState({ stylePreview: m ? { ids: [element.id], style: { strokes: strokes.map(x => x.id === s.id ? { ...x, blendMode: m } : x) } } : null })}
+                         title="This stroke's blend mode - hover a mode to see it" />
             <button onClick={() => patch(s.id, { visible: !s.visible })} className={iconBtn} title={s.visible ? 'Hide' : 'Show'}>
               {s.visible ? <Icons.Eye size={12} /> : <Icons.EyeOff size={12} />}
             </button>
