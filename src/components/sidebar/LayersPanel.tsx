@@ -1,9 +1,14 @@
-import React, { useState } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
-import { isContainer } from '../../lib/tree';
+import { chainOf, isContainer } from '../../lib/tree';
 import { UIElement } from '../../types/components';
+
+// Frames, groups and auto layouts inside a screen open only when asked (or
+// when something inside them is selected). Kept outside the panel so it
+// survives switching sidebar tabs.
+const OPEN = new Set<string>();
 
 export const LayersPanel: React.FC = () => {
   const {
@@ -32,6 +37,14 @@ export const LayersPanel: React.FC = () => {
   } = useProjectStore(useShallow((s) => ({ frames: s.frames, sections: s.sections, elements: s.elements, selectedFrameIds: s.selectedFrameIds, selectedSectionIds: s.selectedSectionIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectSection: s.selectSection, selectElement: s.selectElement, deleteFrame: s.deleteFrame, deleteSection: s.deleteSection, deleteElement: s.deleteElement, duplicateFrame: s.duplicateFrame, duplicateElement: s.duplicateElement, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, toggleFrameCollapsed: s.toggleFrameCollapsed, toggleSectionCollapsed: s.toggleSectionCollapsed, toggleElementLock: s.toggleElementLock, toggleElementHidden: s.toggleElementHidden, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const toggleOpen = (id: string) => { if (!OPEN.delete(id)) OPEN.add(id); redraw(); };
+  // what is selected on the canvas shows in the list: open everything around it
+  useEffect(() => {
+    let added = false;
+    selectedElementIds.forEach(id => chainOf(id, elements).slice(0, -1).forEach(a => { if (!OPEN.has(a.id)) { OPEN.add(a.id); added = true; } }));
+    if (added) redraw();
+  }, [selectedElementIds]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Free canvas elements (not inside any frame)
   const freeElements = elements.filter(el => !el.parentId);
@@ -52,6 +65,7 @@ export const LayersPanel: React.FC = () => {
   const elementRow = (el: UIElement): React.ReactNode => {
     const isElementSelected = selectedElementIds.includes(el.id);
     const kids = isContainer(el) ? elements.filter(k => k.parentId === el.id) : [];
+    const open = OPEN.has(el.id);
     return (
       <React.Fragment key={el.id}>
       <div
@@ -66,6 +80,15 @@ export const LayersPanel: React.FC = () => {
         } ${el.hidden ? 'opacity-30' : ''}`}
       >
         <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+          {kids.length > 0 ? (
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleOpen(el.id); }}
+              className="p-0.5 -ml-1 rounded hover:bg-[rgba(235,235,236,0.1)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)] shrink-0"
+              title={open ? 'Collapse' : 'Expand'}
+            >
+              {open ? <Icons.ChevronDown size={11} /> : <Icons.ChevronRight size={11} />}
+            </button>
+          ) : isContainer(el) && <span className="w-4 shrink-0" />}
           {el.isMasterComponent && <span className="text-[10px] text-[rgb(235,235,236)]">❖</span>}
           {el.isInstance && <span className="text-[10px] text-[rgba(235,235,236,0.6)]">◇</span>}
           <span className="text-[9px] font-mono text-[rgba(235,235,236,0.35)] uppercase">
@@ -114,7 +137,7 @@ export const LayersPanel: React.FC = () => {
           </button>
         </div>
       </div>
-      {kids.length > 0 && (
+      {open && kids.length > 0 && (
         <div className="pl-3 space-y-0.5 border-l border-[rgba(235,235,236,0.08)] ml-2.5">
           {kids.map(elementRow)}
         </div>
