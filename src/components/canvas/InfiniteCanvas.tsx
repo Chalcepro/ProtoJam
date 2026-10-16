@@ -872,7 +872,7 @@ export const InfiniteCanvas: React.FC = () => {
             return (
               <div key={`sel-${el.id}`} className="pointer-events-none"
                    style={{ position: 'absolute', left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, zIndex: 1000, transform: rotateCss(el) }}>
-                <TransformSelectionBox element={el} />
+                <TransformSelectionBox element={el} onPress={pressElement} />
               </div>
             );
           })}

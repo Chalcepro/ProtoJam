@@ -1,29 +1,89 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { vectorAllD } from '../../lib/boolean';
+import { pickTarget } from '../../lib/tree';
 
 interface TransformSelectionBoxProps {
   element: UIElement;
+  // a press inside the box drags the selection (the canvas's own press)
+  onPress?: (el: UIElement, e: React.PointerEvent) => void;
 }
+
+// Figma's rotate cursor: a curved double arrow, turned to face its corner
+// (and the object's own turn). Drawn for the bottom-left corner.
+const rotateCursor = (deg: number) => {
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><g transform='rotate(${Math.round(deg)} 12 12)'>` +
+    ['white', 'black'].map((c, i) => `<path d='M6 11 A8 8 0 0 0 13 18' fill='none' stroke='${c}' stroke-width='${i ? 1.5 : 4}'/>` +
+      `<path d='M6 6 L2.5 11.5 L9.5 11.5 Z M18 18 L12.5 14.5 L12.5 21.5 Z' fill='${c}' stroke='${c}' stroke-width='${i ? 0 : 2.5}' stroke-linejoin='round'/>`).join('') +
+    `</g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
+};
 
 const SELECTION_COLOR = '#ff6b4a'; // Vibrant light red / orange selection stroke
 
-export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ element }) => {
+export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ element, onPress }) => {
   const { style } = element;
   // a frame made from a shape is outlined as that shape
   const type = element.style.frameShape || element.type;
   const { updateElementStyle, viewport, pushHistory } = useProjectStore(useShallow((s) => ({ updateElementStyle: s.updateElementStyle, viewport: s.viewport, pushHistory: s.pushHistory })));
 
-  const [activeHandle, setActiveHandle] = useState<string | null>(null);
   const [rotationAngle, setRotationAngle] = useState<number | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const rot = Number(style.rotation) || 0;
+  // while its text is being typed, clicks go to the text (caret, selection)
+  const editing = useProjectStore((s) => s.inlineEditingElementId === element.id);
+
+  // What the page has under a point, looking through this box.
+  const elUnder = (x: number, y: number) => {
+    for (const n of document.elementsFromPoint(x, y)) {
+      if (boxRef.current?.contains(n)) continue;
+      const h = (n as HTMLElement).closest('[data-el-id]') as HTMLElement | null;
+      if (h) return h;
+    }
+    return null;
+  };
+
+  // ---------------- PRESS INSIDE THE BOX: MOVE ----------------
+  // As in Figma: anywhere inside a selected object's box drags it - its empty
+  // parts, or where something else lies on top. A click that does not move
+  // picks what is under the pointer, as a click anywhere would.
+  const handleBodyDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !onPress) return;
+    e.stopPropagation();
+    const under = elUnder(e.clientX, e.clientY);
+    const st = useProjectStore.getState();
+    const underEl = under && st.elements.find(x => x.id === under.dataset.elId);
+    if (e.shiftKey) { if (underEl) onPress(underEl, e); return; }
+    onPress(element, e);
+    const x0 = e.clientX, y0 = e.clientY;
+    const up = (u: PointerEvent) => {
+      window.removeEventListener('pointerup', up, true);
+      if (!underEl || Math.hypot(u.clientX - x0, u.clientY - y0) > 3) return;
+      // after the canvas has finished the press (it may open a text for editing)
+      setTimeout(() => {
+        const s2 = useProjectStore.getState();
+        const id = pickTarget(underEl.id, s2.elements, s2.selectedElementIds);
+        if (s2.selectedElementIds.includes(id)) return;
+        s2.setInlineEditingElementId(null);
+        s2.setSelection([id]);
+      });
+    };
+    window.addEventListener('pointerup', up, true);
+  };
+  // a double-click goes to what is under the box (enter a frame, edit points / text)
+  const handleBodyDouble = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const n = document.querySelector(`[data-el-id="${element.id}"]`);
+    const under = elUnder(e.clientX, e.clientY);
+    (under && n?.contains(under) ? under : n)?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: e.clientX, clientY: e.clientY }));
+  };
 
   // ---------------- INTERACTIVE SCALE / RESIZE HANDLER ----------------
   const handleScaleStart = (handle: string, e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    setActiveHandle(handle);
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -38,6 +98,8 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
     const sy = handle.includes('s') ? 1 : handle.includes('n') ? -1 : 0;
     const ratio = initialW / (initialH || 1);
     const cx = initialElX + initialW / 2, cy = initialElY + initialH / 2;
+    // a turned object is sized along its own sides, not the screen's
+    const cos = Math.cos(rot * Math.PI / 180), sin = Math.sin(rot * Math.PI / 180);
     // Pictures keep their shape unless Ctrl is held; anything else keeps it
     // while Shift is held.
     const media = type === 'image' || type === 'video';
@@ -49,8 +111,8 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
     const onPointerMove = (moveEvent: PointerEvent) => {
       if (!moved && isText) updateElementStyle(element.id, { textResize: sy ? 'fixed' : 'autoHeight', autoSize: false });
       moved = true;
-      const dx = (moveEvent.clientX - startX) / zoom;
-      const dy = (moveEvent.clientY - startY) / zoom;
+      const mx = (moveEvent.clientX - startX) / zoom, my = (moveEvent.clientY - startY) / zoom;
+      const dx = mx * cos + my * sin, dy = -mx * sin + my * cos;
       const k = moveEvent.altKey ? 2 : 1;             // Alt: both sides move, centre stays
       let w = Math.max(1, initialW + sx * dx * k);
       let h = Math.max(1, initialH + sy * dy * k);
@@ -62,13 +124,14 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       }
       // Position: the opposite edge stays put (or the centre, with Alt). A side
       // handle that also changes the other dimension grows it from the middle.
-      const x = moveEvent.altKey ? cx - w / 2 : sx === 1 ? initialElX : sx === -1 ? initialElX + initialW - w : cx - w / 2;
-      const y = moveEvent.altKey ? cy - h / 2 : sy === 1 ? initialElY : sy === -1 ? initialElY + initialH - h : cy - h / 2;
+      // The centre moves half the growth, along the object's own sides.
+      const lx = moveEvent.altKey ? 0 : sx * (w - initialW) / 2, ly = moveEvent.altKey ? 0 : sy * (h - initialH) / 2;
+      const x = cx + lx * cos - ly * sin - w / 2;
+      const y = cy + lx * sin + ly * cos - h / 2;
       updateElementStyle(element.id, { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
     };
 
     const onPointerUp = () => {
-      setActiveHandle(null);
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
       pushHistory();
@@ -82,7 +145,6 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
   const handleRotateStart = (e: React.PointerEvent) => {
     e.stopPropagation();
     e.preventDefault();
-    setActiveHandle('rotate');
 
     // The turn is about the centre as it is on screen (where the page drew
     // it - inside frames, auto layout, at any zoom), and follows the pointer
@@ -103,7 +165,6 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
     };
 
     const onPointerUp = () => {
-      setActiveHandle(null);
       setRotationAngle(null);
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
@@ -176,27 +237,33 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
   const o = -H / 2;                              // a handle centred on the edge
   const mid = `calc(50% - ${H / 2}px)`;
 
+  // Rotate, as in Figma: just outside each corner (no knob). The cursor turns
+  // to face its corner and the object's own turn.
+  const R = 16 / z;
+  const rotZone = (corner: string, base: number, pos: React.CSSProperties) => (
+    <div data-handle={`rotate-${corner}`} onPointerDown={handleRotateStart}
+         style={{ position: 'absolute', width: R, height: R, ...pos, cursor: rotateCursor(base + rot), pointerEvents: 'auto' }} />
+  );
+
   return (
-    <div className="absolute inset-0 pointer-events-none select-none">
+    <div ref={boxRef} className="absolute inset-0 pointer-events-none select-none">
+      {/* the body: a press anywhere in it moves the selection */}
+      {onPress && !editing && <div data-sel-body className="absolute inset-0" style={{ pointerEvents: 'auto' }}
+                       onPointerDown={handleBodyDown} onDoubleClick={handleBodyDouble} />}
       {renderShapeOutline()}
 
-      {/* rotation stalk and knob, above the top edge */}
-      {!tiny && (
-        <div className="absolute flex flex-col items-center pointer-events-auto"
-             style={{ left: '50%', top: -22 / z, transform: 'translateX(-50%)' }}>
-          <div
-            onPointerDown={handleRotateStart}
-            title="Drag to rotate (Shift snaps to 15°)"
-            style={{ width: 10 / z, height: 10 / z, borderRadius: '50%', background: SELECTION_COLOR,
-                     border: `${1.5 / z}px solid rgb(20,20,19)`, cursor: 'grab', boxSizing: 'border-box' }}
-          />
-          <div style={{ width: 1 / z, height: 10 / z, background: SELECTION_COLOR }} />
-          {rotationAngle !== null && (
-            <div className="absolute bg-[rgb(20,20,19)] border border-[#ff6b4a] font-mono text-[rgb(235,235,236)] rounded shadow-lg whitespace-nowrap"
-                 style={{ top: -20 / z, fontSize: 10 / z, padding: `${1 / z}px ${5 / z}px` }}>
-              {rotationAngle}°
-            </div>
-          )}
+      {rotZone('sw', 0, { left: -R, bottom: -R })}
+      {rotZone('nw', 90, { left: -R, top: -R })}
+      {rotZone('ne', 180, { right: -R, top: -R })}
+      {rotZone('se', 270, { right: -R, bottom: -R })}
+      {/* the angle while turning: upright, under the object as it is on screen */}
+      {rotationAngle !== null && (
+        <div className="absolute bg-[#ff6b4a] font-mono text-white rounded whitespace-nowrap"
+             style={{ left: '50%', top: '50%',
+                      transform: `rotate(${-rot}deg) translate(-50%, ${(Math.abs(Number(style.width) * Math.sin(rot * Math.PI / 180)) + Math.abs(Number(style.height) * Math.cos(rot * Math.PI / 180))) / 2 + 16 / z}px)`,
+                      transformOrigin: '0 0',
+                      fontSize: 11 / z, padding: `${1 / z}px ${5 / z}px` }}>
+          {rotationAngle}°
         </div>
       )}
 

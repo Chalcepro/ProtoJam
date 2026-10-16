@@ -138,7 +138,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
 
       {isSelected && activeTool === 'select' && (boxInside || flow) && (
         <div data-export-skip className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000, visibility: 'visible' }}>
-          <TransformSelectionBox element={element} />
+          <TransformSelectionBox element={element} onPress={onPress} />
         </div>
       )}
 
