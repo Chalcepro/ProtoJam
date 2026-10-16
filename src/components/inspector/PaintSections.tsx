@@ -139,7 +139,7 @@ const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) =>
           {(f.type === 'linear' || f.type === 'angular') && (
             <label className="flex items-center gap-2 text-[11px] text-[rgba(235,235,236,0.5)]">
               Angle
-              <NumberInput value={f.gradient?.angle ?? 180} onChange={e => onChange({ gradient: { stops, angle: Number(e.target.value) } })} className={`${sel} w-16 font-mono`} />
+              <NumberInput max={360} value={f.gradient?.angle ?? 180} onChange={e => onChange({ gradient: { stops, angle: Number(e.target.value) } })} className={`${sel} w-16 font-mono`} />
               <span>°</span>
             </label>
           )}

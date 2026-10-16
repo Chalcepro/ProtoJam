@@ -74,7 +74,7 @@ const EffectsSection: React.FC<{ element: UIElement }> = ({ element }) => {
   const num = (e: EffectLayer, key: 'x' | 'y' | 'blur' | 'spread', label: string) => (
     <label className="flex items-center gap-1 bg-[rgba(235,235,236,0.04)] rounded px-1.5 py-1 border border-[rgba(235,235,236,0.08)]">
       <span className="text-[9px] text-[rgba(235,235,236,0.4)]">{label}</span>
-      <NumberInput value={(e[key] as number) ?? 0} onChange={ev => patch(e.id, { [key]: Number(ev.target.value) })}
+      <NumberInput signed={key === 'x' || key === 'y'} value={(e[key] as number) ?? 0} onChange={ev => patch(e.id, { [key]: Number(ev.target.value) })}
                    className="bg-transparent outline-none w-full font-mono text-[11px] text-[rgb(235,235,236)]" />
     </label>
   );
@@ -408,7 +408,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <div className="grid grid-cols-2 gap-2">
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">X</span>
-              <NumberInput
+              <NumberInput signed
                 value={frame.x}
                 onChange={(e) => updateFrame(frame.id, { x: Number(e.target.value) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -416,7 +416,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">Y</span>
-              <NumberInput
+              <NumberInput signed
                 value={frame.y}
                 onChange={(e) => updateFrame(frame.id, { y: Number(e.target.value) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -854,7 +854,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         <div className="grid grid-cols-2 gap-2">
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">X</span>
-            <NumberInput
+            <NumberInput signed
               value={Number(style.x)}
               onChange={(e) => updateElementStyle(element!.id, { x: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -862,7 +862,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">Y</span>
-            <NumberInput
+            <NumberInput signed
               value={Number(style.y)}
               onChange={(e) => updateElementStyle(element!.id, { y: Number(e.target.value) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -888,7 +888,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">∠</span>
-            <NumberInput
+            <NumberInput max={360}
               value={style.rotation || 0}
               onChange={(e) => updateElementStyle(element!.id, { rotation: Number(e.target.value) })}
               placeholder="0°"
@@ -1186,7 +1186,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <div className="grid grid-cols-2 gap-2">
               <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
                 <span className="text-[rgba(235,235,236,0.4)] mr-1.5 text-[10px]">Size</span>
-                <NumberInput
+                <NumberInput min={1}
                   value={style.fontSize || 16}
                   onChange={(e) => updateElementStyle(element!.id, { fontSize: Number(e.target.value) })}
                   className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
@@ -1214,7 +1214,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               </label>
               <label className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Letter spacing (px)">
                 <Icons.MoveHorizontal size={11} className="text-[rgba(235,235,236,0.4)] mr-1.5 shrink-0" />
-                <NumberInput value={style.letterSpacing ?? 0} step="0.1"
+                <NumberInput signed value={style.letterSpacing ?? 0} step="0.1"
                              onChange={(e) => updateElementStyle(element!.id, { letterSpacing: Number(e.target.value) })}
                              className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
               </label>

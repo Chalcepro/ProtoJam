@@ -139,7 +139,7 @@ export const VariablesPanel: React.FC = () => {
                       {v.name}
                     </span>
                   )}
-                  <NumberInput
+                  <NumberInput signed
                     value={v.value as number}
                     onChange={(e) => updateVariable(v.id, { value: Number(e.target.value) })}
                     className="w-14 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-1.5 py-0.5 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-[11px] shrink-0"

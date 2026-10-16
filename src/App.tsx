@@ -193,7 +193,7 @@ export const App: React.FC = () => {
       {/* Permanent Bottom-Left Toggle Button (Never vanishes, always accessible) */}
       <button
         onClick={toggleLeftSidebar}
-        title={isLeftSidebarOpen ? 'Collapse Left Panel (Ctrl+\\)' : 'Open Left Panel (Layers, Screens, UI Kit)'}
+        title={isLeftSidebarOpen ? 'Collapse Left Panel (Ctrl+\\)' : 'Open Left Panel (Layers, UI Kit, Tokens)'}
         className={`fixed bottom-4 left-4 z-40 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 shadow-2xl backdrop-blur-xl border ${
           isLeftSidebarOpen
             ? 'bg-[rgb(20,20,19)]/95 text-[rgb(235,235,236)] border-[rgba(235,235,236,0.22)] shadow-[0_8px_24px_rgba(0,0,0,0.6)]'

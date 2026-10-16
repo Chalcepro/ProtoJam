@@ -138,7 +138,8 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 
 | Keys | Does |
 |---|---|
-| Drag on a number field | Change it: right +1, left −1 (Shift: ×10) |
+| Drag on a number field | Change it: right +1, left −1 |
+| Shift / Ctrl (dragging a number) | Fine: a tenth as fast, to 0.1 (as in Blender) / fast: ×10 |
 | Click a number field | Type a value (Enter to set) |
 | Ctrl+Z in a panel field | Undo the design change |
 | Hover in font / weight / blend menus | Live preview; Esc or leaving puts it back |

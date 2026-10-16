@@ -384,7 +384,11 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
   "items": [
    [
     "Drag on a number field",
-    "Change it: right +1, left −1 (Shift: ×10)"
+    "Change it: right +1, left −1"
+   ],
+   [
+    "Shift / Ctrl (dragging a number)",
+    "Fine: a tenth as fast, to 0.1 (as in Blender) / fast: ×10"
    ],
    [
     "Click a number field",

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 // A number field that behaves while you type.
 //
@@ -8,20 +9,44 @@ import React, { useState } from 'react';
 // it can be empty, or half a number, and only a real number (inside min /
 // max) is passed on. Leaving the field shows the value again.
 //
-// min >= 0 also refuses the minus key, so a radius, a size or an opacity can
-// never be typed negative.
+// Nothing goes below 0 unless the field is `signed` (a position, an offset):
+// a size, a radius, a font size or a gap is never negative. min >= 0 also
+// refuses the minus key.
 //
 // Drag on it to scrub, as in Figma: right adds, left takes away - one step
-// per pixel, ten with Shift. A click without dragging goes in to type.
+// per pixel. Shift: fine, as in Blender - ten times slower, to a tenth of a
+// step. Ctrl: ten steps per pixel. A click without dragging goes in to type.
 type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value'> & {
   value: number | string | undefined | null;
+  signed?: boolean;
 };
 
-export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur, onKeyDown, min, max, ...rest }) => {
+// What the keys do while scrubbing - at the canvas's bottom right corner,
+// next to the right panel.
+const ScrubHint: React.FC<{ fine: boolean; fast: boolean }> = ({ fine, fast }) => {
+  const r = document.querySelector('main')?.getBoundingClientRect();
+  if (!r) return null;
+  const key = (k: string, on: boolean, what: string) => (
+    <span className={on ? 'text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.45)]'}>
+      <kbd className={`px-1 rounded border font-mono text-[10px] ${on ? 'border-[#31C3F3] text-[#31C3F3]' : 'border-[rgba(235,235,236,0.2)]'}`}>{k}</kbd> {what}
+    </span>
+  );
+  return createPortal(
+    <div className="fixed z-[10001] pointer-events-none flex items-center gap-3 px-3 py-1.5 rounded-lg bg-[rgb(28,28,27)] border border-[rgba(235,235,236,0.12)] shadow-xl text-[11px]"
+         style={{ left: r.right - 12, top: r.bottom - 12, transform: 'translate(-100%, -100%)' }}>
+      {key('Shift', fine, 'fine')}
+      {key('Ctrl', fast, '×10')}
+    </div>,
+    document.body
+  );
+};
+
+export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur, onKeyDown, min, max, signed, ...rest }) => {
   const [text, setText] = useState<string | null>(null);     // null: not being edited
   const fallback = value === undefined || value === null || (typeof value === 'number' && Number.isNaN(value))
     ? '' : String(value);
-  const lo = min !== undefined ? Number(min) : undefined;
+  const lo = min !== undefined ? Number(min) : signed ? undefined : 0;
+  const [hint, setHint] = useState<{ fine: boolean; fast: boolean } | null>(null);
   const hi = max !== undefined ? Number(max) : undefined;
   const step = Number(rest.step) || 1;
 
@@ -29,24 +54,30 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
     const input = e.currentTarget;
     if (e.button !== 0 || document.activeElement === input || rest.disabled) return;   // typing: leave it be
     e.preventDefault();                       // not focused yet: a drag or a click decides
-    const x0 = e.clientX, v0 = Number(fallback) || 0;
+    const x0 = e.clientX;
     const decimals = (String(step).split('.')[1] || '').length;
+    // added up move by move, so pressing or letting go of a key mid-drag
+    // changes the speed from there on, never jumps
+    let acc = Number(fallback) || 0, lastX = x0;
     let moved = false;
     const move = (ev: PointerEvent) => {
-      const dx = ev.clientX - x0;
-      if (!moved && Math.abs(dx) < 3) return;
+      if (!moved && Math.abs(ev.clientX - x0) < 3) return;
       moved = true;
       document.body.style.cursor = 'ew-resize';
-      let n = v0 + Math.round(dx) * step * (ev.shiftKey ? 10 : 1);
-      if (lo !== undefined) n = Math.max(lo, n);
-      if (hi !== undefined) n = Math.min(hi, n);
-      n = Number(n.toFixed(decimals));
+      const fine = ev.shiftKey, fast = ev.ctrlKey || ev.metaKey;
+      setHint(h => h && h.fine === fine && h.fast === fast ? h : { fine, fast });
+      acc += (ev.clientX - lastX) * step * (fine ? 0.1 : fast ? 10 : 1);
+      lastX = ev.clientX;
+      if (lo !== undefined) acc = Math.max(lo, acc);
+      if (hi !== undefined) acc = Math.min(hi, acc);
+      const n = Number(acc.toFixed(decimals + (fine ? 1 : 0)));
       onChange?.({ target: { value: String(n) }, currentTarget: { value: String(n) } } as unknown as React.ChangeEvent<HTMLInputElement>);
     };
     const up = () => {
       window.removeEventListener('pointermove', move, true);
       window.removeEventListener('pointerup', up, true);
       document.body.style.cursor = '';
+      setHint(null);
       if (!moved) { input.focus(); input.select(); }
     };
     window.addEventListener('pointermove', move, true);
@@ -54,6 +85,8 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
   };
 
   return (
+    <>
+    {hint && <ScrubHint {...hint} />}
     <input
       {...rest}
       type="number"
@@ -79,5 +112,6 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
         onChange?.(e);
       }}
     />
+    </>
   );
 };

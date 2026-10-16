@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import { LayersPanel } from './LayersPanel';
-import { FramePresetsPanel } from './FramePresetsPanel';
 import { ComponentLibraryPanel } from './ComponentLibraryPanel';
 import { VariablesPanel } from './VariablesPanel';
 import * as Icons from 'lucide-react';
 
 export const LeftSidebar: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'layers' | 'frames' | 'components' | 'variables'>('layers');
+  const [activeTab, setActiveTab] = useState<'layers' | 'components' | 'variables'>('layers');
 
   const tabs = [
     { id: 'layers' as const, label: 'Layers', icon: Icons.Layers },
-    { id: 'frames' as const, label: 'Screens', icon: Icons.Smartphone },
     { id: 'components' as const, label: 'UI Kit', icon: Icons.LayoutGrid },
     { id: 'variables' as const, label: 'Tokens', icon: Icons.Variable },
   ];
@@ -42,7 +40,6 @@ export const LeftSidebar: React.FC = () => {
       {/* Tab Content */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'layers' && <LayersPanel />}
-        {activeTab === 'frames' && <FramePresetsPanel />}
         {activeTab === 'components' && <ComponentLibraryPanel />}
         {activeTab === 'variables' && <VariablesPanel />}
       </div>
