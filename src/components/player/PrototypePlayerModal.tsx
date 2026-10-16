@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
-import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
+import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
 import { isContainer } from '../../lib/tree';
 import { ContainerBox, clipCss } from '../canvas/ContainerBox';
 import type { AutoLayoutSettings } from '../../types/components';
@@ -144,7 +144,8 @@ export const PrototypePlayerModal: React.FC = () => {
           ...(flow ? { position: 'relative', flexShrink: 0 } : { position: 'absolute', left: Number(element.style.x), top: Number(element.style.y) }),
           ...nodeSize(element, parentLayout),
           zIndex: 10 + layer,      // the layer order, as on the canvas
-          mixBlendMode: element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined
+          mixBlendMode: element.style.blendMode && element.style.blendMode !== 'normal' ? element.style.blendMode : undefined,
+          transform: rotateCss(element)
         }}
         className={`transition-transform ${hasInteractions ? 'cursor-pointer' : ''}`}
         onMouseEnter={() => setHoveredElementId(element.id)}

@@ -62,6 +62,9 @@ export const flexLayoutCss = (al: AutoLayoutSettings): React.CSSProperties => ({
 
 // The wrapper size of a child, with Fill container applied when its parent
 // lays it out, and Hug when it is a container that hugs its own children.
+// An element's turn, about its centre.
+export const rotateCss = (el: UIElement) => el.style.rotation ? `rotate(${el.style.rotation}deg)` : undefined;
+
 export const nodeSize = (el: UIElement, parentLayout: AutoLayoutSettings | null): React.CSSProperties => {
   const size: React.CSSProperties = wrapperSize(el);
   const al = el.type === 'container' && el.style.autoLayout?.enabled ? el.style.autoLayout : null;

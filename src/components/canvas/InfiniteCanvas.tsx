@@ -11,12 +11,12 @@ import { CommentPin } from './CommentPin';
 import { UIElement, UIElementType } from '../../types/components';
 import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
 import { Rulers, RULER } from './Rulers';
-import { isTextEl } from '../../lib/styleCss';
+import { isTextEl, rotateCss } from '../../lib/styleCss';
 import { putAsset } from '../../lib/assets';
 import { PenOverlay } from './PenOverlay';
 import { BOOLEANABLE, vectorAllD } from '../../lib/boolean';
 import { ElementNode } from './ElementNode';
-import { absBoxOf, chainOf, inFlow, isContainer, originOf, pickTarget, subtreeIds } from '../../lib/tree';
+import { absBoxOf, chainOf, frameAbove, inFlow, originOf, pickTarget, subtreeIds, takesDrops } from '../../lib/tree';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -174,7 +174,8 @@ export const InfiniteCanvas: React.FC = () => {
     for (const id of ids) {
       const el = elements.find(x => x.id === id); const o = dragOrig.current?.get(id);
       if (!el || !o) continue;
-      const b = boxOf(el, { x: o.x + dx, y: o.y + dy });
+      const w = Number(el.style.width) || 0, h = Number(el.style.height) || 0;
+      const b = { x0: o.x + dx, y0: o.y + dy, x1: o.x + dx + w, y1: o.y + dy + h };
       m = m ? { x0: Math.min(m.x0, b.x0), y0: Math.min(m.y0, b.y0), x1: Math.max(m.x1, b.x1), y1: Math.max(m.y1, b.y1) } : b;
     }
     if (!m) return { dx: 0, dy: 0, lines: [] as SnapLine[] };
@@ -239,14 +240,16 @@ export const InfiniteCanvas: React.FC = () => {
   const worldBoxOf = (id: string) => {
     const n = document.querySelector(`[data-el-id="${id}"]`);
     if (!n) { const el = elements.find(e => e.id === id); return el ? absBoxOf(el, elements, frames) : null; }
-    const r = n.getBoundingClientRect(), a = getWorldCoords(r.left, r.top);
-    return { x: a.x, y: a.y, w: r.width / viewport.zoom, h: r.height / viewport.zoom };
+    // its own box before any turn: the centre from the page, the size from layout
+    const r = n.getBoundingClientRect(), c = getWorldCoords(r.left + r.width / 2, r.top + r.height / 2);
+    const w = (n as HTMLElement).offsetWidth, h = (n as HTMLElement).offsetHeight;
+    return { x: c.x - w / 2, y: c.y - h / 2, w, h };
   };
 
   // The deepest frame (container or screen) at a canvas point, not one of `own`.
   const holderAt = (px: number, py: number, own: Set<string>) => {
     const c = elements
-      .filter(x => isContainer(x) && !x.hidden && !own.has(x.id))
+      .filter(x => takesDrops(x) && !x.hidden && !own.has(x.id))
       .map(x => ({ x, r: worldBoxOf(x.id), depth: chainOf(x.id, elements).length }))
       .filter(({ r }) => r && px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h)
       .sort((p, q) => q.depth - p.depth)[0]?.x;
@@ -538,7 +541,10 @@ export const InfiniteCanvas: React.FC = () => {
         dragOrig.current = new Map();
         ids.forEach(id => {
           const el = elements.find(x => x.id === id);
-          if (el && !el.locked) dragOrig.current!.set(id, { x: Number(el.style.x), y: Number(el.style.y) });
+          // where it starts on the canvas: its parent may move under it while it
+          // is dragged (a group's box refits round what is in it), so each step
+          // is placed from the canvas, never from the parent's corner
+          if (el && !el.locked) { const b = absBoxOf(el, elements, frames); dragOrig.current!.set(id, { x: b.x, y: b.y }); }
         });
       }
       let dx = (e.clientX - dragOrigin.current.x) / viewport.zoom;
@@ -566,7 +572,11 @@ export const InfiniteCanvas: React.FC = () => {
         dx += snap.dx; dy += snap.dy;
         setSnapLines(snap.lines);
       } else if (snapLines.length) setSnapLines([]);
-      dragOrig.current.forEach((o, id) => updateElementPosition(id, Math.round(o.x + dx), Math.round(o.y + dy)));
+      const now = useProjectStore.getState();
+      dragOrig.current.forEach((o, id) => {
+        const p0 = originOf(now.elements.find(x => x.id === id)?.parentId, now.elements, now.frames);
+        updateElementPosition(id, Math.round(o.x + dx - p0.x), Math.round(o.y + dy - p0.y));
+      });
       return;
     }
 
@@ -661,14 +671,15 @@ export const InfiniteCanvas: React.FC = () => {
           const own = new Set(subtreeIds(el.id, elements));
           // containers on the page, deepest first
           const holder = elements
-            .filter(c => isContainer(c) && !c.hidden && !own.has(c.id))
+            .filter(c => takesDrops(c) && !c.hidden && !own.has(c.id))
             .map(c => ({ c, r: worldBoxOf(c.id), depth: chainOf(c.id, elements).length }))
             .filter(({ r }) => r && cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h)
             .sort((p, q) => q.depth - p.depth)[0]?.c;
           const frame = holder ? undefined : frames.find(f => !f.hidden &&
             cx >= f.x && cx <= f.x + f.width && cy >= f.y && cy <= f.y + f.height);
           const target = holder?.id ?? frame?.id;
-          if (target !== el.parentId) reparentElement(el.id, target, b.x, b.y);
+          // still over the frame its group is in: it stays in the group
+          if (target !== el.parentId && target !== frameAbove(el.parentId, elements)) reparentElement(el.id, target, b.x, b.y);
         }
       }
       setDraggingElementId(null);
@@ -846,7 +857,7 @@ export const InfiniteCanvas: React.FC = () => {
         {/* 3. Free Canvas Elements (Detached / Outside Frames) */}
         {freeElements.map((element, layer) => (
           <ElementNode key={element.id} element={element} parentLayout={null} layer={layer}
-                       onPress={pressElement} boxInside={false} frameOffset={{ x: 0, y: 0 }} />
+                       onPress={pressElement} boxInside={false} />
         ))}
 
         {/* 3b. Selection handles, above everything (as in Figma): a selected
@@ -857,12 +868,11 @@ export const InfiniteCanvas: React.FC = () => {
           .map(el => {
             // drawn by the element itself when only the layout knows where it is
             if (!placed(el)) return null;
-            const f = originOf(el.parentId, elements, frames);
             const b = boxOf(el);
             return (
               <div key={`sel-${el.id}`} className="pointer-events-none"
-                   style={{ position: 'absolute', left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, zIndex: 1000 }}>
-                <TransformSelectionBox element={el} parentFrameOffset={{ x: f?.x || 0, y: f?.y || 0 }} />
+                   style={{ position: 'absolute', left: b.x0, top: b.y0, width: b.x1 - b.x0, height: b.y1 - b.y0, zIndex: 1000, transform: rotateCss(el) }}>
+                <TransformSelectionBox element={el} />
               </div>
             );
           })}
@@ -875,7 +885,7 @@ export const InfiniteCanvas: React.FC = () => {
           const z = viewport.zoom, t = el.style.frameShape || el.type;
           const vd = el.style.vectorData;
           return (
-            <div className="absolute pointer-events-none" data-export-skip style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: 999 }}>
+            <div className="absolute pointer-events-none" data-export-skip style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: 999, transform: rotateCss(el) }}>
               {t === 'vectorPath' && vd ? (
                 <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none">
                   <path d={vectorAllD(vd)} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />

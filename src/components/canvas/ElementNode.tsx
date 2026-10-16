@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { ContainerBox, clipCss } from './ContainerBox';
 import { TransformSelectionBox } from './TransformSelectionBox';
-import { flexLayoutCss, nodeSize } from '../../lib/styleCss';
+import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
 import { isContainer, pickTarget, stepInto } from '../../lib/tree';
 
 interface Props {
@@ -21,7 +21,6 @@ interface Props {
   // that is); everything else gets its handles on top, never clipped
   boxInside: boolean;
   frameId?: string;
-  frameOffset: { x: number; y: number };
   // inside a boolean group: drawn unseen (the group draws the result) but
   // still there to click, drag and show a selection box
   ghost?: boolean;
@@ -29,7 +28,7 @@ interface Props {
 
 // One element on the canvas - and, for a container (a frame inside a frame),
 // everything inside it, laid out by its own auto layout or placed by x/y.
-export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onPress, boxInside, frameId, frameOffset, ghost }) => {
+export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onPress, boxInside, frameId, ghost }) => {
   const { elements, selectedElementIds, activeTool, editorMode, isWiring, finishWiring, startWiring, updateElementStyle, setSelection } =
     useProjectStore(useShallow((s) => ({ elements: s.elements, selectedElementIds: s.selectedElementIds, activeTool: s.activeTool, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateElementStyle: s.updateElementStyle, setSelection: s.setSelection })));
   const ref = useRef<HTMLDivElement>(null);
@@ -105,6 +104,8 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
         ...position, ...size,
         zIndex: 10 + layer,      // strictly by layer order, selected or not
         mixBlendMode: blend,
+        // turned here, not in its look: the selection box and anything inside turn with it
+        transform: rotateCss(element),
         pointerEvents: activeTool !== 'select' ? 'none' : undefined
       }}
       className={`group/el ${element.locked ? 'cursor-default' : 'cursor-move'}`}
@@ -125,7 +126,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
           >
             {kids.map((k, i) => (
               <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={i} onPress={onPress}
-                           boxInside={boxInside || flow} frameId={frameId} frameOffset={frameOffset} ghost={ghost || bool} />
+                           boxInside={boxInside || flow} frameId={frameId} ghost={ghost || bool} />
             ))}
           </div>
         </>
@@ -137,7 +138,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
 
       {isSelected && activeTool === 'select' && (boxInside || flow) && (
         <div data-export-skip className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000, visibility: 'visible' }}>
-          <TransformSelectionBox element={element} parentFrameOffset={frameOffset} />
+          <TransformSelectionBox element={element} />
         </div>
       )}
 

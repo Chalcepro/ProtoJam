@@ -277,7 +277,6 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
             layer={layer}
             boxInside={false}
             frameId={frame.id}
-            frameOffset={{ x: frame.x, y: frame.y }}
             onPress={(el, e) => {
               // an old-style group frame: a click picks the group until
               // something inside it is selected

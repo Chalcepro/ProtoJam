@@ -6,15 +6,11 @@ import { vectorAllD } from '../../lib/boolean';
 
 interface TransformSelectionBoxProps {
   element: UIElement;
-  parentFrameOffset?: { x: number; y: number };
 }
 
 const SELECTION_COLOR = '#ff6b4a'; // Vibrant light red / orange selection stroke
 
-export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
-  element,
-  parentFrameOffset = { x: 0, y: 0 }
-}) => {
+export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ element }) => {
   const { style } = element;
   // a frame made from a shape is outlined as that shape
   const type = element.style.frameShape || element.type;
@@ -88,32 +84,20 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({
     e.preventDefault();
     setActiveHandle('rotate');
 
-    // Calculate center point of element in world/screen coordinates
-    const elLeft = parentFrameOffset.x + Number(style.x);
-    const elTop = parentFrameOffset.y + Number(style.y);
-    const elW = Number(style.width);
-    const elH = Number(style.height);
-
-    const centerWorldX = elLeft + elW / 2;
-    const centerWorldY = elTop + elH / 2;
-
-    const screenCenterX = viewport.x + centerWorldX * viewport.zoom;
-    const screenCenterY = viewport.y + centerWorldY * viewport.zoom;
+    // The turn is about the centre as it is on screen (where the page drew
+    // it - inside frames, auto layout, at any zoom), and follows the pointer
+    // from where it was grabbed: no jump on the first move.
+    const node = document.querySelector(`[data-el-id="${element.id}"]`);
+    if (!node) return;
+    const r = node.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const angle = (x: number, y: number) => Math.atan2(y - cy, x - cx) * 180 / Math.PI;
+    const start = Number(style.rotation) || 0, grab = angle(e.clientX, e.clientY);
 
     const onPointerMove = (moveEvent: PointerEvent) => {
-      const mouseX = moveEvent.clientX;
-      const mouseY = moveEvent.clientY;
-
-      const rad = Math.atan2(mouseY - screenCenterY, mouseX - screenCenterX);
-      let deg = Math.round(rad * (180 / Math.PI)) + 90; // Top is 0 deg
-      if (deg < 0) deg += 360;
-      if (deg >= 360) deg -= 360;
-
-      // 15-degree snap with Shift key
-      if (moveEvent.shiftKey) {
-        deg = Math.round(deg / 15) * 15;
-      }
-
+      let deg = start + angle(moveEvent.clientX, moveEvent.clientY) - grab;
+      if (moveEvent.shiftKey) deg = Math.round(deg / 15) * 15;   // Shift: 15-degree steps
+      deg = ((Math.round(deg) % 360) + 360) % 360;
       setRotationAngle(deg);
       updateElementStyle(element.id, { rotation: deg });
     };

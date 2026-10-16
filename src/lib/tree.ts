@@ -7,6 +7,18 @@ import type { DeviceFrame, UIElement } from '../types/components';
 
 export const isContainer = (el?: UIElement) => el?.type === 'container';
 
+// Somewhere a drop or a new shape can land: a frame. A group (or a boolean
+// group) never takes things in - its box is only the extent of what it holds,
+// often far bigger than anything seen there - as in Figma.
+export const takesDrops = (el?: UIElement) => isContainer(el) && !el!.style.isGroup && !el!.style.booleanOp;
+
+// The frame or screen a group sits in (through any groups around it).
+export const frameAbove = (id: string | undefined, elements: UIElement[]): string | undefined => {
+  let el = elements.find(e => e.id === id);
+  while (el && !takesDrops(el)) { id = el.parentId; el = elements.find(e => e.id === id); }
+  return id;
+};
+
 export const childrenOf = (parentId: string, elements: UIElement[]) =>
   elements.filter(e => e.parentId === parentId);
 

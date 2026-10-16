@@ -1,5 +1,5 @@
 import { vectorBounds } from '../lib/vector';
-import { absBoxOf, chainOf, flowsChildren, inFlow, isContainer, originOf, subtreeIds } from '../lib/tree';
+import { absBoxOf, chainOf, flowsChildren, inFlow, isContainer, originOf, subtreeIds, takesDrops } from '../lib/tree';
 import { BOOLEANABLE, dToVectorData, shapeD } from '../lib/boolean';
 import { healDelete } from '../lib/vectorEdit';
 import { create } from 'zustand';
@@ -936,7 +936,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const { elements, frames } = get();
     const inside = (b: { x: number; y: number; w: number; h: number }) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
     const c = elements
-      .filter(e => isContainer(e) && !e.hidden && inside(absBoxOf(e, elements, frames)))
+      .filter(e => takesDrops(e) && !e.hidden && inside(absBoxOf(e, elements, frames)))
       .sort((a, b) => chainOf(b.id, elements).length - chainOf(a.id, elements).length)[0];
     if (c) { const o = originOf(c.id, elements, frames); return { id: c.id, x: o.x, y: o.y }; }
     const f = frames.find(fr => !fr.hidden && !fr.isGroup && inside({ x: fr.x, y: fr.y, w: fr.width, h: fr.height }));

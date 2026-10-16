@@ -120,7 +120,6 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       width: '100%',
       height: '100%',
       opacity: style.opacity ?? 1,
-      transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined,
       color: style.textColor,
       fontFamily: style.fontFamily,
       fontSize: style.fontSize,
@@ -247,8 +246,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           style={{
             width: '100%',
             height: style.height || 2,
-            backgroundColor: style.fillColor || style.borderColor || '#ebebec',
-            transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined
+            backgroundColor: style.fillColor || style.borderColor || '#ebebec'
           }}
           onClick={handleClick}
         />
@@ -262,8 +260,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             width: '100%',
             height: '100%',
             display: 'flex',
-            alignItems: 'center',
-            transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined
+            alignItems: 'center'
           }}
           onClick={handleClick}
         >
@@ -321,7 +318,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
                if (!isInteractive && st.selectedElementIds.includes(element.id)) st.startVectorEditing(element.id);
              }}
              viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none"
-             style={{ display: 'block', opacity: style.opacity ?? 1, transform: style.rotation ? `rotate(${style.rotation}deg)` : undefined, ...effectsCss(style, false), boxShadow: undefined }}>
+             style={{ display: 'block', opacity: style.opacity ?? 1, ...effectsCss(style, false), boxShadow: undefined }}>
           {/* regions filled one by one (paint bucket), each its own colour */}
           {regions.map(r => <path key={r.key} d={r.d} fill={vd.regions![r.key]} stroke="none" />)}
           {hasLayeredPaint(style) ? (
