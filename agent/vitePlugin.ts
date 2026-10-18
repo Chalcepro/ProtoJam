@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin, ViteDevServer } from 'vite';
@@ -33,6 +33,36 @@ const SYSTEM = `You are the design assistant inside ProtoJam, a Figma-like proto
 - Link screens for the prototype with add_interaction.
 - After building, take a screenshot of each screen you made and fix what looks wrong before you answer.
 - Answer in a few short sentences: what you made, and anything you were unsure about. No long lists.`;
+
+// Chat-tab conversations Claude Code kept on disk (it saves every session as
+// a transcript under ~/.claude/projects/<this folder>), read back into
+// messages - so chats from before History existed are not lost.
+const pastSessions = () => {
+  const dir = join(homedir(), '.claude', 'projects', ROOT.replace(/[:\\/]/g, '-'));
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter(f => f.endsWith('.jsonl')).flatMap(f => {
+    const file = join(dir, f), text = readFileSync(file, 'utf8');
+    if (!text.includes('mcp__protojam')) return [];        // not a Chat-tab session
+    const msgs: { role: 'user' | 'assistant'; text: string; steps: string[] }[] = [];
+    for (const line of text.split('\n')) {
+      let d: any;
+      try { d = JSON.parse(line); } catch { continue; }
+      const c = d.message?.content;
+      if (d.type === 'user') {
+        const t = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((x: any) => x.type === 'text').map((x: any) => x.text).join('') : '';
+        if (t) msgs.push({ role: 'user', text: t.replace(/\n\n\[Selected in ProtoJam:[^\]]*\]$/, ''), steps: [] });
+      } else if (d.type === 'assistant' && Array.isArray(c)) {
+        let last = msgs[msgs.length - 1];
+        if (!last || last.role !== 'assistant') msgs.push(last = { role: 'assistant', text: '', steps: [] });
+        for (const x of c) {
+          if (x.type === 'text' && x.text) last.text += (last.text ? '\n\n' : '') + x.text;
+          if (x.type === 'tool_use') last.steps.push(String(x.name).replace(/^mcp__protojam__/, '').replace(/_/g, ' '));
+        }
+      }
+    }
+    return msgs.some(m => m.role === 'user') ? [{ session: f.replace(/\.jsonl$/, ''), updated: statSync(file).mtimeMs, msgs }] : [];
+  });
+};
 
 const loopback = (req: IncomingMessage) => {
   const ip = req.socket.remoteAddress || '';
@@ -111,19 +141,26 @@ export const protojamAgent = (): Plugin => ({
           return json(res, 200, await runTool(String(tool), args || {}));
         }
 
+        if (req.url === '/__pj/chat/sessions') return json(res, 200, pastSessions());
+
         if (req.url === '/__pj/chat/stop' && req.method === 'POST') {
           chat?.kill();
           return json(res, 200, { stopped: true });
         }
 
         if (req.url === '/__pj/chat' && req.method === 'POST') {
-          const { message, model, effort, session } = await body(req);
+          const { message, model, effort, session, brief } = await body(req);
+          // the project's brief rides along with every turn, so it is never retyped
+          const note = typeof brief === 'string' && brief.trim() ? `
+
+The designer's brief for this project (follow it):
+${brief.trim().slice(0, 8000)}` : '';
           const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
             '--model', MODELS.has(model) ? model : 'sonnet', '--effort', EFFORTS.has(effort) ? effort : 'medium',
             '--tools', '',                                     // no files, no shell: ProtoJam only
             '--mcp-config', mcpConfig(), '--strict-mcp-config',
             '--allowedTools', 'mcp__protojam', '--permission-mode', 'dontAsk',
-            '--append-system-prompt', SYSTEM];
+            '--append-system-prompt', SYSTEM + note];
           if (typeof session === 'string' && /^[\w-]{8,}$/.test(session)) args.push('--resume', session);
           chat?.kill();
           const child = spawn(claudeExe(), args, { cwd: ROOT, windowsHide: true });

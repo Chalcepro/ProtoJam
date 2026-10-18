@@ -15,7 +15,14 @@ you take over and finish them by hand.
   max (higher thinks longer). "Local model" is a reserved slot, not built yet.
 - It runs **Claude Code on this computer**, on your own Claude plan, so there is
   no API key. It is given **only the ProtoJam tools**: no files, no shell.
-- The pencil icon starts a new chat; otherwise it remembers the conversation.
+- **History** (clock icon): every chat is kept per project, across reloads and
+  restarts. Open one and the AI carries on from where it was (same Claude
+  Code session). Rename or delete on hover. Chat-tab sessions Claude Code kept
+  on disk from before History existed are picked up automatically.
+- **Brief** (notebook icon, a dot when set): what the AI always knows about this
+  project (brand, colours, fonts, audience, rules), sent with every message
+  in every chat, so it is never retyped.
+- The pencil icon starts a new chat.
 
 Needs ProtoJam running from the dev server: `npm run dev` or
 `npm run electron:dev`. A packaged build has no Chat yet.
