@@ -8,11 +8,12 @@ import { FontPicker, WeightPicker } from './FontPicker';
 import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
 import { BlendPicker } from './BlendPicker';
 import { PaddingFields } from './PaddingFields';
+import { FlowControls } from './FlowControls';
 import { shared, withMulti } from '../../lib/multiEdit';
 import { isOn, toggleText, type TextToggle } from '../../lib/textStyle';
 import { clearTextSel, dropFromRuns, look, runsIn, runsOf, styleSelection, useTextSel, type RunStyle } from '../../lib/richText';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
-import { textResizeOf } from '../../lib/styleCss';
+import { flexLayoutCss, textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
 import { BOOLEANABLE } from '../../lib/boolean';
 
@@ -36,7 +37,7 @@ const SizingSelect: React.FC<{ value: string; options: ('fixed' | 'hug' | 'fill'
 // right by top / middle / bottom - whichever way the row or column runs,
 // and "Space between" to spread them along it.
 const AlignGrid: React.FC<{ al: AutoLayoutSettings; onChange: (u: Partial<AutoLayoutSettings>) => void }> = ({ al, onChange }) => {
-  const row = al.direction === 'horizontal';
+  const row = al.direction !== 'vertical';
   const idx = { start: 0, center: 1, end: 2 } as const;
   const keys = ['start', 'center', 'end'] as const;
   const main = al.align === 'spaceBetween' ? -1 : idx[al.align as 'start'];
@@ -496,7 +497,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </div>
           </div>
           {frame.autoLayout?.enabled && (
-            <PaddingFields key={frame.id} value={frame.autoLayout.padding} onChange={padding => updateAutoLayout(frame.id, { padding })} />
+            <PaddingFields key={frame.id} hintId={frame.id} value={frame.autoLayout.padding} onChange={padding => updateAutoLayout(frame.id, { padding })} />
           )}
         </div>
 
@@ -518,51 +519,10 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
           {frame.autoLayout?.enabled && (
             <div className="space-y-2 bg-[rgba(235,235,236,0.02)] p-2.5 rounded-xl border border-[rgba(235,235,236,0.08)]">
-              <div className="flex items-center justify-between">
-                <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Direction</span>
-                <div className="flex bg-[rgba(235,235,236,0.06)] rounded p-0.5 border border-[rgba(235,235,236,0.08)]">
-                  <button
-                    onClick={() => updateAutoLayout(frame.id, { direction: 'horizontal' })}
-                    className={`px-2 py-1 rounded text-[10px] ${
-                      frame.autoLayout.direction === 'horizontal' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-                    }`}
-                  >
-                    Horizontal
-                  </button>
-                  <button
-                    onClick={() => updateAutoLayout(frame.id, { direction: 'vertical' })}
-                    className={`px-2 py-1 rounded text-[10px] ${
-                      frame.autoLayout.direction === 'vertical' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-                    }`}
-                  >
-                    Vertical
-                  </button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Item Gap</span>
-                <NumberInput
-                  value={frame.autoLayout.gap}
-                  onChange={(e) => updateAutoLayout(frame.id, { gap: Number(e.target.value) })}
-                  className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
-                />
-              </div>
+              <FlowControls id={frame.id} al={frame.autoLayout} set={(u) => updateAutoLayout(frame.id, u)} />
               <div className="flex items-center justify-between">
                 <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Align</span>
                 <AlignGrid al={frame.autoLayout} onChange={(u) => updateAutoLayout(frame.id, u)} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Wrap</span>
-                <button
-                  onClick={() => updateAutoLayout(frame.id, { wrap: !frame.autoLayout!.wrap })}
-                  className={`px-2.5 py-1 rounded text-[10px] font-bold transition-all ${
-                    frame.autoLayout.wrap
-                      ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
-                      : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)]'
-                  }`}
-                >
-                  {frame.autoLayout.wrap ? 'On' : 'Off'}
-                </button>
               </div>
             </div>
           )}
@@ -686,6 +646,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
       s.display === 'flex' && s.gap ? `gap: ${s.gap}px;` : '',
       s.display === 'flex' && s.justifyContent ? `justify-content: ${s.justifyContent};` : '',
       s.display === 'flex' && s.alignItems ? `align-items: ${s.alignItems};` : '',
+      // auto layout, exactly as the canvas draws it (flex, or grid)
+      ...(s.autoLayout?.enabled ? Object.entries(flexLayoutCss(s.autoLayout)).filter(([, v]) => v !== undefined && v !== '')
+        .map(([k, v]) => `${k.replace(/[A-Z]/g, c => '-' + c.toLowerCase())}: ${typeof v === 'number' ? `${v}px` : v};`) : []),
       s.fontFamily ? `font-family: ${s.fontFamily};` : '',
       s.fontSize ? `font-size: ${s.fontSize}px;` : '',
       s.fontWeight ? `font-weight: ${s.fontWeight};` : '',
@@ -953,7 +916,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
         </div>
 
         {style.autoLayout?.enabled && (
-          <PaddingFields key={element!.id} value={style.autoLayout.padding} onChange={padding => updateAutoLayout(element!.id, { padding })} />
+          <PaddingFields key={element!.id} hintId={element!.id} value={style.autoLayout.padding} onChange={padding => updateAutoLayout(element!.id, { padding })} />
         )}
 
         <div className="grid grid-cols-2 gap-2 mt-2">
@@ -1119,36 +1082,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
 
         {style.autoLayout?.enabled && (
           <div className="space-y-2 bg-[rgba(235,235,236,0.02)] p-2.5 rounded-xl border border-[rgba(235,235,236,0.08)]">
-            <div className="flex items-center justify-between">
-              <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Direction</span>
-              <div className="flex bg-[rgba(235,235,236,0.06)] rounded p-0.5 border border-[rgba(235,235,236,0.08)]">
-                <button
-                  onClick={() => updateAutoLayout(element!.id, { direction: 'horizontal' })}
-                  className={`px-2 py-1 rounded text-[10px] ${
-                    style.autoLayout.direction === 'horizontal' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-                  }`}
-                >
-                  Horizontal
-                </button>
-                <button
-                  onClick={() => updateAutoLayout(element!.id, { direction: 'vertical' })}
-                  className={`px-2 py-1 rounded text-[10px] ${
-                    style.autoLayout.direction === 'vertical' ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'text-[rgba(235,235,236,0.5)]'
-                  }`}
-                >
-                  Vertical
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Gap Spacing</span>
-              <NumberInput
-                value={style.autoLayout.gap}
-                onChange={(e) => updateAutoLayout(element!.id, { gap: Number(e.target.value) })}
-                className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
-              />
-            </div>
+            <FlowControls id={element!.id} al={style.autoLayout} set={(u) => updateAutoLayout(element!.id, u)} />
 
             <div className="flex items-center justify-between">
               <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Align</span>

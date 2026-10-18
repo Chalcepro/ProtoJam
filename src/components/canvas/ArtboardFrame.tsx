@@ -6,6 +6,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { startGesture } from '../../lib/gesture';
+import { measured } from '../../store/useProjectStore';
 
 interface ArtboardFrameProps {
   frame: DeviceFrame;
@@ -57,7 +58,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     if (!autoLayout || !outer) return;
     if (hugW || hugH) {
       const w = hugW ? outer.offsetWidth : frame.width, h = hugH ? outer.offsetHeight : frame.height;
-      if (Math.abs(w - frame.width) >= 1 || Math.abs(h - frame.height) >= 1) updateFrameDimensions(frame.id, w, h);
+      if (Math.abs(w - frame.width) >= 1 || Math.abs(h - frame.height) >= 1) measured(() => updateFrameDimensions(frame.id, w, h));
     }
   });
 

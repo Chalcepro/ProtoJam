@@ -9,6 +9,7 @@ import { TransformSelectionBox } from './TransformSelectionBox';
 import { ExtrudeArt, SideStrokes } from './StrokeArt';
 import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
 import { isContainer, pickTarget, stepInto } from '../../lib/tree';
+import { measured } from '../../store/useProjectStore';
 
 interface Props {
   element: UIElement;
@@ -52,9 +53,10 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
     const upd: { width?: number; height?: number } = {};
     if ((fillW || hugW) && Math.abs(n.offsetWidth - Number(s.width)) >= 1) upd.width = n.offsetWidth;
     if ((fillH || hugH) && Math.abs(n.offsetHeight - Number(s.height)) >= 1) upd.height = n.offsetHeight;
-    if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(element.id, upd);
+    // measured sizes belong to the step that caused them (see measured)
+    if (upd.width !== undefined || upd.height !== undefined) measured(() => updateElementStyle(element.id, upd));
     // a group's box follows what is in it
-    if (s.isGroup && !ownLayout) useProjectStore.getState().fitGroup(element.id);
+    if (s.isGroup && !ownLayout) measured(() => useProjectStore.getState().fitGroup(element.id));
   });
 
   if (element.hidden) return null;

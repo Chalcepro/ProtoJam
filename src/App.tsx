@@ -9,6 +9,7 @@ import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { ShortcutsPanel } from './components/ShortcutsPanel';
 import { textTargets, toggleText } from './lib/textStyle';
+import { SpacingHint } from './components/canvas/SpacingHint';
 
 // Zoom keeping the middle of the canvas where it is. `absolute`: set the zoom.
 const zoomAround = (f: number, absolute = false) => {
@@ -133,7 +134,10 @@ export const App: React.FC = () => {
           // Shift+A: auto layout - wrap several things in one, or switch it
           // on / off for the selected frame or element
           done();
-          if (s.selectedElementIds.length > 1) s.groupSelectedIntoAutoLayout();
+          // several things, or one shape: wrapped in a new auto layout frame;
+          // a frame or a text: switched on / off for it
+          const one = s.elements.find(x => x.id === s.selectedElementIds[0]);
+          if (s.selectedElementIds.length > 1 || (one && !['container', 'text', 'heading'].includes(one.type))) s.groupSelectedIntoAutoLayout();
           else if (s.selectedElementIds.length === 1) s.toggleAutoLayout(s.selectedElementIds[0]);
           else if (s.selectedFrameIds.length === 1) s.toggleAutoLayout(s.selectedFrameIds[0]);
         }
@@ -186,6 +190,8 @@ export const App: React.FC = () => {
       {/* Top Application Header */}
       <Topbar />
       {showKeys && <ShortcutsPanel onClose={() => setShowKeys(false)} />}
+      {/* auto layout gaps / padding drawn while the side panel points at them */}
+      <SpacingHint />
 
       {/* Main Workspace: Collapsible Left Sidebar + Infinite Canvas + Collapsible Right Inspector */}
       <div className="flex flex-1 w-full overflow-hidden relative">

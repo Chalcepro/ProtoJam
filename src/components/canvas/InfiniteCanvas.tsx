@@ -262,11 +262,14 @@ export const InfiniteCanvas: React.FC = () => {
   // Where in a row / column a point falls: the index among the laid-out
   // children, and a line between them to show it.
   const flowSlot = (parentId: string, layout: NonNullable<ReturnType<typeof holderAt>['layout']>, px: number, py: number, skip: string) => {
-    const row = layout.direction === 'horizontal';
+    const row = layout.direction !== 'vertical';      // a grid shows a line between cells, as a row does
     const sibs = elements.filter(x => x.parentId === parentId && x.id !== skip && !x.hidden && !x.style.absolutePosition)
       .map(x => worldBoxOf(x.id)!).filter(Boolean);
     const p = row ? px : py;
-    const index = sibs.filter(b => (row ? b.x + b.w / 2 : b.y + b.h / 2) < p).length;
+    // a grid reads row by row: before the pointer = an earlier row, or this row and to the left
+    const index = layout.direction === 'grid'
+      ? sibs.filter(b => b.y + b.h < py || (b.y <= py && b.x + b.w / 2 < px)).length
+      : sibs.filter(b => (row ? b.x + b.w / 2 : b.y + b.h / 2) < p).length;
     const pr = worldBoxOf(parentId) || (() => { const f = frames.find(fr => fr.id === parentId)!; return { x: f.x, y: f.y, w: f.width, h: f.height }; })();
     const g = (layout.gap || 0) / 2;
     const T = 2 / viewport.zoom;

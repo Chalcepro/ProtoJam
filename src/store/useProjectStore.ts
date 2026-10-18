@@ -22,6 +22,7 @@ import { PrototypeInteraction, PrototypeFlow } from '../types/prototype';
 import { STARTER_PROJECTS } from '../presets/starterProjects';
 import { DevicePreset, DEVICE_PRESETS } from '../presets/devicePresets';
 import { COMPONENT_TEMPLATES } from '../presets/uiComponentDefs';
+import { inferLayout, inside, paddingAround, type Box } from '../lib/layoutInfer';
 
 // A few tools are named for what they make rather than by the element type
 // they make. Placed straight through, the Input tool made an element of type
@@ -1297,74 +1298,77 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   // Auto-Layout Actions
   toggleAutoLayout: (targetId) => {
-    const { frames, elements, pushHistory } = get();
-    const isFrame = frames.some(f => f.id === targetId);
+    const { frames, elements, pushHistory, viewport } = get();
+    const frame = frames.find(f => f.id === targetId);
+    const el = elements.find(e => e.id === targetId);
+    const cur = frame ? frame.autoLayout : el?.style.autoLayout;
+    const on = !cur?.enabled;
+    const kids = elements.filter(e => e.parentId === targetId && !e.hidden && !e.style.absolutePosition);
+    const boxOf = (k: UIElement): Box => ({ x: Number(k.style.x) || 0, y: Number(k.style.y) || 0, w: Number(k.style.width) || 0, h: Number(k.style.height) || 0 });
 
-    if (isFrame) {
-      set((state) => ({
-        frames: state.frames.map(f => {
-          if (f.id === targetId) {
-            const cur = f.autoLayout?.enabled;
-            return {
-              ...f,
-              autoLayout: {
-                enabled: !cur,
-                direction: f.autoLayout?.direction || 'vertical',
-                gap: f.autoLayout?.gap ?? 16,
-                padding: f.autoLayout?.padding || { top: 16, right: 16, bottom: 16, left: 16 },
-                align: f.autoLayout?.align || 'start',
-                sizingH: f.autoLayout?.sizingH || 'fixed',
-                sizingV: f.autoLayout?.sizingV || 'hug'
-              }
-            };
-          }
-          return f;
-        }),
-        isSaved: false
-      }));
+    // Switching on over things already inside: the layout is read off where
+    // they stand - direction (a row, a column or a grid), gaps, how they line
+    // up, the padding round them - so nothing moves (as in Figma).
+    let settings: AutoLayoutSettings;
+    let order: string[] | null = null;
+    if (on && kids.length && (frame || el?.type === 'container')) {
+      const boxes = kids.map(boxOf);
+      const inf = inferLayout(boxes);
+      const w = frame ? frame.width : Number(el!.style.width) || 0, h = frame ? frame.height : Number(el!.style.height) || 0;
+      settings = {
+        enabled: true, direction: inf.direction, gap: inf.gap, align: inf.align, alignCross: inf.alignCross,
+        ...(inf.columns ? { columns: inf.columns, rowGap: inf.rowGap } : {}), ...(inf.wrap ? { wrap: true } : {}),
+        // a group fits round its contents: no room to keep
+        padding: el?.style.isGroup ? { top: 0, right: 0, bottom: 0, left: 0 } : paddingAround(boxes, w, h),
+        // a screen keeps its size; a frame hugs what is in it
+        sizingH: frame ? 'fixed' : 'hug', sizingV: frame ? 'fixed' : 'hug'
+      };
+      order = inf.order.map(i => kids[i].id);
+    } else if (on) {
+      settings = frame
+        ? { enabled: true, direction: cur?.direction || 'vertical', gap: cur?.gap ?? 16, padding: cur?.padding || { top: 16, right: 16, bottom: 16, left: 16 },
+            align: cur?.align || 'start', sizingH: cur?.sizingH || 'fixed', sizingV: cur?.sizingV || 'hug' }
+        : { enabled: true, direction: cur?.direction || 'horizontal', gap: cur?.gap ?? 12, padding: cur?.padding || { top: 12, right: 12, bottom: 12, left: 12 },
+            align: cur?.align || 'center', sizingH: cur?.sizingH || 'hug', sizingV: cur?.sizingV || 'hug' };
     } else {
-      // a group can't lay things out: it becomes a frame first, in the
-      // arrangement its things already have (as Figma does)
-      const g = elements.find(e => e.id === targetId);
-      const kids = g?.style.isGroup ? elements.filter(e => e.parentId === targetId).map(e => absBoxOf(e, elements, frames)) : [];
-      const arr = kids.length ? arrangementOf(kids) : null;
-      // its things flow in layer order: put them in the order they stand in
-      const kidIds = elements.filter(e => e.parentId === targetId).map(e => e.id);
-      const sorted = arr ? arr.order.map(o => kidIds[o.i]) : kidIds;
-      const byId = new Map(elements.map(e => [e.id, e]));
-      set((state) => {
-        let k = 0;
-        return {
-          elements: state.elements.map(e => e.parentId === targetId && arr ? byId.get(sorted[k++])! : e).map(e => {
-            if (e.id === targetId && arr) {
-              return { ...e, name: e.name === 'Group' ? 'Frame' : e.name, style: { ...e.style, isGroup: undefined,
-                autoLayout: { enabled: true, direction: arr.across ? 'horizontal' : 'vertical', gap: arr.gap, align: 'start',
-                              padding: { top: 0, right: 0, bottom: 0, left: 0 }, sizingH: 'hug', sizingV: 'hug' } } };
-            }
-            if (e.id === targetId) {
-              const cur = e.style.autoLayout?.enabled;
-              return {
-                ...e,
-                style: {
-                  ...e.style,
-                  autoLayout: {
-                    enabled: !cur,
-                    direction: e.style.autoLayout?.direction || 'horizontal',
-                    gap: e.style.autoLayout?.gap ?? 12,
-                    padding: e.style.autoLayout?.padding || { top: 12, right: 12, bottom: 12, left: 12 },
-                    align: e.style.autoLayout?.align || 'center',
-                    sizingH: e.style.autoLayout?.sizingH || 'hug',
-                    sizingV: e.style.autoLayout?.sizingV || 'hug'
-                  }
-                }
-              };
-            }
-            return e;
-          }),
-          isSaved: false
-        };
-      });
+      settings = { ...cur!, enabled: false };
     }
+
+    // Switching off: each thing stays where the layout drew it.
+    const drawn = new Map<string, { x: number; y: number }>();
+    if (!on && typeof document !== 'undefined') {
+      const host = document.querySelector(`[data-frame-body="${targetId}"]`) || document.querySelector(`[data-el-id="${targetId}"]`);
+      const hr = host?.getBoundingClientRect(), z = viewport.zoom || 1;
+      if (hr) for (const k of kids) {
+        const r = document.querySelector(`[data-el-id="${k.id}"]`)?.getBoundingClientRect();
+        if (r) drawn.set(k.id, { x: Math.round((r.left - hr.left) / z), y: Math.round((r.top - hr.top) / z) });
+      }
+    }
+
+    set((state) => {
+      let els = state.elements;
+      if (order) {
+        // children flow in layer order: put them in the order they stand in
+        const queue = [...order];
+        const byId = new Map(els.map(e => [e.id, e]));
+        const set_ = new Set(order);
+        els = els.map(e => (set_.has(e.id) ? byId.get(queue.shift()!)! : e));
+      }
+      els = els.map(e => {
+        if (e.id === targetId) {
+          const wasGroup = e.style.isGroup && on;
+          return { ...e, ...(wasGroup && e.name === 'Group' ? { name: 'Frame' } : {}),
+                   style: { ...e.style, ...(wasGroup ? { isGroup: undefined } : {}), autoLayout: settings } };
+        }
+        const at = drawn.get(e.id);
+        return at ? { ...e, style: { ...e.style, x: at.x, y: at.y } } : e;
+      });
+      return {
+        elements: els,
+        frames: frame ? state.frames.map(f => (f.id === targetId ? { ...f, autoLayout: settings } : f)) : state.frames,
+        isSaved: false
+      };
+    });
     pushHistory();
   },
 
@@ -1378,34 +1382,54 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   groupSelectedIntoAutoLayout: () => {
     const { elements, frames, selectedElementIds, pushHistory } = get();
-    if (selectedElementIds.length < 2) return;
+    if (!selectedElementIds.length) return;
 
+    // in layer order, bottom first
     const selected = elements.filter(e => selectedElementIds.includes(e.id));
     const parentId = selected[0].parentId;
     const abs = selected.map(e => absBoxOf(e, elements, frames));
-    const minX = Math.min(...abs.map(a => a.x)), minY = Math.min(...abs.map(a => a.y));
-    const maxX = Math.max(...abs.map(a => a.x + a.w)), maxY = Math.max(...abs.map(a => a.y + a.h));
 
-    const { across, gap, order } = arrangementOf(abs);
+    // Text (and anything else) sitting on a rectangle: the rectangle becomes
+    // the frame itself - its fill, corners, strokes, effects - and the room
+    // round the rest becomes padding, as Figma does.
+    const under = selected[0];
+    const bg = selected.length > 1 && (under.type === 'rectangle' || (under.type === 'container' && !elements.some(c => c.parentId === under.id))) &&
+      abs.every((b, i) => i === 0 || inside(b, abs[0])) ? under : null;
+    const items = bg ? selected.slice(1) : selected;
+    const boxes = bg ? abs.slice(1) : abs;
+    const fb = bg ? abs[0] : (() => {
+      const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+      return { x: x0, y: y0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 };
+    })();
+    const rel = boxes.map(b => ({ x: b.x - fb.x, y: b.y - fb.y, w: b.w, h: b.h }));
+    const inf = inferLayout(rel);
+    const padding = bg ? paddingAround(rel, fb.w, fb.h) : { top: 0, right: 0, bottom: 0, left: 0 };
 
     // the new frame goes where they are, in the parent they share (or, when
     // they come from different places, the first one's)
     const o = originOf(parentId, elements, frames);
     const id = `el-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+    const look: Partial<ElementStyle> = { fillColor: 'transparent' };
+    if (bg) for (const k of ['fillColor', 'fills', 'fillGradient', 'backgroundImage', 'borderRadius', 'borderWidth', 'borderColor', 'borderStyle',
+                             'strokes', 'effects', 'boxShadow', 'opacity', 'blendMode'] as const) {
+      if (bg.style[k] !== undefined) (look as Record<string, unknown>)[k] = bg.style[k];
+    }
     const box: UIElement = {
-      id, name: 'Frame', type: 'container', parentId, interactions: [], semanticProps: {},
+      id, name: bg && bg.name && !/^rectangle/i.test(bg.name) ? bg.name : 'Frame', type: 'container', parentId,
+      interactions: bg ? bg.interactions : [], semanticProps: {},
       style: {
-        x: Math.round(minX - o.x), y: Math.round(minY - o.y), width: Math.round(maxX - minX), height: Math.round(maxY - minY),
-        fillColor: 'transparent', clipContent: false,
-        autoLayout: { enabled: true, direction: across ? 'horizontal' : 'vertical', gap, align: 'start',
-                      padding: { top: 0, right: 0, bottom: 0, left: 0 }, sizingH: 'hug', sizingV: 'hug' }
+        x: Math.round(fb.x - o.x), y: Math.round(fb.y - o.y), width: Math.round(fb.w), height: Math.round(fb.h),
+        clipContent: false, ...look,
+        autoLayout: { enabled: true, direction: inf.direction, gap: inf.gap, align: inf.align, alignCross: inf.alignCross,
+                      ...(inf.columns ? { columns: inf.columns, rowGap: inf.rowGap } : {}), ...(inf.wrap ? { wrap: true } : {}),
+                      padding, sizingH: 'hug', sizingV: 'hug' }
       }
     };
     const moved = new Set(selectedElementIds);
     set((state) => {
       const at = state.elements.findIndex(e => moved.has(e.id));
       const rest = state.elements.filter(e => !moved.has(e.id));
-      const kids = order.map(k => ({ ...selected[k.i], parentId: id }));
+      const kids = inf.order.map(k => ({ ...items[k], parentId: id }));
       rest.splice(Math.min(at, rest.length), 0, box);
       return {
         elements: [...rest, ...kids],
@@ -2469,6 +2493,22 @@ const HISTORY_LIMIT = 200;
 // one, so Ctrl+Z takes the whole reply back. (Declared with var: pushHistory
 // above reads it.)
 var historyHold = false;
+// Sizes the page measures and writes back - a frame hugging its contents,
+// a child filling its row, text sizing itself, a group fitting round what is
+// in it - are not edits. They go into the step that caused them; otherwise
+// Ctrl+Z restored the step before, the page measured again, and that new
+// "change" put it straight back - undo looked broken.
+export const measured = (write: () => void) => {
+  const b = useProjectStore.getState();
+  const top = b.history[b.historyIndex];
+  const clean = top && top.frames === b.frames && top.elements === b.elements && top.sections === b.sections;
+  write();
+  const a = useProjectStore.getState();
+  if (!clean || (a.frames === b.frames && a.elements === b.elements && a.sections === b.sections)) return;
+  const history = a.history.slice();
+  history[a.historyIndex] = { frames: a.frames, sections: a.sections, elements: a.elements };
+  useProjectStore.setState({ history });
+};
 export const holdHistory = (on: boolean) => {
   if (on) { useProjectStore.getState().pushHistory(); historyHold = true; }
   else { historyHold = false; useProjectStore.getState().pushHistory(); }

@@ -127,8 +127,11 @@ export interface VectorData {
 
 export interface AutoLayoutSettings {
   enabled: boolean;
-  direction: 'horizontal' | 'vertical';
+  // grid: rows of `columns` things, gap between columns, rowGap between rows
+  direction: 'horizontal' | 'vertical' | 'grid';
   gap: number;
+  columns?: number;
+  rowGap?: number;
   padding: { top: number; right: number; bottom: number; left: number };
   align: 'start' | 'center' | 'end' | 'spaceBetween';      // along the row / column
   // across it (Figma's 9-point grid with align): start = top of a row / left of a column

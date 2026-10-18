@@ -52,11 +52,22 @@ export const BLEND_MODES = [
 
 // The flex box an auto-layout parent (screen or container) lays its
 // children out with.
-export const flexLayoutCss = (al: AutoLayoutSettings): React.CSSProperties => ({
+export const flexLayoutCss = (al: AutoLayoutSettings): React.CSSProperties => al.direction === 'grid' ? {
+  // rows of `columns` cells; a frame that hugs its width sizes them to their
+  // contents, a fixed one shares its width between them
+  display: 'grid',
+  gridTemplateColumns: `repeat(${Math.max(1, al.columns || 2)}, ${al.sizingH === 'hug' ? 'max-content' : 'minmax(0, 1fr)'})`,
+  columnGap: al.gap, rowGap: al.rowGap ?? al.gap,
+  justifyItems: ({ start: 'start', center: 'center', end: 'end', spaceBetween: 'stretch' } as const)[al.align] || 'start',
+  alignItems: ({ start: 'start', center: 'center', end: 'end' } as const)[al.alignCross || 'start'],
+  paddingTop: al.padding?.top, paddingRight: al.padding?.right,
+  paddingBottom: al.padding?.bottom, paddingLeft: al.padding?.left
+} : ({
   display: 'flex',
   flexDirection: al.direction === 'horizontal' ? 'row' : 'column',
   flexWrap: al.wrap ? 'wrap' : 'nowrap',
-  gap: al.gap,
+  // wrapped rows can have their own gap between them (CSS gap: rows, columns)
+  gap: al.wrap && al.rowGap !== undefined ? `${al.rowGap}px ${al.gap}px` : al.gap,
   justifyContent: ({ start: 'flex-start', center: 'center', end: 'flex-end', spaceBetween: 'space-between' } as const)[al.align] || 'flex-start',
   alignItems: ({ start: 'flex-start', center: 'center', end: 'flex-end' } as const)[al.alignCross || 'start'],
   paddingTop: al.padding?.top, paddingRight: al.padding?.right,
@@ -73,7 +84,11 @@ export const nodeSize = (el: UIElement, parentLayout: AutoLayoutSettings | null)
   const al = el.type === 'container' && el.style.autoLayout?.enabled ? el.style.autoLayout : null;
   if (al?.sizingH === 'hug') size.width = 'max-content';
   if (al?.sizingV === 'hug') size.height = 'max-content';
-  if (parentLayout && !el.style.absolutePosition) {
+  if (parentLayout?.direction === 'grid' && !el.style.absolutePosition) {
+    // in a grid, Fill is the whole cell
+    if (el.style.layoutSizingH === 'fill') Object.assign(size, { width: 'auto', justifySelf: 'stretch', minWidth: 0 });
+    if (el.style.layoutSizingV === 'fill') Object.assign(size, { height: 'auto', alignSelf: 'stretch' });
+  } else if (parentLayout && !el.style.absolutePosition) {
     const row = parentLayout.direction === 'horizontal';
     const fillMain = row ? el.style.layoutSizingH === 'fill' : el.style.layoutSizingV === 'fill';
     const fillCross = row ? el.style.layoutSizingV === 'fill' : el.style.layoutSizingH === 'fill';

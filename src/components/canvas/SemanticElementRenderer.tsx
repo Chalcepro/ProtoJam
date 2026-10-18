@@ -10,6 +10,7 @@ import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { measured } from '../../store/useProjectStore';
 
 interface SemanticElementRendererProps {
   element: UIElement;
@@ -64,7 +65,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       const upd: { width?: number; height?: number } = {};
       if (resizeMode === 'auto' && Math.abs(el.offsetWidth - Number(cur.style.width)) >= 1) upd.width = el.offsetWidth;
       if (Math.abs(el.offsetHeight - Number(cur.style.height)) >= 1) upd.height = el.offsetHeight;
-      if (upd.width !== undefined || upd.height !== undefined) updateElementStyle(element.id, upd);
+      if (upd.width !== undefined || upd.height !== undefined) measured(() => updateElementStyle(element.id, upd));
     };
     sync();
     const ro = new ResizeObserver(sync);

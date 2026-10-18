@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { NumberInput } from './NumberInput';
+import { hintProps } from '../../lib/layoutHint';
 
 type Side = 'top' | 'right' | 'bottom' | 'left';
 type Pad = Record<Side, number>;
@@ -25,7 +26,7 @@ const SideIcon: React.FC<{ sides: Side[] }> = ({ sides }) => {
 // the other, since that is how padding is nearly always set. The toggle opens
 // all four sides for exact values. A pair whose sides differ reads "Mixed";
 // typing into it sets both again.
-export const PaddingFields: React.FC<{ value?: Pad; onChange: (p: Pad) => void }> = ({ value, onChange }) => {
+export const PaddingFields: React.FC<{ value?: Pad; onChange: (p: Pad) => void; hintId?: string }> = ({ value, onChange, hintId }) => {
   const p = value || ZERO;
   const [individual, setIndividual] = useState(p.left !== p.right || p.top !== p.bottom);
 
@@ -49,7 +50,8 @@ export const PaddingFields: React.FC<{ value?: Pad; onChange: (p: Pad) => void }
   };
 
   return (
-    <div className="mt-2">
+    // hovering or editing these shows the padding on the canvas
+    <div className="mt-2" {...(hintId ? hintProps(hintId, 'padding') : {})}>
       <div className="flex items-center justify-between text-[11px] mb-1.5">
         <span className="text-[rgba(235,235,236,0.5)]">Padding</span>
         <button onClick={() => setIndividual(!individual)}
