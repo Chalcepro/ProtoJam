@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { ContainerBox, clipCss } from './ContainerBox';
 import { TransformSelectionBox } from './TransformSelectionBox';
+import { ExtrudeArt, SideStrokes } from './StrokeArt';
 import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
 import { isContainer, pickTarget, stepInto } from '../../lib/tree';
 
@@ -110,6 +111,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       }}
       className={`group/el ${element.locked ? 'cursor-default' : 'cursor-move'}`}
     >
+      {!ghost && <ExtrudeArt element={element} />}
       {container ? (
         <>
           {/* the frame's own look: its box, a shape's outline, or a boolean result */}
@@ -135,6 +137,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
           ? <div style={{ width: '100%', height: '100%', opacity: 0 }}><SemanticElementRenderer element={element} isInteractive={false} /></div>
           : <SemanticElementRenderer element={element} isInteractive={false} />
       )}
+      {!ghost && <SideStrokes element={element} />}
 
       {isSelected && activeTool === 'select' && (boxInside || flow) && (
         <div data-export-skip className="absolute inset-0 pointer-events-none" style={{ zIndex: 1000, visibility: 'visible' }}>

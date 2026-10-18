@@ -8,7 +8,7 @@ import { vectorPathD } from './vector';
 export type BoolOp = 'union' | 'subtract' | 'intersect' | 'exclude';
 
 let ready = false;
-const setup = () => {
+export const setup = () => {
   if (!ready) { paper.setup(new paper.Size(1, 1)); ready = true; }
 };
 

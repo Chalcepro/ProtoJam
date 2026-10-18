@@ -4,6 +4,7 @@ import { VideoView } from './VideoView';
 import { SvgPaint } from './SvgPaint';
 import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
 import { vectorAllD, vectorRegions } from '../../lib/boolean';
+import { isPlainStroke } from '../../lib/strokeArt';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -166,7 +167,8 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     // strokes as rings that never change the box's size
     if (style.fills && !paintsLetters(element)) { delete css.background; Object.assign(css, fillsCss(style.fills)); }
     if (style.strokes) {
-      const sc = strokesCss(style.strokes.filter(x => !blended(x)));     // blended ones are drawn on top (strokeOverlays)
+      // blended ones are drawn on top (strokeOverlays); per-side / gradient ones by SideStrokes
+      const sc = strokesCss(style.strokes.filter(x => !blended(x) && isPlainStroke(x)));
       css.borderWidth = 0; css.borderStyle = undefined;
       css.boxShadow = [sc.boxShadow, css.boxShadow].filter(Boolean).join(', ') || undefined;
       css.outline = sc.outline; css.outlineOffset = sc.outlineOffset;
@@ -188,7 +190,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
   ));
   // A stroke with its own blend mode: a ring of its own laid over the box, so
   // it blends with the fill and whatever is under the layer.
-  const strokeOverlays = (radius?: React.CSSProperties['borderRadius']) => (style.strokes || []).filter(x => x.visible && x.width > 0 && blended(x)).map(x => {
+  const strokeOverlays = (radius?: React.CSSProperties['borderRadius']) => (style.strokes || []).filter(x => x.visible && x.width > 0 && blended(x) && isPlainStroke(x)).map(x => {
     const c = getCommonStyles();
     const corners = radius != null || c.borderRadius != null ? { borderRadius: radius ?? c.borderRadius }
       : { borderTopLeftRadius: c.borderTopLeftRadius, borderTopRightRadius: c.borderTopRightRadius,

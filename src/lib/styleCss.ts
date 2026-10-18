@@ -1,5 +1,6 @@
 import type React from 'react';
 import type { AutoLayoutSettings, ElementStyle, EffectLayer, UIElement } from '../types/components';
+import { textExtrudeShadows } from './strokeArt';
 
 // How a text box sizes itself. Old projects only have autoSize.
 export const textResizeOf = (s: ElementStyle): 'auto' | 'autoHeight' | 'fixed' =>
@@ -27,6 +28,8 @@ export const effectsCss = (s: ElementStyle, isText: boolean): React.CSSPropertie
   const shadow = (e: EffectLayer, inset: boolean) =>
     `${inset ? 'inset ' : ''}${e.x ?? 0}px ${e.y ?? 4}px ${e.blur}px ${isText ? '' : `${e.spread ?? 0}px `}${e.color || 'rgba(0,0,0,0.25)'}`;
   const drops = fx.filter(e => e.type === 'dropShadow').map(e => shadow(e, false));
+  // text has no outline to push back, so it extrudes as stacked text shadows
+  if (isText) drops.push(...textExtrudeShadows(fx.filter(e => e.type === 'extrude')));
   const inner = isText ? [] : fx.filter(e => e.type === 'innerShadow').map(e => shadow(e, true));
   const box = [...(s.boxShadow && !isText ? [s.boxShadow] : []), ...(isText ? [] : drops), ...inner];
   const layerBlur = fx.filter(e => e.type === 'layerBlur').reduce((a, e) => a + e.blur, 0) || s.blur || 0;

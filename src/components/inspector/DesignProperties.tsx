@@ -62,7 +62,8 @@ const AlignGrid: React.FC<{ al: AutoLayoutSettings; onChange: (u: Partial<AutoLa
 };
 
 const EFFECT_LABEL: Record<EffectLayer['type'], string> = {
-  dropShadow: 'Drop shadow', innerShadow: 'Inner shadow', layerBlur: 'Layer blur', backgroundBlur: 'Background blur'
+  dropShadow: 'Drop shadow', innerShadow: 'Inner shadow', layerBlur: 'Layer blur', backgroundBlur: 'Background blur',
+  extrude: 'Extrude (solid 3D)'
 };
 
 // The effects list: any number of shadows and blurs, each with an eye and a remove.
@@ -93,7 +94,12 @@ const EffectsSection: React.FC<{ element: UIElement }> = ({ element }) => {
           return (
             <div key={e.id} className={`space-y-1.5 bg-[rgba(235,235,236,0.02)] p-2 rounded-lg border border-[rgba(235,235,236,0.08)] ${e.visible ? '' : 'opacity-50'}`}>
               <div className="flex items-center gap-1.5">
-                <select value={e.type} onChange={ev => patch(e.id, { type: ev.target.value as EffectLayer['type'] })}
+                <select value={e.type} onChange={ev => {
+                          const type = ev.target.value as EffectLayer['type'];
+                          // an extrusion starts as a solid, hard-edged block
+                          patch(e.id, type === 'extrude' && e.type !== 'extrude'
+                            ? { type, x: 6, y: 6, blur: 0, color: '#141413' } : { type });
+                        }}
                         className="bg-transparent text-xs text-[rgb(235,235,236)] outline-none flex-1 cursor-pointer">
                   {(Object.keys(EFFECT_LABEL) as EffectLayer['type'][]).map(t => <option key={t} value={t} className="bg-[rgb(20,20,19)]">{EFFECT_LABEL[t]}</option>)}
                 </select>
@@ -106,7 +112,33 @@ const EffectsSection: React.FC<{ element: UIElement }> = ({ element }) => {
                   <Icons.Minus size={12} />
                 </button>
               </div>
-              {shadow ? (
+              {e.type === 'extrude' ? (
+                <>
+                  <div className="grid grid-cols-2 gap-1" title="Depth: how far back the block goes, and which way">{num(e, 'x', 'X')}{num(e, 'y', 'Y')}</div>
+                  <div className="flex items-center gap-1.5">
+                    <input type="color" value={toHex(parseColorToRgba(e.color))} title="Sides facing left / right"
+                           onChange={ev => patch(e.id, { color: ev.target.value })}
+                           className="w-6 h-6 rounded cursor-pointer bg-transparent" />
+                    <span className="text-[10px] text-[rgba(235,235,236,0.45)]">{e.color2 ? 'Sides' : 'Colour'}</span>
+                    {e.color2 ? (
+                      <>
+                        <input type="color" value={toHex(parseColorToRgba(e.color2))} title="Faces facing up / down"
+                               onChange={ev => patch(e.id, { color2: ev.target.value })}
+                               className="w-6 h-6 rounded cursor-pointer bg-transparent ml-1" />
+                        <span className="text-[10px] text-[rgba(235,235,236,0.45)]">Top / bottom</span>
+                        <button onClick={() => patch(e.id, { color2: undefined })} title="One colour all round"
+                                className="ml-auto p-1 rounded hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.5)]"><Icons.X size={11} /></button>
+                      </>
+                    ) : (
+                      <button onClick={() => patch(e.id, { color2: '#31C3F3' })}
+                              className="ml-auto text-[10px] text-[rgba(235,235,236,0.55)] hover:text-[rgb(235,235,236)] flex items-center gap-1"
+                              title="Shade the faces that face up / down in a second colour - curves blend between the two">
+                        <Icons.Plus size={10} /> Second colour
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : shadow ? (
                 <>
                   <div className="grid grid-cols-4 gap-1">{num(e, 'x', 'X')}{num(e, 'y', 'Y')}{num(e, 'blur', 'B')}{num(e, 'spread', 'S')}</div>
                   <div className="flex items-center gap-2">
@@ -123,7 +155,7 @@ const EffectsSection: React.FC<{ element: UIElement }> = ({ element }) => {
           );
         })}
         {!fx.length && !element.style.boxShadow && !element.style.backdropBlur && (
-          <div className="text-[10px] text-[rgba(235,235,236,0.35)]">Shadows, layer blur, background (glass) blur</div>
+          <div className="text-[10px] text-[rgba(235,235,236,0.35)]">Shadows, solid 3D extrusions, layer blur, background (glass) blur</div>
         )}
         {(element.style.boxShadow || element.style.backdropBlur) ? (
           <button onClick={() => updateElementStyle(element.id, { boxShadow: undefined, backdropBlur: undefined })}

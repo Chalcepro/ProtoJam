@@ -1,6 +1,7 @@
 import React, { useId } from 'react';
 import type { FillLayer, StrokeLayer } from '../../types/components';
 import { blended, paintRgba } from '../../lib/paint';
+import { StrokeGradient } from './StrokeArt';
 
 // A list of fills and strokes painted on one outline (path data) in SVG - for
 // shapes drawn as outlines: triangles, stars, vectors, boolean results,
@@ -40,6 +41,7 @@ export const SvgPaint: React.FC<{
             );
           return null;
         })}
+        {vs.map((s, i) => <StrokeGradient key={`g${i}`} id={`${uid}-s${i}`} s={s} w={1} h={1} box />)}
         {vs.some(s => s.position === 'inside') && <clipPath id={`${uid}-in`}><path d={d} fillRule={fillRule} /></clipPath>}
         {vs.some(s => s.position === 'outside') && (
           <mask id={`${uid}-out`} maskUnits="userSpaceOnUse" x="-100000" y="-100000" width="200000" height="200000">
@@ -54,10 +56,12 @@ export const SvgPaint: React.FC<{
       ))}
       {vs.map((s, i) => (
         // inside / outside: twice as wide, then the half on the wrong side is cut away
-        <path key={`s${i}`} d={d} fill="none" stroke={paintRgba(s.color, s.opacity)}
+        <path key={`s${i}`} d={d} fill="none"
+              stroke={s.paint === 'linear' || s.paint === 'radial' ? `url(#${uid}-s${i})` : paintRgba(s.color, s.opacity)}
+              strokeOpacity={s.paint === 'linear' || s.paint === 'radial' ? s.opacity : undefined}
               strokeWidth={s.position === 'center' ? s.width : s.width * 2}
               strokeDasharray={s.style === 'dashed' ? `${s.width * 3} ${s.width * 2}` : s.style === 'dotted' ? `0 ${s.width * 2}` : undefined}
-              strokeLinecap={s.style === 'dotted' ? 'round' : undefined} strokeLinejoin="round" vectorEffect={ve}
+              strokeLinecap={s.style === 'dotted' ? 'round' : s.cap} strokeLinejoin="round" vectorEffect={ve}
               clipPath={s.position === 'inside' ? `url(#${uid}-in)` : undefined}
               mask={s.position === 'outside' ? `url(#${uid}-out)` : undefined}
               style={{ mixBlendMode: blended(s) ? s.blendMode : undefined }} />

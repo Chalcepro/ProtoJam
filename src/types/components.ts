@@ -166,6 +166,18 @@ export interface StrokeLayer {
   opacity: number;
   visible: boolean;
   blendMode?: BlendMode;
+  // Beyond Figma: every stroke in the list picks its own sides of a box, so
+  // a top stroke and a bottom stroke can differ in colour, weight and style.
+  // Unset = all four.
+  sides?: { top: boolean; right: boolean; bottom: boolean; left: boolean };
+  // Its own corner rounding where two of its sides meet (top + left rounds
+  // the top-left corner). Unset = the shape's corner radius.
+  radius?: number;
+  // How an open run of sides ends.
+  cap?: 'butt' | 'round' | 'square';
+  // A gradient along the stroke; unset = solid `color`.
+  paint?: 'solid' | 'linear' | 'radial';
+  gradient?: { angle?: number; stops: { offset: number; color: string }[] };
 }
 
 // One row of a layer's Export list: what to save it as.
@@ -183,12 +195,17 @@ export type BlendMode =
 
 export interface EffectLayer {
   id: string;
-  type: 'dropShadow' | 'innerShadow' | 'layerBlur' | 'backgroundBlur';
+  // extrude: the shape pushed back by x / y as a solid block, its slanted
+  // sides filled in (a drop shadow with no blur leaves them empty) - the
+  // neo-brutalist / Trackmania look. Faces facing sideways take `color`,
+  // faces facing up / down take `color2`, blended round curves.
+  type: 'dropShadow' | 'innerShadow' | 'layerBlur' | 'backgroundBlur' | 'extrude';
   x?: number;
   y?: number;
   blur: number;
   spread?: number;
   color?: string;
+  color2?: string;
   visible: boolean;
 }
 

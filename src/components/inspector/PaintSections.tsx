@@ -5,6 +5,7 @@ import { BlendPicker } from './BlendPicker';
 import { useProjectStore } from '../../store/useProjectStore';
 import { blended, fillsOf, paintRgba, paintsLetters, strokesOf, fillsCss } from '../../lib/paint';
 import { putAsset } from '../../lib/assets';
+import { hasSides, isPlainStroke } from '../../lib/strokeArt';
 import { exportLayer } from '../../lib/exportImage';
 import type { ElementStyle, ExportSetting, FillLayer, StrokeLayer, UIElement } from '../../types/components';
 
@@ -90,8 +91,8 @@ export const FillsSection: React.FC<{ element: UIElement; update: (s: Partial<El
   );
 };
 
-const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) => void; preview: (p: Partial<FillLayer> | null) => void; letters: boolean; canUp: boolean; canDown: boolean; move: (d: -1 | 1) => void }> =
-  ({ f, onChange, preview, letters, canUp, canDown, move }) => {
+const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) => void; preview: (p: Partial<FillLayer> | null) => void; letters: boolean; canUp: boolean; canDown: boolean; move: (d: -1 | 1) => void; types?: FillLayer['type'][] }> =
+  ({ f, onChange, preview, letters, canUp, canDown, move, types }) => {
   const file = useRef<HTMLInputElement>(null);
   const isGrad = f.type === 'linear' || f.type === 'radial' || f.type === 'angular' || f.type === 'diamond';
   const stops = f.gradient?.stops || [];
@@ -112,7 +113,7 @@ const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) =>
   return (
     <div className="mt-1.5 mb-1 space-y-2 bg-[rgba(235,235,236,0.02)] p-2 rounded-lg border border-[rgba(235,235,236,0.08)]">
       <div className="flex flex-wrap gap-1">
-        {TYPES.filter(([t]) => !(letters && t === 'video')).map(([t, label]) => (
+        {TYPES.filter(([t]) => !(letters && t === 'video') && (!types || types.includes(t))).map(([t, label]) => (
           <button key={t} onClick={() => setType(t)}
                   className={`px-1.5 py-0.5 rounded text-[10px] ${f.type === t ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)] font-bold' : 'bg-[rgba(235,235,236,0.06)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]'}`}>
             {label}
@@ -190,11 +191,48 @@ const PaintEditor: React.FC<{ f: FillLayer; onChange: (p: Partial<FillLayer>) =>
 
 // ---------------------------------------------------------------- strokes
 
+// The sides a stroke is drawn on: click an edge of the little box to turn it
+// on or off. All four is the ordinary ring.
+const SidesPicker: React.FC<{ sides?: StrokeLayer['sides']; onChange: (s: StrokeLayer['sides']) => void }> = ({ sides, onChange }) => {
+  const cur = sides || { top: true, right: true, bottom: true, left: true };
+  const flip = (k: keyof typeof cur) => {
+    const next = { ...cur, [k]: !cur[k] };
+    if (!next.top && !next.right && !next.bottom && !next.left) return;      // keep at least one
+    onChange(next.top && next.right && next.bottom && next.left ? undefined : next);
+  };
+  const edge = (k: keyof typeof cur, x1: number, y1: number, x2: number, y2: number) => (
+    <g key={k} onClick={() => flip(k)} className="cursor-pointer">
+      <title>{`${k[0].toUpperCase()}${k.slice(1)} - click to ${cur[k] ? 'leave out' : 'draw'}`}</title>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={7} />
+      <line x1={x1} y1={y1} x2={x2} y2={y2} strokeWidth={2.5} strokeLinecap="round"
+            stroke={cur[k] ? '#31C3F3' : 'rgba(235,235,236,0.22)'} />
+    </g>
+  );
+  return (
+    <svg width="26" height="26" viewBox="0 0 26 26" className="shrink-0 rounded bg-[rgba(235,235,236,0.04)] border border-[rgba(235,235,236,0.08)]">
+      {edge('top', 6, 4, 20, 4)}{edge('right', 22, 6, 22, 20)}{edge('bottom', 6, 22, 20, 22)}{edge('left', 4, 6, 4, 20)}
+    </svg>
+  );
+};
+
+// A stroke as the paint editor sees it (a fill with only solid / gradients).
+const asPaint = (s: StrokeLayer): FillLayer => ({
+  id: s.id, type: s.paint || 'solid', color: s.color, opacity: s.opacity, visible: true, blendMode: s.blendMode, gradient: s.gradient
+});
+const fromPaint = (p: Partial<FillLayer>): Partial<StrokeLayer> => ({
+  ...(p.type ? { paint: p.type === 'solid' ? undefined : p.type as StrokeLayer['paint'] } : {}),
+  ...(p.color !== undefined ? { color: p.color } : {}),
+  ...(p.gradient !== undefined ? { gradient: p.gradient } : {}),
+  ...(p.blendMode !== undefined ? { blendMode: p.blendMode } : {})
+});
+
 export const StrokesSection: React.FC<{ element: UIElement; update: (s: Partial<ElementStyle>) => void }> = ({ element, update }) => {
+  const [open, setOpen] = useState<string | null>(null);
   const strokes = strokesOf(element);
+  const boxy = hasSides(element);
   // one plain inside stroke stays the simple border; more are a list
   const save = (next: StrokeLayer[]) => {
-    const one = next.length === 1 && next[0].visible && next[0].opacity >= 1 && next[0].position === 'inside' && !blended(next[0]);
+    const one = next.length === 1 && next[0].visible && next[0].opacity >= 1 && next[0].position === 'inside' && !blended(next[0]) && isPlainStroke(next[0]);
     if (!next.length) update({ strokes: undefined, borderWidth: 0 });
     else if (one) update({ strokes: undefined, borderWidth: next[0].width, borderColor: next[0].color, borderStyle: next[0].style });
     else update({ strokes: next, borderWidth: 0 });
@@ -203,11 +241,15 @@ export const StrokesSection: React.FC<{ element: UIElement; update: (s: Partial<
   return (
     <Section title="Stroke" addTitle="Add a stroke on top"
              onAdd={() => save([{ id: uid(), color: '#ebebec', width: 1, position: 'inside', style: 'solid', opacity: 1, visible: true }, ...strokes])}>
-      {strokes.map(s => (
+      {strokes.map((s, i) => (
         <div key={s.id} className={`space-y-1 ${s.visible ? '' : 'opacity-45'}`}>
           <div className="flex items-center gap-1.5">
-            <input type="color" value={hex6(s.color)} onChange={e => patch(s.id, { color: e.target.value })} className="w-6 h-6 rounded cursor-pointer bg-transparent shrink-0" />
-            <input value={s.color} onChange={e => patch(s.id, { color: e.target.value })} className="flex-1 min-w-0 bg-transparent text-[rgb(235,235,236)] font-mono text-xs outline-none" />
+            <button onClick={() => setOpen(open === s.id ? null : s.id)} title="Edit this stroke's paint (solid or gradient)"
+                    className="w-6 h-6 rounded border border-[rgba(235,235,236,0.2)] shrink-0"
+                    style={fillsCss([{ ...asPaint(s), blendMode: 'normal' }])} />
+            {s.paint === 'linear' || s.paint === 'radial'
+              ? <button onClick={() => setOpen(open === s.id ? null : s.id)} className="flex-1 text-left text-xs text-[rgb(235,235,236)]">{LABEL[s.paint]}</button>
+              : <input value={s.color} onChange={e => patch(s.id, { color: e.target.value })} className="flex-1 min-w-0 bg-transparent text-[rgb(235,235,236)] font-mono text-xs outline-none" />}
             <div className="flex items-center w-14 bg-[rgba(235,235,236,0.04)] rounded px-1 border border-[rgba(235,235,236,0.08)]" title="Opacity">
               <NumberInput min={0} max={100} value={Math.round(s.opacity * 100)} onChange={e => patch(s.id, { opacity: Number(e.target.value) / 100 })}
                            className="w-full bg-transparent text-[rgb(235,235,236)] font-mono text-[11px] outline-none text-right" />
@@ -221,6 +263,12 @@ export const StrokesSection: React.FC<{ element: UIElement; update: (s: Partial<
             </button>
             <button onClick={() => save(strokes.filter(x => x.id !== s.id))} className={iconBtn} title="Remove"><Icons.Minus size={12} /></button>
           </div>
+          {open === s.id && (
+            <PaintEditor f={asPaint(s)} onChange={p => patch(s.id, fromPaint(p))} letters={false} types={['solid', 'linear', 'radial']}
+                         preview={p => useProjectStore.setState({ stylePreview: p ? { ids: [element.id], style: { strokes: strokes.map(x => x.id === s.id ? { ...x, ...fromPaint(p) } : x) } } : null })}
+                         canUp={i > 0} canDown={i < strokes.length - 1}
+                         move={(dir) => { const n = [...strokes]; const j = i + dir; [n[i], n[j]] = [n[j], n[i]]; save(n); }} />
+          )}
           <div className="flex items-center gap-1.5 pl-7">
             <select value={s.position} onChange={e => patch(s.id, { position: e.target.value as StrokeLayer['position'] })} className={sel} title="Where the stroke sits on the edge">
               <option value="inside" className="bg-[rgb(20,20,19)]">Inside</option>
@@ -238,6 +286,29 @@ export const StrokesSection: React.FC<{ element: UIElement; update: (s: Partial<
               <option value="dotted" className="bg-[rgb(20,20,19)]">Dotted</option>
             </select>
           </div>
+          {boxy && (
+            <div className="flex items-center gap-1.5 pl-7">
+              <SidesPicker sides={s.sides} onChange={sides => patch(s.id, { sides })} />
+              <div className="flex items-center w-16 bg-[rgba(235,235,236,0.04)] rounded px-1 border border-[rgba(235,235,236,0.08)]"
+                   title="This stroke's own corner rounding where two of its sides meet. Empty: the shape's corners">
+                <Icons.CornerUpRight size={10} className="text-[rgba(235,235,236,0.4)] shrink-0" />
+                <NumberInput min={0} value={s.radius ?? ''} placeholder="auto"
+                             onChange={e => patch(s.id, { radius: e.target.value === '' ? undefined : Number(e.target.value) })}
+                             className="w-full bg-transparent text-[rgb(235,235,236)] font-mono text-[11px] outline-none text-right placeholder:text-[rgba(235,235,236,0.35)]" />
+              </div>
+              {s.radius !== undefined && (
+                <button onClick={() => patch(s.id, { radius: undefined })} className={iconBtn} title="Back to the shape's corners"><Icons.X size={10} /></button>
+              )}
+              {s.sides && (
+                <select value={s.cap || 'butt'} onChange={e => patch(s.id, { cap: e.target.value === 'butt' ? undefined : e.target.value as StrokeLayer['cap'] })}
+                        className={`${sel} flex-1`} title="How the ends of the stroke look">
+                  <option value="butt" className="bg-[rgb(20,20,19)]">Flat ends</option>
+                  <option value="round" className="bg-[rgb(20,20,19)]">Round ends</option>
+                  <option value="square" className="bg-[rgb(20,20,19)]">Square ends</option>
+                </select>
+              )}
+            </div>
+          )}
         </div>
       ))}
     </Section>

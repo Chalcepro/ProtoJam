@@ -5,6 +5,7 @@ import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
 import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
 import { isContainer } from '../../lib/tree';
 import { ContainerBox, clipCss } from '../canvas/ContainerBox';
+import { ExtrudeArt, SideStrokes } from '../canvas/StrokeArt';
 import type { AutoLayoutSettings } from '../../types/components';
 import { UIElement } from '../../types/components';
 import confetti from 'canvas-confetti';
@@ -156,6 +157,7 @@ export const PrototypePlayerModal: React.FC = () => {
         onMouseDown={(e) => { e.stopPropagation(); setPressedElementId(element.id); }}
         onMouseUp={() => setPressedElementId(prev => prev === element.id ? null : prev)}
       >
+        <ExtrudeArt element={element} />
         {isContainer(element) && (element.style.booleanOp || element.style.frameShape) ? (
           <>
             <ContainerBox el={element} elements={elements} interactive />
@@ -185,6 +187,8 @@ export const PrototypePlayerModal: React.FC = () => {
             onTriggerInteraction={handleTriggerInteraction}
           />
         )}
+
+        <SideStrokes element={element} />
 
         {/* Hotspot Click Hint Flash Indicator */}
         {showHintFlash && hasInteractions && (
