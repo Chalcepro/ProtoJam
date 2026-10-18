@@ -58,7 +58,17 @@ export const FlowControls: React.FC<{ id: string; al: AutoLayoutSettings; set: (
             ? <Icons.BetweenVerticalStart size={12} className="text-[rgba(235,235,236,0.45)] shrink-0" />
             : <Icons.BetweenHorizontalStart size={12} className="text-[rgba(235,235,236,0.45)] shrink-0" />}
           <span className="text-[10px] text-[rgba(235,235,236,0.45)] shrink-0">Gap</span>
-          <NumberInput value={al.gap} onChange={e => set({ gap: Number(e.target.value) })} className={num} />
+          <NumberInput stickySign value={al.gap}
+                       onChange={e => { const g = Number(e.target.value); set(g < 0 && !al.stack ? { gap: g, stack: 'first' } : { gap: g }); }}
+                       className={num} />
+          {al.gap < 0 && (
+            // overlapping: which one is on top
+            <button onClick={(ev) => { ev.preventDefault(); set({ stack: al.stack === 'last' ? 'first' : 'last' }); }}
+                    title={al.stack === 'last' ? 'Each one over the one before - click: under it' : 'Each one under the one before - click: over it'}
+                    className="shrink-0 p-0.5 rounded hover:bg-[rgba(235,235,236,0.1)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]">
+              {al.stack === 'last' ? <Icons.BringToFront size={12} /> : <Icons.SendToBack size={12} />}
+            </button>
+          )}
           {al.wrap && al.direction === 'horizontal' && (
             <>
               <span className="text-[10px] text-[rgba(235,235,236,0.45)] shrink-0">Rows</span>

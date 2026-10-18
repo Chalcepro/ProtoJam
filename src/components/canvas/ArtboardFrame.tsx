@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useRef } from 'react';
 import { DeviceFrame, UIElement } from '../../types/components';
 import { ElementNode } from './ElementNode';
-import { flexLayoutCss } from '../../lib/styleCss';
+import { flexLayoutCss, stackLayer } from '../../lib/styleCss';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
@@ -278,7 +278,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
             key={element.id}
             element={element}
             parentLayout={autoLayout}
-            layer={layer}
+            layer={stackLayer(layer, frameElements.length, autoLayout)}
             boxInside={false}
             frameId={frame.id}
             onPress={(el, e) => {

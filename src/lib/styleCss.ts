@@ -62,7 +62,18 @@ export const flexLayoutCss = (al: AutoLayoutSettings): React.CSSProperties => al
   alignItems: ({ start: 'start', center: 'center', end: 'end' } as const)[al.alignCross || 'start'],
   paddingTop: al.padding?.top, paddingRight: al.padding?.right,
   paddingBottom: al.padding?.bottom, paddingLeft: al.padding?.left
-} : ({
+} : al.gap < 0 && !al.wrap ? ({
+  display: 'flex',
+  flexDirection: al.direction === 'horizontal' ? 'row' : 'column',
+  flexWrap: 'nowrap',
+  gap: 0,
+  justifyContent: ({ start: 'flex-start', center: 'center', end: 'flex-end', spaceBetween: 'space-between' } as const)[al.align] || 'flex-start',
+  alignItems: ({ start: 'flex-start', center: 'center', end: 'flex-end' } as const)[al.alignCross || 'start'],
+  paddingTop: (al.padding?.top || 0) - (al.direction === 'vertical' ? al.gap : 0),
+  paddingRight: al.padding?.right,
+  paddingBottom: al.padding?.bottom,
+  paddingLeft: (al.padding?.left || 0) - (al.direction === 'horizontal' ? al.gap : 0)
+}) : ({
   display: 'flex',
   flexDirection: al.direction === 'horizontal' ? 'row' : 'column',
   flexWrap: al.wrap ? 'wrap' : 'nowrap',
@@ -90,6 +101,8 @@ export const nodeSize = (el: UIElement, parentLayout: AutoLayoutSettings | null)
     if (el.style.layoutSizingV === 'fill') Object.assign(size, { height: 'auto', alignSelf: 'stretch' });
   } else if (parentLayout && !el.style.absolutePosition) {
     const row = parentLayout.direction === 'horizontal';
+    // a negative gap: pulled back over (or under) the one before
+    if (parentLayout.gap < 0 && !parentLayout.wrap) size[row ? 'marginLeft' : 'marginTop'] = parentLayout.gap;
     const fillMain = row ? el.style.layoutSizingH === 'fill' : el.style.layoutSizingV === 'fill';
     const fillCross = row ? el.style.layoutSizingV === 'fill' : el.style.layoutSizingH === 'fill';
     if (fillMain) Object.assign(size, { flex: '1 1 0', [row ? 'width' : 'height']: 'auto', [row ? 'minWidth' : 'minHeight']: 0 });
@@ -97,3 +110,8 @@ export const nodeSize = (el: UIElement, parentLayout: AutoLayoutSettings | null)
   }
   return size;
 };
+
+// The stacking place of the i-th of n things in a frame: in layer order, or -
+// with 'first on top', for things overlapping under a negative gap - reversed.
+export const stackLayer = (i: number, n: number, layout: AutoLayoutSettings | null | undefined) =>
+  layout?.enabled && layout.stack === 'first' ? n - 1 - i : i;

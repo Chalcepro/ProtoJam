@@ -42,12 +42,13 @@ const measure = (id: string, part: 'gap' | 'padding'): R[] => {
   };
   if (al.direction === 'vertical') {
     const s = [...kids].sort((a, b) => a.top - b.top);
-    s.slice(1).forEach((r, i) => out.push({ x: inL, y: s[i].bottom, w: inR - inL, h: r.top - s[i].bottom, label: String(al.gap) }));
+    // a negative gap is the overlap between them
+    s.slice(1).forEach((r, i) => out.push({ x: inL, y: Math.min(s[i].bottom, r.top), w: inR - inL, h: Math.abs(r.top - s[i].bottom), label: String(al.gap) }));
   } else {
     const rows = rowsOf();
     for (const row of rows) row.slice(1).forEach((r, i) => {
       const top = Math.min(r.top, row[i].top), bottom = Math.max(r.bottom, row[i].bottom);
-      out.push({ x: row[i].right, y: top, w: r.left - row[i].right, h: bottom - top, label: String(al.gap) });
+      out.push({ x: Math.min(row[i].right, r.left), y: top, w: Math.abs(r.left - row[i].right), h: bottom - top, label: String(al.gap) });
     });
     // between rows (a grid, or a row that wraps)
     rows.slice(1).forEach((row, i) => {

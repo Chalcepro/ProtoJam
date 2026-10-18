@@ -132,6 +132,9 @@ export interface AutoLayoutSettings {
   gap: number;
   columns?: number;
   rowGap?: number;
+  // With a negative gap things overlap: 'first' = each one goes under the
+  // one before it (the default then), 'last' = over it.
+  stack?: 'first' | 'last';
   padding: { top: number; right: number; bottom: number; left: number };
   align: 'start' | 'center' | 'end' | 'spaceBetween';      // along the row / column
   // across it (Figma's 9-point grid with align): start = top of a row / left of a column

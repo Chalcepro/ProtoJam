@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { SemanticElementRenderer } from '../canvas/SemanticElementRenderer';
-import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
+import { flexLayoutCss, nodeSize, rotateCss, stackLayer } from '../../lib/styleCss';
 import { isContainer } from '../../lib/tree';
 import { ContainerBox, clipCss } from '../canvas/ContainerBox';
 import { ExtrudeArt, SideStrokes } from '../canvas/StrokeArt';
@@ -163,7 +163,7 @@ export const PrototypePlayerModal: React.FC = () => {
             <ContainerBox el={element} elements={elements} interactive />
             {element.style.frameShape && (
               <div style={{ position: 'relative', width: '100%', height: '100%', ...clipCss(element), ...(own ? flexLayoutCss(own) : {}) }}>
-                {kids.map((k, i) => renderNode(k, i, own))}
+                {kids.map((k, i) => renderNode(k, stackLayer(i, kids.length, own), own))}
               </div>
             )}
           </>
@@ -175,7 +175,7 @@ export const PrototypePlayerModal: React.FC = () => {
             </div>
             <div style={{ position: 'relative', width: own?.sizingH === 'hug' ? 'max-content' : '100%', height: own?.sizingV === 'hug' ? 'max-content' : '100%',
                           ...clipCss(element), ...(own ? flexLayoutCss(own) : {}) }}>
-              {kids.map((k, i) => renderNode(k, i, own))}
+              {kids.map((k, i) => renderNode(k, stackLayer(i, kids.length, own), own))}
             </div>
           </>
         ) : (

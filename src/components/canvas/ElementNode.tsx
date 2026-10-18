@@ -7,7 +7,7 @@ import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { ContainerBox, clipCss } from './ContainerBox';
 import { TransformSelectionBox } from './TransformSelectionBox';
 import { ExtrudeArt, SideStrokes } from './StrokeArt';
-import { flexLayoutCss, nodeSize, rotateCss } from '../../lib/styleCss';
+import { flexLayoutCss, nodeSize, rotateCss, stackLayer } from '../../lib/styleCss';
 import { isContainer, pickTarget, stepInto } from '../../lib/tree';
 import { measured } from '../../store/useProjectStore';
 
@@ -129,7 +129,7 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
             }}
           >
             {kids.map((k, i) => (
-              <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={i} onPress={onPress}
+              <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={stackLayer(i, kids.length, ownLayout)} onPress={onPress}
                            boxInside={boxInside || flow} frameId={frameId} ghost={ghost || bool} />
             ))}
           </div>

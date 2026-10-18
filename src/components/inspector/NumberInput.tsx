@@ -20,7 +20,16 @@ import { startGesture } from '../../lib/gesture';
 type Props = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type' | 'value'> & {
   value: number | string | undefined | null;
   signed?: boolean;
+  // A sign that sticks (gaps): any value can be typed, but dragging or the
+  // arrow keys never cross zero by accident - from a positive value they stop
+  // at 1, from a negative one at -1. Only from 0 can they go either way. To
+  // go negative, type -1.
+  stickySign?: boolean;
 };
+
+// the range a drag / arrow key may move in, given where it started
+const signRange = (start: number, lo?: number, hi?: number): [number | undefined, number | undefined] =>
+  start > 0 ? [Math.max(lo ?? 1, 1), hi] : start < 0 ? [lo, Math.min(hi ?? -1, -1)] : [lo, hi];
 
 // What the keys do while scrubbing - at the canvas's bottom right corner,
 // next to the right panel.
@@ -42,11 +51,11 @@ const ScrubHint: React.FC<{ fine: boolean; fast: boolean }> = ({ fine, fast }) =
   );
 };
 
-export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur, onKeyDown, min, max, signed, ...rest }) => {
+export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur, onKeyDown, min, max, signed, stickySign, ...rest }) => {
   const [text, setText] = useState<string | null>(null);     // null: not being edited
   const fallback = value === undefined || value === null || (typeof value === 'number' && Number.isNaN(value))
     ? '' : String(value);
-  const lo = min !== undefined ? Number(min) : signed ? undefined : 0;
+  const lo = min !== undefined ? Number(min) : signed || stickySign ? undefined : 0;
   const [hint, setHint] = useState<{ fine: boolean; fast: boolean } | null>(null);
   const hi = max !== undefined ? Number(max) : undefined;
   const step = Number(rest.step) || 1;
@@ -60,6 +69,7 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
     // added up move by move, so pressing or letting go of a key mid-drag
     // changes the speed from there on, never jumps
     let acc = Number(fallback) || 0, lastX = x0;
+    const [sLo, sHi] = stickySign ? signRange(acc, lo, hi) : [lo, hi];
     let moved = false;
     const move = (ev: PointerEvent) => {
       if (!moved && Math.abs(ev.clientX - x0) < 3) return;
@@ -69,8 +79,8 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
       setHint(h => h && h.fine === fine && h.fast === fast ? h : { fine, fast });
       acc += (ev.clientX - lastX) * step * (fine ? 0.1 : fast ? 10 : 1);
       lastX = ev.clientX;
-      if (lo !== undefined) acc = Math.max(lo, acc);
-      if (hi !== undefined) acc = Math.min(hi, acc);
+      if (sLo !== undefined) acc = Math.max(sLo, acc);
+      if (sHi !== undefined) acc = Math.min(sHi, acc);
       const n = Number(acc.toFixed(decimals + (fine ? 1 : 0)));
       onChange?.({ target: { value: String(n) }, currentTarget: { value: String(n) } } as unknown as React.ChangeEvent<HTMLInputElement>);
     };
@@ -106,6 +116,17 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
       onKeyDown={(e) => {
         if (lo !== undefined && lo >= 0 && (e.key === '-' || e.key === 'e' || e.key === 'E')) e.preventDefault();
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        // arrow keys step without crossing zero, as dragging does
+        if (stickySign && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+          e.preventDefault();
+          const v = Number(text ?? fallback) || 0;
+          const [a, b] = signRange(v, lo, hi);
+          let n = v + (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);
+          if (a !== undefined) n = Math.max(a, n);
+          if (b !== undefined) n = Math.min(b, n);
+          setText(String(n));
+          onChange?.({ target: { value: String(n) }, currentTarget: { value: String(n) } } as unknown as React.ChangeEvent<HTMLInputElement>);
+        }
         onKeyDown?.(e);
       }}
       onChange={(e) => {
