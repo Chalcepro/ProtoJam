@@ -120,7 +120,7 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Double-click, Enter or Ctrl+A on a text | Edit it (all text selected) |
 | Click an already-selected text | Edit it |
 | Esc | Stop editing |
-| Ctrl+B | Bold (selected text layers, or the one you are typing in) |
+| Ctrl+B | Bold: the words selected while typing, else the whole selected text layers |
 | Ctrl+I | Italic |
 | Ctrl+U | Underline |
 | Ctrl+Shift+X | Strikethrough |

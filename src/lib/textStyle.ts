@@ -1,9 +1,11 @@
 import { useProjectStore } from '../store/useProjectStore';
 import { familyOf, findFont } from './fonts';
 import type { ElementStyle, UIElement } from '../types/components';
+import { dropFromRuns, look, runsIn, runsOf, styleSelection, textSel } from './richText';
 
-// Bold, italic, underline and strikethrough on whole text layers (anything
-// with a label: text, headings, buttons...). Ctrl+B / I / U and Ctrl+Shift+X,
+// Bold, italic, underline and strikethrough: on the words selected while
+// typing (rich text), else on whole text layers (anything with a label:
+// text, headings, buttons...). Ctrl+B / I / U and Ctrl+Shift+X,
 // and the B I U S buttons in Typography. As in Figma: if any of them is not
 // yet bold, all become bold; if all are, none are.
 
@@ -29,10 +31,26 @@ const hasText = (e: UIElement) => e.semanticProps?.label !== undefined;
 // whatever else uses it.
 export const toggleText = (ids: string[], t: TextToggle): boolean => {
   const st = useProjectStore.getState();
+  // words selected in one text: just them
+  const sel = textSel();
+  if (sel && ids.includes(sel.id)) {
+    const el = st.elements.find(e => e.id === sel.id)!;
+    const on = !runsIn(runsOf(el), sel.start, sel.end).every(r => isOn(look(r, el.style) as ElementStyle, t));
+    return styleSelection((r, e) => {
+      const cur = look(r, e.style) as ElementStyle;
+      if (t === 'bold') return { fontWeight: weightFor(cur, on ? 700 : 400) };
+      if (t === 'italic') return { fontStyle: on ? 'italic' : 'normal' };
+      const l = lines(cur);
+      if (on) l.add(LINE[t]); else l.delete(LINE[t]);
+      return { textDecoration: l.size ? [...l].join(' ') : 'none' };
+    });
+  }
   const els = st.elements.filter(e => ids.includes(e.id) && hasText(e));
   if (!els.length) return false;
   const on = !els.every(e => isOn(e.style, t));
   for (const e of els) {
+    // the whole layer: no word keeps its own value of it
+    dropFromRuns(e.id, t === 'bold' ? ['fontWeight'] : t === 'italic' ? ['fontStyle'] : ['textDecoration']);
     if (t === 'bold') st.updateElementStyle(e.id, { fontWeight: weightFor(e.style, on ? 700 : 400) });
     else if (t === 'italic') st.updateElementStyle(e.id, { fontStyle: on ? 'italic' : undefined });
     else {

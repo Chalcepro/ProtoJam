@@ -10,6 +10,7 @@ import { BlendPicker } from './BlendPicker';
 import { PaddingFields } from './PaddingFields';
 import { shared, withMulti } from '../../lib/multiEdit';
 import { isOn, toggleText, type TextToggle } from '../../lib/textStyle';
+import { clearTextSel, dropFromRuns, look, runsIn, runsOf, styleSelection, useTextSel, type RunStyle } from '../../lib/richText';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
@@ -410,6 +411,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   const elNum = (k: 'width' | 'height' | 'rotation' | 'opacity', own: number) =>
     groupEls.length ? shared(groupEls.map(e => Number(e.style[k] ?? (k === 'opacity' ? 1 : 0)))) : own;
   const minOf = (vals: number[], own: number) => (vals.length ? Math.min(...vals) : own);
+  // words selected in this text (rich text): Typography shows and styles just them
+  const tsel = useTextSel((s) => (s.sel && s.sel.id === element?.id && s.sel.end > s.sel.start ? s.sel : null));
 
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
@@ -732,6 +735,13 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   });
 
   const textFill = (element!.type === 'text' || element!.type === 'heading') && !style.autoLayout?.enabled;
+  // Typography reads and writes the selected words when there are some, else the layer
+  const ts = (tsel ? { ...style, ...look(runsIn(runsOf(element!), tsel.start, tsel.start + 1)[0] || {}, style) } : style) as typeof style;
+  const typo = (patch: RunStyle) => {
+    if (tsel && styleSelection(() => ({ ...patch }))) return;
+    dropFromRuns(element!.id, Object.keys(patch) as (keyof RunStyle)[]);
+    updateElementStyle(element!.id, patch as Partial<typeof style>);
+  };
   const fillKey: 'fillColor' | 'textColor' = textFill ? 'textColor' : 'fillColor';
 
   // In an auto-layout frame, W and H each say Fixed, Hug (text) or Fill.
@@ -1186,14 +1196,24 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             Typography
           </div>
           <div className="space-y-2">
+            {tsel && (
+              <div className="flex items-center gap-2 text-[11px] text-[#31C3F3] bg-[rgba(49,195,243,0.1)] rounded-lg px-2.5 py-1.5">
+                <span className="truncate flex-1">Styling the selected words: “{tsel.text.length > 28 ? tsel.text.slice(0, 28) + '…' : tsel.text}”</span>
+                <input type="color" title="Colour of the selected words"
+                       value={toHex(parseColorToRgba(ts.textColor || '#141413'))}
+                       onChange={(e) => typo({ textColor: e.target.value })}
+                       className="w-5 h-5 rounded cursor-pointer bg-transparent shrink-0" />
+                <button onClick={clearTextSel} title="Back to styling the whole text" className="shrink-0 hover:text-[rgb(235,235,236)]"><Icons.X size={12} /></button>
+              </div>
+            )}
             <FontPicker
-              value={style.fontFamily || '"Inter", sans-serif'}
+              value={ts.fontFamily || '"Inter", sans-serif'}
               onPreview={(f) => previewStyle(f ? { fontFamily: fontStack(f) } : null)}
               onPick={(f) => {
                 // keep the weight if the new font has it, else its nearest
-                const w = Number(style.fontWeight) || 400;
+                const w = Number(ts.fontWeight) || 400;
                 const near = f.weights.length ? f.weights.reduce((a, b) => Math.abs(b - w) < Math.abs(a - w) ? b : a) : w;
-                updateElementStyle(element!.id, { fontFamily: fontStack(f), fontWeight: near });
+                typo({ fontFamily: fontStack(f), fontWeight: near });
               }}
             />
 
@@ -1201,8 +1221,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
                 <span className="text-[rgba(235,235,236,0.4)] mr-1.5 text-[10px]">Size</span>
                 <NumberInput min={1}
-                  value={style.fontSize || 16}
-                  onChange={(e) => updateElementStyle(element!.id, { fontSize: Number(e.target.value) })}
+                  value={ts.fontSize || 16}
+                  onChange={(e) => typo({ fontSize: Number(e.target.value) })}
                   className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
                 />
               </div>
@@ -1228,8 +1248,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               </label>
               <label className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Letter spacing (px)">
                 <Icons.MoveHorizontal size={11} className="text-[rgba(235,235,236,0.4)] mr-1.5 shrink-0" />
-                <NumberInput signed value={style.letterSpacing ?? 0} step="0.1"
-                             onChange={(e) => updateElementStyle(element!.id, { letterSpacing: Number(e.target.value) })}
+                <NumberInput signed value={ts.letterSpacing ?? 0} step="0.1"
+                             onChange={(e) => typo({ letterSpacing: Number(e.target.value) })}
                              className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
               </label>
             </div>
@@ -1259,7 +1279,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                  ['underline', 'Underline (Ctrl+U)', Icons.Underline], ['strike', 'Strikethrough (Ctrl+Shift+X)', Icons.Strikethrough]] as [TextToggle, string, typeof Icons.Bold][]).map(([t, label, Ic]) => (
                 <button key={t} title={label}
                         onClick={() => toggleText(groupEls.length ? groupEls.map(e => e.id) : [element!.id], t)}
-                        className={`flex-1 flex justify-center py-1 rounded ${isOn(style, t) ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'}`}>
+                        className={`flex-1 flex justify-center py-1 rounded ${isOn(ts, t) ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'}`}>
                   <Ic size={12} />
                 </button>
               ))}
@@ -1268,11 +1288,11 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             {/* Font Weight & Alignment */}
             <div className="grid grid-cols-2 gap-2">
               <WeightPicker
-                family={style.fontFamily}
-                weights={findFont(familyOf(style.fontFamily))?.weights || [100, 200, 300, 400, 500, 600, 700, 800, 900]}
-                value={Number(style.fontWeight) || 400}
+                family={ts.fontFamily}
+                weights={findFont(familyOf(ts.fontFamily))?.weights || [100, 200, 300, 400, 500, 600, 700, 800, 900]}
+                value={Number(ts.fontWeight) || 400}
                 onPreview={(w) => previewStyle(w ? { fontWeight: w } : null)}
-                onPick={(w) => updateElementStyle(element!.id, { fontWeight: w })}
+                onPick={(w) => typo({ fontWeight: w })}
               />
 
               <div className="flex items-center justify-around bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.08)] px-1">

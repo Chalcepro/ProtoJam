@@ -342,7 +342,7 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
    ],
    [
     "Ctrl+B",
-    "Bold (selected text layers, or the one you are typing in)"
+    "Bold: the words selected while typing, else the whole selected text layers"
    ],
    [
     "Ctrl+I",

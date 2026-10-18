@@ -47,7 +47,11 @@ const TYPES = [
   'metricCard', 'rating', 'skeleton', 'stickyNote', 'annotation'
 ];
 
-const STYLE_HELP = `style: any ProtoJam ElementStyle keys, e.g. fillColor "#ffd23f", textColor, fontFamily "Inter", fontSize, fontWeight 700,
+const RUNS = z.array(z.object({ text: z.string(), fontWeight: z.number().optional(), fontStyle: z.enum(['normal', 'italic']).optional(),
+  textDecoration: z.string().optional(), textColor: z.string().optional(), fontSize: z.number().optional(),
+  fontFamily: z.string().optional(), letterSpacing: z.number().optional() })).optional()
+  .describe('rich text instead of text: pieces in order, each with only what differs from the layer, e.g. [{text:"Pay "},{text:"N2,000",fontWeight:800,textColor:"#ff3e8a"}]');
+const STYLE_HELP = `style: any ProtoJam ElementStyle keys, e.g. fillColor "#ffd23f", textColor, fontFamily "Inter", fontSize, fontWeight 700, fontStyle "italic", textDecoration "underline",
 lineHeight, letterSpacing, textAlign, borderRadius (number or {tl,tr,br,bl}), opacity 0-1, rotation,
 layoutSizingH / layoutSizingV ("fixed" | "hug" | "fill" inside an auto-layout parent), absolutePosition,
 fills [{id,type:"solid"|"linear"|"radial",color,gradient:{angle,stops:[{offset,color}]},opacity,visible:true}],
@@ -90,13 +94,13 @@ Types: ${TYPES.join(', ')}.
 text sets the visible text (headings, text, button labels). ${STYLE_HELP}
 autoLayout turns a container into a Figma-style auto layout frame.`,
   { type: z.string(), parentId: z.string().describe('screen id or container id'), x: z.number().optional(), y: z.number().optional(),
-    width: z.number().optional(), height: z.number().optional(), name: z.string().optional(), text: z.string().optional(),
+    width: z.number().optional(), height: z.number().optional(), name: z.string().optional(), text: z.string().optional(), runs: RUNS,
     style: z.record(z.string(), z.any()).optional(), props: z.record(z.string(), z.any()).optional().describe('component props: placeholder, value, checked, variant, iconName...'),
     autoLayout: AUTO.optional() },
   async (a) => asText(await call('create_element', a)));
 
 tool('update_element', `Change a layer: style (merged into its style), text, props, name, autoLayout (false removes it). ${STYLE_HELP}`,
-  { id: z.string(), name: z.string().optional(), text: z.string().optional(), style: z.record(z.string(), z.any()).optional(),
+  { id: z.string(), name: z.string().optional(), text: z.string().optional(), runs: RUNS, style: z.record(z.string(), z.any()).optional(),
     props: z.record(z.string(), z.any()).optional(), autoLayout: z.union([AUTO, z.literal(false)]).optional() },
   async (a) => asText(await call('update_element', a)));
 

@@ -5,6 +5,7 @@ import { SvgPaint } from './SvgPaint';
 import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
 import { vectorAllD, vectorRegions } from '../../lib/boolean';
 import { isPlainStroke } from '../../lib/strokeArt';
+import { clearTextSel, fillEditor, normalize, readRuns, registerEditor, runCss, runsOf, selectionOffsets, setSelectionOffsets, useTextSel } from '../../lib/richText';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -76,13 +77,28 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
   useLayoutEffect(() => {
     const el = textRef.current;
     if (!isText || !isInlineEditing || isInteractive || !el) return;
-    el.innerText = semanticProps.label || '';
+    fillEditor(el, runsOf(element));
     el.focus();
     const range = document.createRange();
     range.selectNodeContents(el);
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(range);
+    // the words selected while typing: Ctrl+B and the Typography panel style just them
+    const track = () => {
+      const o = selectionOffsets(el);
+      if (!o) return;
+      const text = readRuns(el).map(r => r.text).join('');
+      useTextSel.setState({ sel: o.end > o.start ? { id: element.id, ...o, text: text.slice(o.start, o.end) } : null });
+    };
+    document.addEventListener('selectionchange', track);
+    // a change made from outside (Ctrl+B, the panel): redrawn, selection kept
+    const off = registerEditor(element.id, (runs, start, end) => {
+      const keep = start === undefined ? selectionOffsets(el) : { start, end: end ?? start };
+      fillEditor(el, runs);
+      if (keep) setSelectionOffsets(el, keep.start, keep.end);
+    });
+    return () => { document.removeEventListener('selectionchange', track); off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isInlineEditing]);
 
@@ -388,8 +404,13 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
             ref={textRef}
             contentEditable="plaintext-only"
             suppressContentEditableWarning
-            onInput={(e) => updateElementSemanticProps(element.id, { label: e.currentTarget.innerText })}
+            onInput={(e) => {
+              const runs = readRuns(e.currentTarget);
+              updateElementSemanticProps(element.id, { label: runs.map(r => r.text).join(''), runs: normalize(runs) });
+            }}
             onBlur={(e) => {
+              // clicking into the side panel keeps the selected words, for Typography
+              if (!(e.relatedTarget as HTMLElement | null)?.closest?.('aside')) clearTextSel();
               setInlineEditingElementId(null);
               // as in Figma, text left empty goes away
               if (!e.currentTarget.innerText.trim()) deleteElement(element.id);
@@ -424,7 +445,9 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
           {element.isInstance && (
             <span className="text-[10px] text-[rgb(235,235,236)] mr-1 opacity-60">◇</span>
           )}
-          {semanticProps.label ? semanticProps.label : (
+          {semanticProps.label ? (semanticProps.runs
+            ? runsOf(element).map((r, i) => <span key={i} style={runCss(r)}>{r.text}</span>)
+            : semanticProps.label) : (
             <span className="italic opacity-40 select-none">Type something...</span>
           )}
         </div>

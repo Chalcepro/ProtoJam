@@ -64,6 +64,8 @@ const applyLook = (id: string, a: Record<string, any>) => {
   if (a.style) st.updateElementStyle(id, a.style);
   if (a.text !== undefined) st.updateElementSemanticProps(id, { label: String(a.text) });
   if (a.props) st.updateElementSemanticProps(id, a.props);
+  // rich text: the plain label is always the pieces joined
+  if (Array.isArray(a.runs)) st.updateElementSemanticProps(id, { label: a.runs.map((r: { text: string }) => r.text).join(''), runs: a.runs });
   if (a.name) st.updateElement(id, { name: String(a.name) });
   if (a.autoLayout) applyAutoLayout(id, a.autoLayout);
 };

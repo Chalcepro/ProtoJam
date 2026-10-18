@@ -309,8 +309,23 @@ export interface ElementStyle {
   isMask?: boolean;
 }
 
+// A piece of a rich text layer: its text, and only what differs from the
+// layer's own style (see src/lib/richText.ts).
+export interface TextRun {
+  text: string;
+  fontWeight?: number;
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: string;
+  textColor?: string;
+  fontSize?: number;
+  fontFamily?: string;
+  letterSpacing?: number;
+}
+
 export interface SemanticProperties {
   label?: string;
+  // rich text: the label cut into differently styled pieces (unset: one style)
+  runs?: TextRun[];
   placeholder?: string;
   value?: string | number | boolean;
   checked?: boolean;
