@@ -7,6 +7,37 @@ import type { ExportSetting } from '../types/components';
 
 const skip = (n: HTMLElement) => !(n instanceof HTMLElement && n.dataset && 'exportSkip' in n.dataset);
 
+// The fonts a picture needs, inlined. Left to itself html-to-image fetches
+// every @font-face on the page - all of the ~600 bundled font files - for
+// each picture, which takes minutes. Only the families the layer uses go in.
+const inlined = new Map<string, Promise<string>>();
+const asDataUrl = (url: string) => {
+  if (!inlined.has(url)) inlined.set(url, fetch(url).then(r => r.blob()).then(b => new Promise<string>((ok, bad) => {
+    const fr = new FileReader(); fr.onload = () => ok(fr.result as string); fr.onerror = bad; fr.readAsDataURL(b);
+  })));
+  return inlined.get(url)!;
+};
+const unquote = (f: string) => f.trim().replace(/^["']|["']$/g, '').toLowerCase();
+export const fontCssFor = async (node: HTMLElement): Promise<string> => {
+  const used = new Set<string>();
+  for (const el of [node, ...Array.from(node.querySelectorAll<HTMLElement>('*'))])
+    for (const f of getComputedStyle(el).fontFamily.split(',')) used.add(unquote(f));
+  const rules: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let list: CSSRuleList;
+    try { list = sheet.cssRules; } catch { continue; }          // another site's sheet
+    for (const r of Array.from(list)) {
+      if (!(r instanceof CSSFontFaceRule) || !used.has(unquote(r.style.getPropertyValue('font-family')))) continue;
+      let css = r.cssText;
+      for (const m of css.matchAll(/url\(["']?([^"')]+)["']?\)/g)) {
+        try { css = css.replace(m[1], await asDataUrl(new URL(m[1], location.href).href)); } catch { /* left as a link */ }
+      }
+      rules.push(css);
+    }
+  }
+  return rules.join('\n');
+};
+
 const save = (url: string, name: string) => {
   const a = document.createElement('a');
   a.href = url; a.download = name;
@@ -53,14 +84,15 @@ const pdfFromJpeg = (jpegDataUrl: string, w: number, h: number): Blob => {
 export const exportLayer = async (node: HTMLElement, name: string, settings: ExportSetting[], background?: string) => {
   const w = node.offsetWidth, h = node.offsetHeight;
   const base = (name || 'export').replace(/[\\/:*?"<>|]+/g, '-');
+  const fontEmbedCSS = await fontCssFor(node);
   for (const s of settings) {
     const file = `${base}${s.suffix || ''}`;
-    if (s.format === 'PNG') save(await toPng(node, { pixelRatio: s.scale, filter: skip }), `${file}.png`);
-    else if (s.format === 'JPG') save(await toJpeg(node, { pixelRatio: s.scale, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff' }), `${file}.jpg`);
-    else if (s.format === 'SVG') save(await toSvg(node, { filter: skip }), `${file}.svg`);
+    if (s.format === 'PNG') save(await toPng(node, { pixelRatio: s.scale, filter: skip, fontEmbedCSS }), `${file}.png`);
+    else if (s.format === 'JPG') save(await toJpeg(node, { pixelRatio: s.scale, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS }), `${file}.jpg`);
+    else if (s.format === 'SVG') save(await toSvg(node, { filter: skip, fontEmbedCSS }), `${file}.svg`);
     else {
       // a PDF page the layer's size, its picture drawn at 2x so it stays sharp
-      const jpg = await toJpeg(node, { pixelRatio: 2, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff' });
+      const jpg = await toJpeg(node, { pixelRatio: 2, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS });
       const url = URL.createObjectURL(pdfFromJpeg(jpg, w, h));
       save(url, `${file}.pdf`);
       setTimeout(() => URL.revokeObjectURL(url), 5000);

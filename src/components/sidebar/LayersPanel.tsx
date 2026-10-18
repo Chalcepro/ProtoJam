@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { chainOf, isContainer, subtreeIds } from '../../lib/tree';
 import { UIElement } from '../../types/components';
+import { useAgent } from '../../lib/agentBridge';
 
 // Frames, groups and auto layouts inside a screen open only when asked (or
 // when something inside them is selected). Kept outside the panel so it
@@ -16,6 +17,8 @@ type Drop = { id: string; kind: 'el' | 'frame' | 'canvas'; where: 'before' | 'af
 const BLUE = '#31C3F3';
 
 export const LayersPanel: React.FC = () => {
+  // layers the AI made, until you change them
+  const aiMade = useAgent(s => s.aiMade);
   const {
     frames,
     sections,
@@ -151,6 +154,7 @@ export const LayersPanel: React.FC = () => {
             {el.type.slice(0, 3)}
           </span>
           <span className="truncate text-xs">{el.name || el.type}</span>
+          {aiMade[el.id] && <span title="Made by the AI - goes once you change it" className="shrink-0"><Icons.Sparkles size={10} className="text-[#31C3F3]" /></span>}
         </div>
 
         {/* Actions */}

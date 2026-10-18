@@ -321,7 +321,26 @@ const getInitialSavedProjects = (): SavedProjectMeta[] => {
 // On startup, resume whatever the user last saved instead of force-loading the
 // ApexPay tutorial/demo project every time. First-run users (nothing saved yet)
 // get a genuinely blank canvas — the demo is still available under Templates.
+// The draft (see the bottom of this file): unsaved work from before a reload
+// or a crash. It is always the newest state, so it wins over the last save.
+const DRAFT_KEY = 'protojam-draft';
+let initialSaved = true;
 const getInitialProjectData = () => {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (d?.data?.frames) {
+      initialSaved = !!d.isSaved;
+      const p = d.data;
+      return {
+        projectId: p.projectId || 'proj-blank', projectName: p.projectName || 'Untitled Project',
+        frames: p.frames || [], sections: p.sections || [], elements: p.elements || [],
+        prototypeFlows: p.prototypeFlows || [], variables: p.variables || [], comments: p.comments || [],
+        guides: (p.guides || []) as RulerGuide[]
+      };
+    }
+  } catch (e) {
+    console.error('Could not read the draft', e);
+  }
   try {
     const list = getInitialSavedProjects();
     if (list.length > 0) {
@@ -371,7 +390,7 @@ const arrangementOf = (abs: { x: number; y: number; w: number; h: number }[]) =>
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projectId: initialProject.projectId,
   projectName: initialProject.projectName,
-  isSaved: true,
+  isSaved: initialSaved,
   lastSavedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   activeProjectId: initialProject.projectId,
   editorMode: 'design',
@@ -416,7 +435,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     currentY: 0
   },
   snapGuides: [],
-  guides: [],
+  guides: ('guides' in initialProject ? initialProject.guides : []) as RulerGuide[],
   addGuide: (axis, pos) => {
     const id = `guide-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     set((state) => ({ guides: [...state.guides, { id, axis, pos: Math.round(pos) }], isSaved: false }));
@@ -598,7 +617,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   // Frame Actions
   addFrame: (preset, x, y) => {
     const { frames, pushHistory } = get();
-    const id = `frame-${Date.now()}`;
+    const id = `frame-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const posX = x ?? (frames.length > 0 ? frames[frames.length - 1].x + frames[frames.length - 1].width + 120 : 100);
     const posY = y ?? 100;
 
@@ -637,7 +656,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   addCustomFrame: (x, y, width, height, name) => {
     const { frames, pushHistory } = get();
-    const id = `frame-${Date.now()}`;
+    const id = `frame-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newFrame: DeviceFrame = {
       id,
       name: name || `Custom Frame ${frames.length + 1}`,
@@ -2053,6 +2072,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   // remember to call this. A snapshot holds the arrays themselves: the store
   // never edits them in place, so no copy is needed and big images cost nothing.
   pushHistory: () => {
+    if (historyHold) return;          // an AI reply is under way: it is one step
     const { frames, sections, elements, history, historyIndex } = get();
     const top = history[historyIndex];
     if (top && top.frames === frames && top.sections === sections && top.elements === elements) return;
@@ -2445,6 +2465,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 // mouse is let go), and never while a mouse button is down - so a whole drag or resize is one step, and so
 // is a burst of typing.
 const HISTORY_LIMIT = 200;
+// While an AI reply edits the document, no steps are recorded; it ends with
+// one, so Ctrl+Z takes the whole reply back. (Declared with var: pushHistory
+// above reads it.)
+var historyHold = false;
+export const holdHistory = (on: boolean) => {
+  if (on) { useProjectStore.getState().pushHistory(); historyHold = true; }
+  else { historyHold = false; useProjectStore.getState().pushHistory(); }
+};
 let historyTimer: ReturnType<typeof setTimeout> | undefined;
 let pointerDown = false;
 const scheduleHistory = () => {
@@ -2463,3 +2491,25 @@ if (typeof window !== 'undefined') {
     historyTimer = setTimeout(() => useProjectStore.getState().pushHistory(), 0);
   }, true);
 }
+
+// ---- draft: unsaved work survives a reload or a crash ---------------------
+// Saving is Ctrl+S, but the window can reload under you (a dev-server update,
+// a crash), and that used to take everything since the last save with it.
+// Every change is kept here and picked up at startup (getInitialProjectData).
+let draftTimer: ReturnType<typeof setTimeout> | undefined;
+const writeDraft = () => {
+  clearTimeout(draftTimer);
+  try {
+    const s = useProjectStore.getState();
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ isSaved: s.isSaved, data: s.exportProjectData() }));
+  } catch { /* storage full or blocked: the last save still stands */ }
+};
+useProjectStore.subscribe((s, p) => {
+  if (s.frames !== p.frames || s.elements !== p.elements || s.sections !== p.sections || s.variables !== p.variables ||
+      s.comments !== p.comments || s.prototypeFlows !== p.prototypeFlows || s.guides !== p.guides ||
+      s.isSaved !== p.isSaved || s.projectId !== p.projectId || s.projectName !== p.projectName) {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(writeDraft, 500);
+  }
+});
+if (typeof window !== 'undefined') window.addEventListener('pagehide', writeDraft);
