@@ -339,6 +339,22 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
    [
     "Esc",
     "Stop editing"
+   ],
+   [
+    "Ctrl+B",
+    "Bold (selected text layers, or the one you are typing in)"
+   ],
+   [
+    "Ctrl+I",
+    "Italic"
+   ],
+   [
+    "Ctrl+U",
+    "Underline"
+   ],
+   [
+    "Ctrl+Shift+X",
+    "Strikethrough"
    ]
   ]
  },

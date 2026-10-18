@@ -252,6 +252,9 @@ export interface ElementStyle {
   // where the text sits up / down in a box taller than it
   textAlignV?: 'top' | 'middle' | 'bottom';
   textColor?: string;
+  fontStyle?: 'normal' | 'italic';
+  // 'underline', 'line-through', or both (space-separated)
+  textDecoration?: string;
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 
   // Text sizing behaviour: true = hug content (single-click creation), false =

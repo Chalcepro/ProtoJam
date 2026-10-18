@@ -125,6 +125,8 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       fontFamily: style.fontFamily,
       fontSize: style.fontSize,
       fontWeight: style.fontWeight,
+      fontStyle: style.fontStyle,
+      textDecoration: style.textDecoration,
       textAlign: style.textAlign,
       letterSpacing: style.letterSpacing,
       lineHeight: style.lineHeight,

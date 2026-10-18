@@ -9,6 +9,7 @@ import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
 import { BlendPicker } from './BlendPicker';
 import { PaddingFields } from './PaddingFields';
 import { shared, withMulti } from '../../lib/multiEdit';
+import { isOn, toggleText, type TextToggle } from '../../lib/textStyle';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
@@ -685,6 +686,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
       s.fontFamily ? `font-family: ${s.fontFamily};` : '',
       s.fontSize ? `font-size: ${s.fontSize}px;` : '',
       s.fontWeight ? `font-weight: ${s.fontWeight};` : '',
+      s.fontStyle === 'italic' ? 'font-style: italic;' : '',
+      s.textDecoration ? `text-decoration: ${s.textDecoration};` : '',
       s.lineHeight ? `line-height: ${s.lineHeight};` : '',
       s.letterSpacing ? `letter-spacing: ${s.letterSpacing}px;` : '',
       s.textColor ? `color: ${varRef('textColor', s.textColor)};` : ''
@@ -1249,6 +1252,18 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                 </button>
               </div>
             )}
+
+            {/* Bold / italic / underline / strikethrough - Ctrl+B / I / U, Ctrl+Shift+X */}
+            <div className="flex bg-[rgba(235,235,236,0.04)] rounded-lg p-0.5 border border-[rgba(235,235,236,0.08)]">
+              {([['bold', 'Bold (Ctrl+B)', Icons.Bold], ['italic', 'Italic (Ctrl+I)', Icons.Italic],
+                 ['underline', 'Underline (Ctrl+U)', Icons.Underline], ['strike', 'Strikethrough (Ctrl+Shift+X)', Icons.Strikethrough]] as [TextToggle, string, typeof Icons.Bold][]).map(([t, label, Ic]) => (
+                <button key={t} title={label}
+                        onClick={() => toggleText(groupEls.length ? groupEls.map(e => e.id) : [element!.id], t)}
+                        className={`flex-1 flex justify-center py-1 rounded ${isOn(style, t) ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'}`}>
+                  <Ic size={12} />
+                </button>
+              ))}
+            </div>
 
             {/* Font Weight & Alignment */}
             <div className="grid grid-cols-2 gap-2">

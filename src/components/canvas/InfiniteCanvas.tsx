@@ -350,7 +350,7 @@ export const InfiniteCanvas: React.FC = () => {
       }
       const k = e.key.toLowerCase();
       if (k === 'c' && selectedElementIds.length) { e.preventDefault(); copySelection(); }
-      else if (k === 'x' && selectedElementIds.length) {
+      else if (k === 'x' && !e.shiftKey && selectedElementIds.length) {
         e.preventDefault();
         copySelection();
         selectedElementIds.forEach(id => deleteElement(id));

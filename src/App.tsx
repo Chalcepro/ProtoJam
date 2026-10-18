@@ -8,6 +8,7 @@ import { useProjectStore, ZOOM_MAX, ZOOM_MIN } from './store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { ShortcutsPanel } from './components/ShortcutsPanel';
+import { textTargets, toggleText } from './lib/textStyle';
 
 // Zoom keeping the middle of the canvas where it is. `absolute`: set the zoom.
 const zoomAround = (f: number, absolute = false) => {
@@ -40,6 +41,13 @@ export const App: React.FC = () => {
       // Undo / redo from a field in a side panel (a colour just picked, a size
       // just typed) undoes the design, as in Figma - not just the field's text.
       // Text being typed on the canvas keeps its own undo.
+      // Ctrl+B / I / U, Ctrl+Shift+X: bold, italic, underline, strikethrough on
+      // the text being typed in, or the selected text layers
+      const field = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+      const fmt = mod && !e.altKey && !field
+        ? (!e.shiftKey && ({ b: 'bold', i: 'italic', u: 'underline' } as const)[k as 'b']) || (e.shiftKey && k === 'x' ? 'strike' as const : null)
+        : null;
+      if (fmt && toggleText(textTargets(), fmt)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       const panelField = !!target.closest?.('aside') && (target.tagName === 'INPUT' || target.tagName === 'SELECT');
       if (panelField && mod && (k === 'z' || k === 'y')) target.blur();
       else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) return;
