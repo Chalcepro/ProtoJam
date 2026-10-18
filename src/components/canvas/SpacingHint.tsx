@@ -60,7 +60,11 @@ const measure = (id: string, part: 'gap' | 'padding'): R[] => {
 };
 
 export const SpacingHint: React.FC = () => {
-  const { id, part } = useLayoutHint();
+  const hint = useLayoutHint();
+  // only ever for what is selected: picking something else clears it
+  const selected = useProjectStore(s => !!hint.id && (s.selectedElementIds.includes(hint.id) || s.selectedFrameIds.includes(hint.id)));
+  const id = selected ? hint.id : null, part = selected ? hint.part : null;
+  useEffect(() => { if (hint.id && !selected) useLayoutHint.setState({ id: null, part: null }); }, [hint.id, selected]);
   const [rects, setRects] = useState<R[]>([]);
   useEffect(() => {
     if (!id || !part) { setRects([]); return; }
