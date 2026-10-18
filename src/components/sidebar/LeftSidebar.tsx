@@ -1,16 +1,24 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { create } from 'zustand';
 import { LayersPanel } from './LayersPanel';
 import { ComponentLibraryPanel } from './ComponentLibraryPanel';
 import { VariablesPanel } from './VariablesPanel';
 import { ChatPanel } from './ChatPanel';
+import { IconsPanel } from './IconsPanel';
+
+type Tab = 'layers' | 'components' | 'icons' | 'variables' | 'chat';
+// which tab is open: other panels can open one (an icon's Swap opens Icons)
+export const useLeftTab = create<{ tab: Tab }>(() => ({ tab: 'layers' }));
 import * as Icons from 'lucide-react';
 
 export const LeftSidebar: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'layers' | 'components' | 'variables' | 'chat'>('layers');
+  const activeTab = useLeftTab(s => s.tab);
+  const setActiveTab = (tab: Tab) => useLeftTab.setState({ tab });
 
   const tabs = [
     { id: 'layers' as const, label: 'Layers', icon: Icons.Layers },
     { id: 'components' as const, label: 'UI Kit', icon: Icons.LayoutGrid },
+    { id: 'icons' as const, label: 'Icons', icon: Icons.Shapes },
     { id: 'variables' as const, label: 'Tokens', icon: Icons.Variable },
     { id: 'chat' as const, label: 'Chat', icon: Icons.Sparkles },
   ];
@@ -43,6 +51,7 @@ export const LeftSidebar: React.FC = () => {
       <div className="flex-1 overflow-hidden">
         {activeTab === 'layers' && <LayersPanel />}
         {activeTab === 'components' && <ComponentLibraryPanel />}
+        {activeTab === 'icons' && <IconsPanel />}
         {activeTab === 'variables' && <VariablesPanel />}
         {activeTab === 'chat' && <ChatPanel />}
       </div>

@@ -39,7 +39,8 @@ const tool = (name, description, shape, fn) =>
 const server = new McpServer({ name: 'protojam', version: '1.0.0' });
 
 const TYPES = [
-  'container (a frame: holds children, can have auto layout)', 'rectangle', 'ellipse', 'polygon', 'star', 'line', 'arrow', 'divider',
+  'container (a frame: holds children, can have auto layout)',
+  'icon (from the icon library: props.iconName from find_icons; style.iconWeight thin|light|regular|bold|fill|duotone; its colour is style.fillColor; duotone second colour style.iconColor2)', 'rectangle', 'ellipse', 'polygon', 'star', 'line', 'arrow', 'divider',
   'text', 'heading', 'button', 'pillButton', 'iconButton', 'fab', 'textInput', 'passwordInput', 'searchBar', 'textarea',
   'selectDropdown', 'checkbox', 'radioButton', 'toggleSwitch', 'slider', 'datePicker', 'fileDropzone',
   'navbar', 'bottomTabs', 'sidebar', 'breadcrumbs', 'segmentedControl', 'stepper',
@@ -122,6 +123,22 @@ tool('screenshot', 'A picture of a screen or layer as it looks now. Check your w
   async (a) => {
     const r = await call('screenshot', a);
     return { content: [{ type: 'image', data: r.image, mimeType: 'image/png' }, { type: 'text', text: `${r.width}x${r.height}` }] };
+  });
+
+tool('find_icons', 'Search the bundled icon library (Phosphor, ~1,500 icons, each in thin / light / regular / bold / fill / duotone). Returns icon names for create_element type "icon" (props.iconName).',
+  { query: z.string().describe('words, e.g. "home", "water drop", "wallet"'), category: z.string().optional(), limit: z.number().optional() },
+  async (a) => {
+    const meta = await (await fetch(`${BASE}/icons/meta.json`)).json();
+    const words = a.query.toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = meta.filter(m => !a.category || m.c.includes(a.category)).map(m => {
+      let score = 0;
+      for (const w of words) {
+        if (m.n === w) score += 10; else if (m.n.split('-').includes(w)) score += 6; else if (m.n.includes(w)) score += 4;
+        else if (m.t.some(t => t.includes(w))) score += 2; else return null;
+      }
+      return { n: m.n, score };
+    }).filter(Boolean).sort((x, y) => y.score - x.score).slice(0, a.limit || 30);
+    return asText(hits.length ? hits.map(h => h.n).join(', ') : 'No icon matches; try other words.');
   });
 
 tool('list_fonts', 'Font families bundled with ProtoJam (they work offline), optionally filtered by category: sans, serif, display, handwriting, mono.',

@@ -2,6 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { effectsCss, textResizeOf } from '../../lib/styleCss';
 import { VideoView } from './VideoView';
 import { SvgPaint } from './SvgPaint';
+import { IconView } from './IconView';
 import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
 import { vectorAllD, vectorRegions } from '../../lib/boolean';
 import { isPlainStroke } from '../../lib/strokeArt';
@@ -454,6 +455,10 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         </div>
       );
     }
+
+    // ---------------- ICON (the icon library) ----------------
+    case 'icon':
+      return <div style={{ width: '100%', height: '100%' }} onClick={handleClick}><IconView element={element} style={style} /></div>;
 
     // ---------------- BUTTON ----------------
     case 'button':

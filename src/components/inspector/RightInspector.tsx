@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { create } from 'zustand';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { DesignProperties } from './DesignProperties';
@@ -6,12 +7,21 @@ import { SemanticPropsEditor } from './SemanticPropsEditor';
 import { PrototypeInteractionEditor } from './PrototypeInteractionEditor';
 import * as Icons from 'lucide-react';
 import { FramePresetsPanel } from '../sidebar/FramePresetsPanel';
+import { IconTab } from './IconTab';
+
+type Tab = 'design' | 'semantic' | 'prototype' | 'icon';
+// which tab is open: the icon popover and the Design tab's Swap can open Icon
+export const useRightTab = create<{ tab: Tab }>(() => ({ tab: 'design' }));
 
 export const RightInspector: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'design' | 'semantic' | 'prototype'>('design');
+  const tab = useRightTab(s => s.tab);
+  const setActiveTab = (t: Tab) => useRightTab.setState({ tab: t });
   const { elements, frames, selectedElementIds, selectedFrameIds, activeTool, setActiveTool } = useProjectStore(useShallow((s) => ({ elements: s.elements, frames: s.frames, selectedElementIds: s.selectedElementIds, selectedFrameIds: s.selectedFrameIds, activeTool: s.activeTool, setActiveTool: s.setActiveTool })));
 
   const selectedElement = elements.find(el => selectedElementIds.includes(el.id));
+  // the Icon tab is there while an icon is selected
+  const isIcon = selectedElement?.type === 'icon';
+  const activeTab = tab === 'icon' && !isIcon ? 'design' : tab;
   const selectedFrame = frames.find(f => selectedFrameIds.includes(f.id));
 
   // The frame tool shows every frame size here, as Figma does.
@@ -62,6 +72,20 @@ export const RightInspector: React.FC = () => {
           <Icons.Zap size={14} />
           <span>Prototype</span>
         </button>
+
+        {isIcon && (
+          <button
+            onClick={() => setActiveTab('icon')}
+            className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === 'icon'
+                ? 'border-[rgb(235,235,236)] text-[rgb(235,235,236)] font-bold'
+                : 'border-transparent text-[rgba(235,235,236,0.45)] hover:text-[rgb(235,235,236)]'
+            }`}
+          >
+            <Icons.Shapes size={14} />
+            <span>Icon</span>
+          </button>
+        )}
       </div>
 
       {/* Tab Body */}
@@ -69,6 +93,7 @@ export const RightInspector: React.FC = () => {
         {activeTab === 'design' && (
           <DesignProperties element={selectedElement} frame={selectedFrame} />
         )}
+        {activeTab === 'icon' && selectedElement && <IconTab element={selectedElement} />}
         {activeTab === 'semantic' && (
           selectedElement ? (
             <SemanticPropsEditor element={selectedElement} />

@@ -76,6 +76,7 @@ export type UIElementType =
   // Content & Media
   | 'text'
   | 'heading'
+  | 'icon'
   | 'image'
   | 'video'
   | 'avatar'
@@ -261,6 +262,12 @@ export interface ElementStyle {
   fontStyle?: 'normal' | 'italic';
   // 'underline', 'line-through', or both (space-separated)
   textDecoration?: string;
+  // Icons (type 'icon'): the drawing style, and a duotone's second colour and strength
+  iconWeight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
+  iconColor2?: string;
+  iconOpacity2?: number;
+  iconFlipH?: boolean;
+  iconFlipV?: boolean;
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 
   // Text sizing behaviour: true = hug content (single-click creation), false =
@@ -366,8 +373,8 @@ export interface SemanticProperties {
 // Style overrides applied automatically on hover/press, live in the Prototype
 // player — an "interactive component" without needing a full variant set.
 export interface InteractiveStates {
-  hover?: Partial<Pick<ElementStyle, 'fillColor' | 'textColor' | 'borderColor' | 'borderWidth' | 'opacity'>>;
-  pressed?: Partial<Pick<ElementStyle, 'fillColor' | 'textColor' | 'borderColor' | 'borderWidth' | 'opacity'>>;
+  hover?: Partial<Pick<ElementStyle, 'fillColor' | 'textColor' | 'borderColor' | 'borderWidth' | 'opacity' | 'iconWeight'>>;
+  pressed?: Partial<Pick<ElementStyle, 'fillColor' | 'textColor' | 'borderColor' | 'borderWidth' | 'opacity' | 'iconWeight'>>;
 }
 
 export interface UIElement {

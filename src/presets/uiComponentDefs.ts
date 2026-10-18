@@ -14,6 +14,26 @@ export interface ComponentTemplate {
 export const COMPONENT_TEMPLATES: ComponentTemplate[] = [
   // ---------------- SHAPES & VECTORS ----------------
   {
+    // from the icon library (the Icons tab): its colour is its Fill, its
+    // style (outline, bold, filled, duotone...) one click in the panel
+    type: 'icon',
+    title: 'Icon',
+    category: 'Content & Media',
+    description: 'An icon from the library - outline, filled, duotone and more',
+    iconName: 'Star',
+    defaultWidth: 32,
+    defaultHeight: 32,
+    createDefaultElement: (id, x, y, parentId) => ({
+      id,
+      name: 'Icon',
+      type: 'icon',
+      parentId,
+      interactions: [],
+      style: { x, y, width: 32, height: 32, fillColor: '#141413', iconWeight: 'regular' },
+      semanticProps: { iconName: 'star' }
+    })
+  },
+  {
     type: 'section',
     title: 'Organizing Section',
     category: 'Structure',

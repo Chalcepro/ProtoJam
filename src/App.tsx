@@ -10,6 +10,7 @@ import * as Icons from 'lucide-react';
 import { ShortcutsPanel } from './components/ShortcutsPanel';
 import { textTargets, toggleText } from './lib/textStyle';
 import { SpacingHint } from './components/canvas/SpacingHint';
+import { IconPopover } from './components/canvas/IconPopover';
 
 // Zoom keeping the middle of the canvas where it is. `absolute`: set the zoom.
 const zoomAround = (f: number, absolute = false) => {
@@ -192,6 +193,8 @@ export const App: React.FC = () => {
       {showKeys && <ShortcutsPanel onClose={() => setShowKeys(false)} />}
       {/* auto layout gaps / padding drawn while the side panel points at them */}
       <SpacingHint />
+      {/* Shift + right-click an icon */}
+      <IconPopover />
 
       {/* Main Workspace: Collapsible Left Sidebar + Infinite Canvas + Collapsible Right Inspector */}
       <div className="flex flex-1 w-full overflow-hidden relative">

@@ -18,6 +18,8 @@ import { BOOLEANABLE, vectorAllD } from '../../lib/boolean';
 import { ElementNode } from './ElementNode';
 import { absBoxOf, chainOf, frameAbove, inFlow, originOf, pickTarget, subtreeIds, takesDrops } from '../../lib/tree';
 import { startGesture } from '../../lib/gesture';
+import { placeIcon } from '../sidebar/IconsPanel';
+import { useIconPop } from './IconPopover';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -768,6 +770,14 @@ export const InfiniteCanvas: React.FC = () => {
       return;
     }
 
+    const icon = e.dataTransfer.getData('application/protojam-icon');
+    if (icon) {
+      const { name, style } = JSON.parse(icon);
+      const { x, y } = getWorldCoords(e.clientX, e.clientY);
+      placeIcon(name, style, x, y);
+      return;
+    }
+
     const componentType = e.dataTransfer.getData('application/protojam-component') as UIElementType;
     if (!componentType) return;
 
@@ -816,6 +826,12 @@ export const InfiniteCanvas: React.FC = () => {
         const id = (tgt.closest('[data-el-id]') as HTMLElement | null)?.dataset.elId;
         const fid = (tgt.closest('[data-frame-id]') as HTMLElement | null)?.dataset.frameId;
         if (id) { if (!selectedElementIds.includes(id)) setSelection([id]); }
+        // Shift + right-click an icon: its counterparts, right there
+        if (id && e.shiftKey && useProjectStore.getState().elements.find(x => x.id === id)?.type === 'icon') {
+          useIconPop.setState({ pop: { id, x: e.clientX, y: e.clientY } });
+          return;
+        }
+        if (id) { /* selected above */ }
         else if (fid) { if (!selectedFrameIds.includes(fid)) selectFrame(fid, false); }
         const w = getWorldCoords(e.clientX, e.clientY);
         setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, wx: w.x, wy: w.y, w: rect.width, h: rect.height });

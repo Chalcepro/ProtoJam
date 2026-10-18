@@ -9,6 +9,7 @@ import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
 import { BlendPicker } from './BlendPicker';
 import { PaddingFields } from './PaddingFields';
 import { FlowControls } from './FlowControls';
+import { IconSection } from './IconSection';
 import { shared, withMulti } from '../../lib/multiEdit';
 import { isOn, toggleText, type TextToggle } from '../../lib/textStyle';
 import { clearTextSel, dropFromRuns, look, runsIn, runsOf, styleSelection, useTextSel, type RunStyle } from '../../lib/richText';
@@ -1063,6 +1064,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           )}
         </div>
       </div>
+
+      {/* 3b. ICON - its style, alternatives, hover / press style */}
+      {element?.type === 'icon' && <IconSection element={element} update={(st) => updateElementStyle(element.id, st)} />}
 
       {/* 4. AUTO LAYOUT CONTROLS */}
       <div className="border-t border-[rgba(235,235,236,0.08)] pt-3">
