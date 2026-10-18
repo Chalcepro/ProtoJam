@@ -7,6 +7,7 @@ import * as Icons from 'lucide-react';
 import { FontPicker, WeightPicker } from './FontPicker';
 import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
 import { BlendPicker } from './BlendPicker';
+import { PaddingFields } from './PaddingFields';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
@@ -367,7 +368,6 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   } = useProjectStore(useShallow((s) => ({ booleanSelection: s.booleanSelection, frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
 
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
-  const [isIndividualPadding, setIsIndividualPadding] = useState(false);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageFillUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -445,6 +445,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               )}
             </div>
           </div>
+          {frame.autoLayout?.enabled && (
+            <PaddingFields key={frame.id} value={frame.autoLayout.padding} onChange={padding => updateAutoLayout(frame.id, { padding })} />
+          )}
         </div>
 
         {/* Screen Auto Layout */}
@@ -671,8 +674,6 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     ? style.borderRadius
     : { tl: Number(style.borderRadius) || 0, tr: Number(style.borderRadius) || 0, br: Number(style.borderRadius) || 0, bl: Number(style.borderRadius) || 0 };
 
-  const paddingObj = style.padding || { top: 12, right: 12, bottom: 12, left: 12 };
-
   // Fill on plain text colours the letters, as in Figma. Only text with auto
   // layout has a box of its own, and then Fill is that box and the letters'
   // colour moves to Typography.
@@ -886,6 +887,13 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             />
             {sizingOptions.length > 1 && <SizingSelect value={sizingOf('V')} options={sizingOptions} onChange={v => setSizing('V', v)} />}
           </div>
+        </div>
+
+        {style.autoLayout?.enabled && (
+          <PaddingFields key={element!.id} value={style.autoLayout.padding} onChange={padding => updateAutoLayout(element!.id, { padding })} />
+        )}
+
+        <div className="grid grid-cols-2 gap-2 mt-2">
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">∠</span>
             <NumberInput max={360}
@@ -1081,54 +1089,6 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <div className="flex items-center justify-between">
               <span className="text-[rgba(235,235,236,0.5)] text-[11px]">Align</span>
               <AlignGrid al={style.autoLayout} onChange={(u) => updateAutoLayout(element!.id, u)} />
-            </div>
-
-            {/* Padding Controls */}
-            <div className="space-y-1 pt-1 border-t border-[rgba(235,235,236,0.06)]">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-[rgba(235,235,236,0.5)]">Padding</span>
-                <button
-                  onClick={() => setIsIndividualPadding(!isIndividualPadding)}
-                  className={`p-1 rounded text-[10px] transition-colors ${
-                    isIndividualPadding ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)] font-bold' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'
-                  }`}
-                  title="Toggle Individual Paddings"
-                >
-                  <Icons.Maximize size={11} />
-                </button>
-              </div>
-
-              {!isIndividualPadding ? (
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-[rgba(235,235,236,0.4)]">All Sides</span>
-                  <NumberInput
-                    value={paddingObj.top}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      updateAutoLayout(element!.id, { padding: { top: v, right: v, bottom: v, left: v } });
-                    }}
-                    className="w-16 bg-[rgba(235,235,236,0.04)] text-[rgb(235,235,236)] px-2 py-1 rounded border border-[rgba(235,235,236,0.08)] text-right font-mono text-xs"
-                  />
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 gap-1.5">
-                  {(['top', 'right', 'bottom', 'left'] as const).map(side => (
-                    <div key={side} className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-md px-1.5 py-1 border border-[rgba(235,235,236,0.08)]">
-                      <span className="text-[9px] font-mono text-[rgba(235,235,236,0.3)] uppercase mr-1">{side[0]}</span>
-                      <NumberInput
-                        value={paddingObj[side]}
-                        onChange={(e) => updateAutoLayout(element!.id, {
-                          padding: {
-                            ...paddingObj,
-                            [side]: Number(e.target.value)
-                          }
-                        })}
-                        className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-[11px]"
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         )}
