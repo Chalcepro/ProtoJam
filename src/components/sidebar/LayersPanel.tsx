@@ -5,6 +5,7 @@ import * as Icons from 'lucide-react';
 import { chainOf, isContainer, subtreeIds } from '../../lib/tree';
 import { UIElement } from '../../types/components';
 import { useAgent } from '../../lib/agentBridge';
+import { startGesture } from '../../lib/gesture';
 
 // Frames, groups and auto layouts inside a screen open only when asked (or
 // when something inside them is selected). Kept outside the panel so it
@@ -86,15 +87,21 @@ export const LayersPanel: React.FC = () => {
       else if (d.kind === 'el' && !OPEN.has(d.id) && Date.now() - hoverAt > 600) { OPEN.add(d.id); redraw(); }
       last = d; setDrop(d);
     };
-    const up = () => {
+    const off = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       setDrop(null); setDragOn(false);
+    };
+    const up = () => {
+      off();
+      end();
       if (!on || !last) return;
       const s = useProjectStore.getState();
       if (last.where === 'in') s.moveLayers(ids, last.kind === 'canvas' ? undefined : last.id);
       else s.moveLayers(ids, s.elements.find(x => x.id === last!.id)?.parentId, last.id, last.where);
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
   const dropLook = (id: string): React.CSSProperties | undefined =>
     drop?.id !== id ? undefined

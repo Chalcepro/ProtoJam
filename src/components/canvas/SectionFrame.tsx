@@ -3,6 +3,7 @@ import { SectionFrame as ISectionFrame } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { startGesture } from '../../lib/gesture';
 
 interface SectionFrameProps {
   section: ISectionFrame;
@@ -44,14 +45,16 @@ export const SectionFrame: React.FC<SectionFrameProps> = ({ section }) => {
       });
     };
 
-    const onPointerUp = () => {
+    const off = () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
-      pushHistory();
     };
+    const onPointerUp = () => { off(); end(); pushHistory(); };
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
 
   // Smooth global pointer resize
@@ -101,14 +104,16 @@ export const SectionFrame: React.FC<SectionFrameProps> = ({ section }) => {
       });
     };
 
-    const onPointerUp = () => {
+    const off = () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
-      pushHistory();
     };
+    const onPointerUp = () => { off(); end(); pushHistory(); };
 
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
 
   if (section.hidden) return null;

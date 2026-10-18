@@ -4,6 +4,7 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { vectorAllD } from '../../lib/boolean';
 import { pickTarget } from '../../lib/tree';
+import { startGesture } from '../../lib/gesture';
 
 interface TransformSelectionBoxProps {
   element: UIElement;
@@ -131,14 +132,16 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       updateElementStyle(element.id, { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
     };
 
-    const onPointerUp = () => {
+    const off = () => {
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
-      pushHistory();
     };
+    const onPointerUp = () => { off(); end(); pushHistory(); };
 
     window.addEventListener('pointermove', onPointerMove, true);
     window.addEventListener('pointerup', onPointerUp, true);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
 
   // ---------------- INTERACTIVE ROTATION HANDLER ----------------
@@ -164,15 +167,17 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       updateElementStyle(element.id, { rotation: deg });
     };
 
-    const onPointerUp = () => {
+    const off = () => {
       setRotationAngle(null);
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
-      pushHistory();
     };
+    const onPointerUp = () => { off(); end(); pushHistory(); };
 
     window.addEventListener('pointermove', onPointerMove, true);
     window.addEventListener('pointerup', onPointerUp, true);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
 
   // ---------------- SIZES IN SCREEN PIXELS ----------------

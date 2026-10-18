@@ -8,6 +8,7 @@ import { FontPicker, WeightPicker } from './FontPicker';
 import { ExportSection, FillsSection, StrokesSection } from './PaintSections';
 import { BlendPicker } from './BlendPicker';
 import { PaddingFields } from './PaddingFields';
+import { shared, withMulti } from '../../lib/multiEdit';
 import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
@@ -68,7 +69,7 @@ const EFFECT_LABEL: Record<EffectLayer['type'], string> = {
 
 // The effects list: any number of shadows and blurs, each with an eye and a remove.
 const EffectsSection: React.FC<{ element: UIElement }> = ({ element }) => {
-  const { updateElementStyle } = useProjectStore(useShallow((s) => ({ updateElementStyle: s.updateElementStyle })));
+  const { updateElementStyle } = withMulti(useProjectStore(useShallow((s) => ({ updateElementStyle: s.updateElementStyle }))));
   const fx = element.style.effects || [];
   const set = (next: EffectLayer[]) => updateElementStyle(element.id, { effects: next });
   const patch = (id: string, p: Partial<EffectLayer>) => set(fx.map(e => e.id === id ? { ...e, ...p } : e));
@@ -397,7 +398,17 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     bringToFront,
     sendToBack,
     booleanSelection
-  } = useProjectStore(useShallow((s) => ({ booleanSelection: s.booleanSelection, frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack })));
+  } = withMulti(useProjectStore(useShallow((s) => ({ booleanSelection: s.booleanSelection, frames: s.frames, variables: s.variables, updateElementStyle: s.updateElementStyle, updateElementSemanticProps: s.updateElementSemanticProps, updateFrame: s.updateFrame, updateSection: s.updateSection, alignSelectedElements: s.alignSelectedElements, toggleAutoLayout: s.toggleAutoLayout, updateAutoLayout: s.updateAutoLayout, createMasterComponent: s.createMasterComponent, instantiateComponent: s.instantiateComponent, detachInstance: s.detachInstance, bringToFront: s.bringToFront, sendToBack: s.sendToBack }))));
+
+  // Several selected: the inspector shows the first, edits go to all of them
+  // (withMulti). X / Y show the corner of the whole selection; other numbers
+  // read "Mixed" when they differ.
+  const { selEls, selFrames } = useProjectStore(useShallow((s) => ({ selEls: s.selectedElementIds, selFrames: s.selectedFrameIds })));
+  const groupEls = selEls.length > 1 ? useProjectStore.getState().elements.filter(e => selEls.includes(e.id)) : [];
+  const groupFrames = selFrames.length > 1 ? frames.filter(f => selFrames.includes(f.id)) : [];
+  const elNum = (k: 'width' | 'height' | 'rotation' | 'opacity', own: number) =>
+    groupEls.length ? shared(groupEls.map(e => Number(e.style[k] ?? (k === 'opacity' ? 1 : 0)))) : own;
+  const minOf = (vals: number[], own: number) => (vals.length ? Math.min(...vals) : own);
 
   const [isIndividualCorners, setIsIndividualCorners] = useState(false);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
@@ -432,6 +443,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   if (frame) {
     return (
       <div className="p-3.5 space-y-4 text-xs text-[rgb(235,235,236)] select-none">
+        {groupFrames.length > 0 && (
+          <div className="text-[11px] text-[#31C3F3] bg-[rgba(49,195,243,0.1)] rounded-lg px-2.5 py-1.5">{groupFrames.length} screens selected · changes apply to all of them</div>
+        )}
         {/* Alignment & Screen Geometry */}
         <div>
           <div className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider mb-2">
@@ -441,23 +455,23 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">X</span>
               <NumberInput signed
-                value={frame.x}
-                onChange={(e) => updateFrame(frame.id, { x: Number(e.target.value) })}
+                value={minOf(groupFrames.map(f => f.x), frame.x)}
+                onChange={(e) => updateFrame(frame.id, { x: frame.x + Number(e.target.value) - minOf(groupFrames.map(f => f.x), frame.x) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
               />
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">Y</span>
               <NumberInput signed
-                value={frame.y}
-                onChange={(e) => updateFrame(frame.id, { y: Number(e.target.value) })}
+                value={minOf(groupFrames.map(f => f.y), frame.y)}
+                onChange={(e) => updateFrame(frame.id, { y: frame.y + Number(e.target.value) - minOf(groupFrames.map(f => f.y), frame.y) })}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
               />
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">W</span>
-              <NumberInput
-                value={frame.width}
+              <NumberInput placeholder="Mixed"
+                value={groupFrames.length ? shared(groupFrames.map(f => f.width)) : frame.width}
                 onChange={(e) => { updateFrame(frame.id, { width: Number(e.target.value) }); if (frame.autoLayout?.sizingH === 'hug') updateAutoLayout(frame.id, { sizingH: 'fixed' }); }}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
               />
@@ -467,8 +481,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </div>
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <span className="text-[rgba(235,235,236,0.4)] mr-2 text-[10px] font-mono">H</span>
-              <NumberInput
-                value={frame.height}
+              <NumberInput placeholder="Mixed"
+                value={groupFrames.length ? shared(groupFrames.map(f => f.height)) : frame.height}
                 onChange={(e) => { updateFrame(frame.id, { height: Number(e.target.value) }); if (frame.autoLayout?.sizingV === 'hug') updateAutoLayout(frame.id, { sizingV: 'fixed' }); }}
                 className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
               />
@@ -746,6 +760,10 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   return (
     <div className="p-3.5 space-y-4 text-xs text-[rgb(235,235,236)] overflow-y-auto select-none">
       
+      {groupEls.length > 0 && (
+        <div className="text-[11px] text-[#31C3F3] bg-[rgba(49,195,243,0.1)] rounded-lg px-2.5 py-1.5">{groupEls.length} layers selected · changes apply to all of them</div>
+      )}
+
       {/* 1. ALIGNMENT & DISTRIBUTION TOOLBAR */}
       <div className="flex items-center justify-between bg-[rgba(235,235,236,0.03)] p-1 rounded-xl border border-[rgba(235,235,236,0.08)]">
         <button
@@ -888,23 +906,23 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">X</span>
             <NumberInput signed
-              value={Number(style.x)}
-              onChange={(e) => updateElementStyle(element!.id, { x: Number(e.target.value) })}
+              value={minOf(groupEls.map(e => Number(e.style.x)), Number(style.x))}
+              onChange={(e) => updateElementStyle(element!.id, { x: Number(style.x) + Number(e.target.value) - minOf(groupEls.map(g => Number(g.style.x)), Number(style.x)) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">Y</span>
             <NumberInput signed
-              value={Number(style.y)}
-              onChange={(e) => updateElementStyle(element!.id, { y: Number(e.target.value) })}
+              value={minOf(groupEls.map(e => Number(e.style.y)), Number(style.y))}
+              onChange={(e) => updateElementStyle(element!.id, { y: Number(style.y) + Number(e.target.value) - minOf(groupEls.map(g => Number(g.style.y)), Number(style.y)) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">W</span>
-            <NumberInput
-              value={Number(style.width)}
+            <NumberInput placeholder="Mixed"
+              value={elNum('width', Number(style.width))}
               onChange={(e) => updateElementStyle(element!.id, { width: Number(e.target.value), layoutSizingH: 'fixed', ...(isTextEl && tMode === 'auto' ? { textResize: 'autoHeight' as const } : {}) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
@@ -912,8 +930,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">H</span>
-            <NumberInput
-              value={Number(style.height)}
+            <NumberInput placeholder="Mixed"
+              value={elNum('height', Number(style.height))}
               onChange={(e) => updateElementStyle(element!.id, { height: Number(e.target.value), layoutSizingV: 'fixed', ...(isTextEl && tMode !== 'fixed' ? { textResize: 'fixed' as const } : {}) })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
@@ -929,9 +947,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
             <span className="text-[rgba(235,235,236,0.4)] mr-2 font-mono text-[10px]">∠</span>
             <NumberInput max={360}
-              value={style.rotation || 0}
+              value={elNum('rotation', style.rotation || 0)}
               onChange={(e) => updateElementStyle(element!.id, { rotation: Number(e.target.value) })}
-              placeholder="0°"
+              placeholder={groupEls.length ? 'Mixed' : '0°'}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />
           </div>
@@ -940,7 +958,8 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             <NumberInput
               min="0"
               max="100"
-              value={Math.round((style.opacity ?? 1) * 100)}
+              value={(() => { const o = elNum('opacity', style.opacity ?? 1); return o === undefined ? '' : Math.round(o * 100); })()}
+              placeholder="Mixed"
               onChange={(e) => updateElementStyle(element!.id, { opacity: Number(e.target.value) / 100 })}
               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs"
             />

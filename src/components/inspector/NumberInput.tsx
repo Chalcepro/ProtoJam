@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { startGesture } from '../../lib/gesture';
 
 // A number field that behaves while you type.
 //
@@ -73,15 +74,21 @@ export const NumberInput: React.FC<Props> = ({ value, onChange, onFocus, onBlur,
       const n = Number(acc.toFixed(decimals + (fine ? 1 : 0)));
       onChange?.({ target: { value: String(n) }, currentTarget: { value: String(n) } } as unknown as React.ChangeEvent<HTMLInputElement>);
     };
-    const up = () => {
+    const off = () => {
       window.removeEventListener('pointermove', move, true);
       window.removeEventListener('pointerup', up, true);
       document.body.style.cursor = '';
       setHint(null);
+    };
+    const up = () => {
+      off();
+      end();
       if (!moved) { input.focus(); input.select(); }
     };
     window.addEventListener('pointermove', move, true);
     window.addEventListener('pointerup', up, true);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
 
   return (

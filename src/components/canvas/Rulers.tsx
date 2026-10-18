@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
+import { startGesture } from '../../lib/gesture';
 
 export const RULER = 20;                // thickness, px
 const GUIDE = '#ff4fa3';               // guides and their labels
@@ -56,7 +57,7 @@ export const Rulers: React.FC<{
   };
 
   // Moving a guide: follow the pointer; let go over its own ruler and it goes.
-  const dragGuide = (id: string, axis: 'x' | 'y', start: PointerEvent | React.PointerEvent) => {
+  const dragGuide = (id: string, axis: 'x' | 'y', start: PointerEvent | React.PointerEvent, fresh = false) => {
     setDragging(id);
     const rect = rootRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -64,21 +65,28 @@ export const Rulers: React.FC<{
       axis === 'x' ? (e.clientX - rect.left - vx) / zoom : (e.clientY - rect.top - vy) / zoom;
     moveGuide(id, at(start));
     const move = (e: PointerEvent) => moveGuide(id, at(e));
-    const up = (e: PointerEvent) => {
-      const onRuler = axis === 'x' ? e.clientX - rect.left < RULER : e.clientY - rect.top < RULER;
-      if (onRuler) removeGuide(id);
+    const off = () => {
       setDragging(null);
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
     };
+    const up = (e: PointerEvent) => {
+      const onRuler = axis === 'x' ? e.clientX - rect.left < RULER : e.clientY - rect.top < RULER;
+      if (onRuler) removeGuide(id);
+      off();
+      end();
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts) - a guide
+    // just pulled out of the ruler goes again
+    const end = startGesture(() => { off(); if (fresh) queueMicrotask(() => removeGuide(id)); });
   };
 
   const pullGuide = (axis: 'x' | 'y') => (e: React.PointerEvent) => {
     e.stopPropagation(); e.preventDefault();
     const id = addGuide(axis, 0);
-    dragGuide(id, axis, e);
+    dragGuide(id, axis, e, true);
   };
 
   const label = (text: string, style: React.CSSProperties) => (

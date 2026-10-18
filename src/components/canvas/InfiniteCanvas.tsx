@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
 import { useProjectStore, toolToElementType, ZOOM_MAX, ZOOM_MIN } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { ArtboardFrame } from './ArtboardFrame';
@@ -17,6 +17,7 @@ import { PenOverlay } from './PenOverlay';
 import { BOOLEANABLE, vectorAllD } from '../../lib/boolean';
 import { ElementNode } from './ElementNode';
 import { absBoxOf, chainOf, frameAbove, inFlow, originOf, pickTarget, subtreeIds, takesDrops } from '../../lib/tree';
+import { startGesture } from '../../lib/gesture';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -384,6 +385,20 @@ export const InfiniteCanvas: React.FC = () => {
       window.removeEventListener('paste', paste);
     };
   });
+
+  // Right-click or Esc while moving, drawing or box-selecting puts it all back
+  // (src/lib/gesture.ts). Taken before the first move changes anything.
+  const busy = !!(draggingElementId || draggingFrameId || isDrawing || marquee);
+  useLayoutEffect(() => {
+    if (!busy) return;
+    return startGesture(() => {
+      setDraggingElementId(null); setDraggingFrameId(null);
+      setIsDrawing(false); setDrawFromCentre(false); setMarquee(null);
+      setFlowDrop(null); setFlowGhost(null); flowStart.current = null;
+      setDragMoved(false); setSnapLines([]);
+      dragOrigin.current = null; dragOrig.current = null; pressedSelectedText.current = false;
+    });
+  }, [busy]);
 
   const centreWorld = () => {
     const rect = canvasContainerRef.current?.getBoundingClientRect();

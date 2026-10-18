@@ -5,6 +5,7 @@ import { flexLayoutCss } from '../../lib/styleCss';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { startGesture } from '../../lib/gesture';
 
 interface ArtboardFrameProps {
   frame: DeviceFrame;
@@ -98,14 +99,16 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
       );
     };
 
-    const onPointerUp = () => {
+    const off = () => {
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
-      pushHistory();
     };
+    const onPointerUp = () => { off(); end(); pushHistory(); };
 
     window.addEventListener('pointermove', onPointerMove, true);
     window.addEventListener('pointerup', onPointerUp, true);
+    // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
+    const end = startGesture(off);
   };
 
   return (
