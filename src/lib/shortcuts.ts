@@ -206,6 +206,10 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     "Exclude"
    ],
    [
+    "Ctrl+Alt+M",
+    "Use as mask: the bottom selected layer cuts the rest to its shape (again on a mask: take it off)"
+   ],
+   [
     "Ctrl+E",
     "Flatten into one vector"
    ]

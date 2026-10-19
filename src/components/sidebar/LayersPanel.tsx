@@ -2,6 +2,7 @@ import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
+import { MaskIcon } from '../inspector/ShapeIcons';
 import { chainOf, isContainer, subtreeIds } from '../../lib/tree';
 import { UIElement } from '../../types/components';
 import { useAgent } from '../../lib/agentBridge';
@@ -161,6 +162,7 @@ export const LayersPanel: React.FC = () => {
             {el.type.slice(0, 3)}
           </span>
           <span className="truncate text-xs">{el.name || el.type}</span>
+          {el.style.isMask && <span title="Mask: cuts the other layers in its group to its shape" className="shrink-0 text-[#31C3F3]"><MaskIcon size={11} /></span>}
           {aiMade[el.id] && <span title="Made by the AI - goes once you change it" className="shrink-0"><Icons.Sparkles size={10} className="text-[#31C3F3]" /></span>}
         </div>
 

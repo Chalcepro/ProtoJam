@@ -2,7 +2,8 @@ import React, { useRef, useState } from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
-import { vectorAllD } from '../../lib/boolean';
+import { shapeD, vectorAllD } from '../../lib/boolean';
+import { needsOutline } from '../../lib/corners';
 import { pickTarget } from '../../lib/tree';
 import { startGesture } from '../../lib/gesture';
 
@@ -196,11 +197,10 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
 
   // ---------------- SHAPE CONTOURS ----------------
   const renderShapeOutline = () => {
-    if (type === 'polygon' || type === 'star') {
-      const pts = type === 'polygon' ? '50,5 95,95 5,95' : '50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36';
+    if (type === 'polygon' || type === 'star' || needsOutline(style)) {
       return (
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
-          <polygon points={pts} fill="none" stroke={SELECTION_COLOR} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
+          <path d={shapeD({ ...element, style: { ...style, x: 0, y: 0 } })} fill="none" stroke={SELECTION_COLOR} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
       );
     }

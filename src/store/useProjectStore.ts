@@ -226,6 +226,9 @@ export interface ProjectState {
   booleanSelection: (op: 'union' | 'subtract' | 'intersect' | 'exclude') => void;
   // Ctrl+E: the selected shapes / boolean groups as one plain vector.
   flattenSelection: () => void;
+  // Ctrl+Alt+M: the bottom selected layer cuts the others to its shape (they
+  // become a "Mask group"); on a mask or mask group, takes the mask off.
+  maskSelection: () => void;
   // Double-click / Enter on a shape: its points, ready to edit (a rectangle,
   // circle, triangle or star becomes a vector first, as in Figma).
   editShapePoints: (id: string) => void;
@@ -1645,6 +1648,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         selectedElementIds: [id], selectedFrameIds: [], isSaved: false
       };
     });
+  },
+
+  maskSelection: () => {
+    const { elements, selectedElementIds } = get();
+    const sel = elements.filter(e => selectedElementIds.includes(e.id));
+    if (sel.length === 1) {
+      const m = sel[0].style.isMask ? sel[0] : elements.find(e => e.parentId === sel[0].id && e.style.isMask);
+      if (m) get().updateElementStyle(m.id, { isMask: undefined });
+      return;
+    }
+    if (sel.length < 2 || sel.some(e => e.parentId !== sel[0].parentId)) return;
+    // bottom first, as in the layer order: that one is the mask
+    const bottom = elements.find(e => selectedElementIds.includes(e.id))!;
+    get().wrapSelection('group');
+    const gid = get().selectedElementIds[0];
+    set((state) => ({
+      elements: state.elements.map(e => e.id === gid ? { ...e, name: 'Mask group' }
+        : e.id === bottom.id ? { ...e, style: { ...e.style, isMask: true } } : e)
+    }));
   },
 
   moveToFlow: (id, parentId, index) => {

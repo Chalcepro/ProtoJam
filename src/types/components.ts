@@ -247,6 +247,15 @@ export interface ElementStyle {
   borderColor?: string;
   borderStyle?: 'solid' | 'dashed' | 'dotted';
   borderRadius?: number | { tl: number; tr: number; br: number; bl: number };
+  // How the corners are shaped (experimental beyond round): 'inverse' scoops
+  // each corner inward, 'bevel' cuts it straight. Unset = round.
+  cornerStyle?: 'round' | 'inverse' | 'bevel';
+  // Figma's corner smoothing, 0-1: round corners ease into the sides.
+  cornerSmoothing?: number;
+  // Polygon: number of sides; star: number of points. Unset = the old fixed outline.
+  pointCount?: number;
+  // Star: inner radius as a share of the outer one (0-1).
+  starRatio?: number;
   strokes?: StrokeLayer[];
 
   // Typography

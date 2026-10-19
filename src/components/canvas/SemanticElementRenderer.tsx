@@ -3,6 +3,8 @@ import { effectsCss, textResizeOf } from '../../lib/styleCss';
 import { VideoView } from './VideoView';
 import { SvgPaint } from './SvgPaint';
 import { IconView } from './IconView';
+import { OutlineShape } from './OutlineShape';
+import { needsOutline } from '../../lib/corners';
 import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
 import { vectorAllD, vectorRegions } from '../../lib/boolean';
 import { isPlainStroke } from '../../lib/strokeArt';
@@ -236,6 +238,8 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
   switch (type) {
     // ---------------- RECTANGLE SHAPE ----------------
     case 'rectangle':
+      // scooped, cut or smoothed corners: drawn as an outline
+      if (needsOutline(style)) return <OutlineShape element={{ ...element, style }} onClick={handleClick} />;
       return (
         <><div style={boxStyle()} onClick={handleClick}>{fillStack()}</div>{strokeOverlays()}</>
       );
@@ -292,34 +296,11 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       );
 
     // ---------------- POLYGON / TRIANGLE ----------------
-    case 'polygon':
-      return (
-        <svg viewBox="0 0 100 100" preserveAspectRatio={hasLayeredPaint(style) ? 'none' : undefined} className="w-full h-full overflow-visible" onClick={handleClick}>
-          {hasLayeredPaint(style)
-            ? <SvgPaint d="M 50,5 L 95,95 L 5,95 Z" fills={fillsOf(element)} strokes={strokesOf(element)} nonScaling />
-            : <polygon
-                points="50,5 95,95 5,95"
-                fill={style.fillColor || '#ebebec'}
-                stroke={style.borderColor || 'none'}
-                strokeWidth={style.borderWidth || 0}
-              />}
-        </svg>
-      );
-
     // ---------------- STAR ----------------
+    // both drawn as their outline: sides / points, rounded or shaped corners
+    case 'polygon':
     case 'star':
-      return (
-        <svg viewBox="0 0 100 100" preserveAspectRatio={hasLayeredPaint(style) ? 'none' : undefined} className="w-full h-full overflow-visible" onClick={handleClick}>
-          {hasLayeredPaint(style)
-            ? <SvgPaint d="M 50,5 L 64,36 L 98,38 L 72,60 L 80,94 L 50,75 L 20,94 L 28,60 L 2,38 L 36,36 Z" fills={fillsOf(element)} strokes={strokesOf(element)} nonScaling />
-            : <polygon
-                points="50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36"
-                fill={style.fillColor || '#ebebec'}
-                stroke={style.borderColor || 'none'}
-                strokeWidth={style.borderWidth || 0}
-              />}
-        </svg>
-      );
+      return <OutlineShape element={{ ...element, style }} fallbackFill="#ebebec" onClick={handleClick} />;
 
     // ---------------- VECTOR PATH (PEN TOOL) ----------------
     // Drawn at the size it was made (vectorData.w/h) and stretched to the

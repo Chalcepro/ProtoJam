@@ -19,7 +19,7 @@ export const BooleanShape: React.FC<{ group: UIElement; elements: UIElement[] }>
     () => booleanD(s.booleanOp!, kids.map(k => shapeD(k, 0, 0, elements))),
     // the shapes' geometry is all that matters
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.booleanOp, JSON.stringify(kids.map(k => [k.type, k.style.x, k.style.y, k.style.width, k.style.height, k.style.borderRadius, k.style.vectorData, k.style.booleanOp])), kids.length]
+    [s.booleanOp, JSON.stringify(kids.map(k => [k.type, k.style.x, k.style.y, k.style.width, k.style.height, k.style.borderRadius, k.style.cornerStyle, k.style.cornerSmoothing, k.style.pointCount, k.style.starRatio, k.style.vectorData, k.style.booleanOp, k.style.frameShape])), kids.length]
   );
   return (
     <svg width="100%" height="100%" overflow="visible" className="absolute inset-0 pointer-events-none"

@@ -10,6 +10,7 @@ import { ExtrudeArt, SideStrokes } from './StrokeArt';
 import { flexLayoutCss, nodeSize, rotateCss, stackLayer } from '../../lib/styleCss';
 import { isContainer, pickTarget, stepInto } from '../../lib/tree';
 import { measured } from '../../store/useProjectStore';
+import { shapeD } from '../../lib/boolean';
 
 interface Props {
   element: UIElement;
@@ -62,6 +63,8 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
   if (element.hidden) return null;
   const kids = container ? elements.filter(e => e.parentId === element.id) : [];
   const bool = container && !!element.style.booleanOp;
+  // a mask inside: everything here is cut to its shape, and it is not drawn
+  const mask = kids.find(k => k.style.isMask && !k.hidden);
   const shownBlend = preview?.blendMode ?? element.style.blendMode;
   const blend = shownBlend && shownBlend !== 'normal' ? shownBlend : undefined;
   const position: React.CSSProperties = flow
@@ -125,12 +128,13 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
               width: ownLayout?.sizingH === 'hug' ? 'max-content' : '100%',
               height: ownLayout?.sizingV === 'hug' ? 'max-content' : '100%',
               ...clipCss(element),
+              ...(mask ? { clipPath: `path('${shapeD(mask, 0, 0, elements)}')` } : {}),
               ...(ownLayout ? flexLayoutCss(ownLayout) : {})
             }}
           >
             {kids.map((k, i) => (
               <ElementNode key={k.id} element={k} parentLayout={ownLayout} layer={stackLayer(i, kids.length, ownLayout)} onPress={onPress}
-                           boxInside={boxInside || flow} frameId={frameId} ghost={ghost || bool} />
+                           boxInside={boxInside || flow} frameId={frameId} ghost={ghost || bool || k === mask} />
             ))}
           </div>
         </>

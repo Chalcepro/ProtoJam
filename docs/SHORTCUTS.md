@@ -75,6 +75,7 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Ctrl+Alt+S | Subtract |
 | Ctrl+Alt+I | Intersect |
 | Ctrl+Alt+X | Exclude |
+| Ctrl+Alt+M | Use as mask: the bottom selected layer cuts the rest to its shape (again on a mask: take it off) |
 | Ctrl+E | Flatten into one vector |
 
 ## Resizing & rotating (handles)

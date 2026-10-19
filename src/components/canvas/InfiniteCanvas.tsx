@@ -14,7 +14,8 @@ import { Rulers, RULER } from './Rulers';
 import { isTextEl, rotateCss } from '../../lib/styleCss';
 import { putAsset } from '../../lib/assets';
 import { PenOverlay } from './PenOverlay';
-import { BOOLEANABLE, vectorAllD } from '../../lib/boolean';
+import { BOOLEANABLE, shapeD, vectorAllD } from '../../lib/boolean';
+import { needsOutline } from '../../lib/corners';
 import { ElementNode } from './ElementNode';
 import { absBoxOf, chainOf, frameAbove, inFlow, originOf, pickTarget, subtreeIds, takesDrops } from '../../lib/tree';
 import { startGesture } from '../../lib/gesture';
@@ -924,9 +925,9 @@ export const InfiniteCanvas: React.FC = () => {
                 <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none">
                   <path d={vectorAllD(vd)} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
                 </svg>
-              ) : t === 'polygon' || t === 'star' ? (
-                <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <polygon points={t === 'star' ? '50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36' : '50,5 95,95 5,95'} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+              ) : t === 'polygon' || t === 'star' || needsOutline(el.style) ? (
+                <svg className="absolute inset-0 w-full h-full overflow-visible">
+                  <path d={shapeD({ ...el, style: { ...el.style, x: 0, y: 0 } })} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
                 </svg>
               ) : (
                 <div className="absolute inset-0" style={{ border: `${1.5 / z}px solid #ff6b4a`, borderRadius: t === 'ellipse' ? '9999px' : typeof el.style.borderRadius === 'number' ? el.style.borderRadius : 0 }} />
@@ -1120,6 +1121,7 @@ export const InfiniteCanvas: React.FC = () => {
               { label: 'Union', hint: 'Ctrl+Alt+U', run: b('union') }, { label: 'Subtract', hint: 'Ctrl+Alt+S', run: b('subtract') },
               { label: 'Intersect', hint: 'Ctrl+Alt+I', run: b('intersect') }, { label: 'Exclude', hint: 'Ctrl+Alt+X', run: b('exclude') }
             ] });
+            items.push({ label: 'Use as mask', hint: 'Ctrl+Alt+M', run: () => useProjectStore.getState().maskSelection() });
           }
           const flat = elements.filter(e => selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
           if (elements.some(e => selectedElementIds.includes(e.id) && (['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath'].includes(e.type) || e.style.isGroup)))

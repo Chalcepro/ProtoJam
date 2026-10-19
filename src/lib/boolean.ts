@@ -1,6 +1,7 @@
 import paper from 'paper/dist/paper-core';
 import type { UIElement, VectorData, VectorPoint } from '../types/components';
 import { vectorPathD } from './vector';
+import { cornerShapeD } from './corners';
 
 // Shape geometry for booleans (Union / Subtract / Intersect / Exclude) and for
 // the fillable regions inside a vector. paper.js does the path maths, offline.
@@ -15,9 +16,6 @@ export const setup = () => {
 // Shapes that have an outline a boolean can work on.
 export const BOOLEANABLE = new Set(['rectangle', 'ellipse', 'polygon', 'star', 'vectorPath', 'container']);
 
-const STAR = '50,5 64,36 98,38 72,60 80,94 50,75 20,94 28,60 2,38 36,36';
-const TRIANGLE = '50,5 95,95 5,95';
-
 // One element's outline as SVG path data, at offset (ox, oy), in its own size.
 export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): string => {
   const s = el.style;
@@ -28,10 +26,8 @@ export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): st
       return `M ${cx - rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx + rx} ${cy} A ${rx} ${ry} 0 1 0 ${cx - rx} ${cy} Z`;
     }
     case 'polygon':
-    case 'star': {
-      const pts = (el.type === 'star' ? STAR : TRIANGLE).split(' ').map(p => p.split(',').map(Number));
-      return 'M ' + pts.map(([px, py]) => `${x + px / 100 * w} ${y + py / 100 * h}`).join(' L ') + ' Z';
-    }
+    case 'star':
+      return cornerShapeD(el.type, s, x, y, w, h);
     case 'vectorPath': {
       const vd = s.vectorData;
       if (!vd) return '';
@@ -47,17 +43,10 @@ export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): st
       // a frame made from a shape is that shape
       if (s.frameShape) return shapeD({ ...el, type: s.frameShape }, ox, oy, all);
       // a boolean group inside a boolean group: its own result
-      return s.booleanOp ? booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))) : rectD(x, y, w, h, s.borderRadius);
+      return s.booleanOp ? booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))) : cornerShapeD('rect', s, x, y, w, h);
     default:
-      return rectD(x, y, w, h, s.borderRadius);
+      return cornerShapeD('rect', s, x, y, w, h);
   }
-};
-
-const rectD = (x: number, y: number, w: number, h: number, r: UIElement['style']['borderRadius']) => {
-  const rr = typeof r === 'number' ? Math.min(r, w / 2, h / 2) : 0;
-  if (!rr) return `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`;
-  return `M ${x + rr} ${y} H ${x + w - rr} A ${rr} ${rr} 0 0 1 ${x + w} ${y + rr} V ${y + h - rr} A ${rr} ${rr} 0 0 1 ${x + w - rr} ${y + h} ` +
-         `H ${x + rr} A ${rr} ${rr} 0 0 1 ${x} ${y + h - rr} V ${y + rr} A ${rr} ${rr} 0 0 1 ${x + rr} ${y} Z`;
 };
 
 const toPath = (d: string) => new paper.CompoundPath(d);

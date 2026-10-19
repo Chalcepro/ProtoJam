@@ -70,6 +70,7 @@ export const App: React.FC = () => {
         // Ctrl+G group, Ctrl+Alt+G frame, Ctrl+Shift+G ungroup
         if (k === 'g') { done(); if (e.shiftKey) s.ungroupSelection(); else s.wrapSelection(e.altKey ? 'frame' : 'group'); return; }
         if (e.altKey && k === 'f') { done(); s.convertToFrame(); return; }   // Ctrl+Alt+F: shape -> frame
+        if (e.altKey && k === 'm') { done(); s.maskSelection(); return; }   // Ctrl+Alt+M: use as mask
         if (e.altKey && ({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']) {
           done(); s.booleanSelection(({ u: 'union', s: 'subtract', i: 'intersect', x: 'exclude' } as const)[k as 'u']);
           return;

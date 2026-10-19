@@ -2,18 +2,18 @@ import React from 'react';
 import { UIElement } from '../../types/components';
 import { SemanticElementRenderer } from './SemanticElementRenderer';
 import { BooleanShape } from './BooleanShape';
+import { OutlineShape } from './OutlineShape';
 import { shapeD } from '../../lib/boolean';
-import { effectsCss } from '../../lib/styleCss';
-import { fillsOf, hasLayeredPaint, strokesOf } from '../../lib/paint';
-import { SvgPaint } from './SvgPaint';
+import { needsOutline } from '../../lib/corners';
 import { useProjectStore } from '../../store/useProjectStore';
 
-// The outline of a frame made from a shape, in its own 0,0 space.
+// The outline of a frame made from a shape, or with corners CSS cannot draw,
+// in its own 0,0 space.
 export const frameOutline = (el: UIElement) =>
-  el.style.frameShape ? shapeD({ ...el, style: { ...el.style, x: 0, y: 0 } }) : '';
+  el.style.frameShape || needsOutline(el.style) ? shapeD({ ...el, style: { ...el.style, x: 0, y: 0 } }) : '';
 
 // How a frame cuts what is inside it, with Clip content on: along its shape
-// (circle, triangle, star, a drawn path) or its rounded box.
+// (circle, triangle, star, a drawn path, shaped corners) or its rounded box.
 export const clipCss = (el: UIElement): React.CSSProperties => {
   if (!el.style.clipContent) return { overflow: 'visible' };
   const d = frameOutline(el);
@@ -29,15 +29,11 @@ export const ContainerBox: React.FC<{ el: UIElement; elements: UIElement[]; inte
   const el = preview ? { ...e0, style: { ...e0.style, ...preview } } : e0;
   const s = el.style;
   if (s.booleanOp) return hidden ? null : <BooleanShape group={el} elements={elements} />;
-  if (s.frameShape) {
+  if (s.frameShape || needsOutline(s)) {
     return (
-      <svg width="100%" height="100%" overflow="visible" className="absolute inset-0 pointer-events-none"
-           style={{ opacity: hidden ? 0 : s.opacity ?? 1, ...effectsCss(s, false), boxShadow: undefined }}>
-        {hasLayeredPaint(s)
-          ? <SvgPaint d={frameOutline(el)} fills={fillsOf(el)} strokes={strokesOf(el)} />
-          : <path d={frameOutline(el)} fill={s.fillColor && s.fillColor !== 'transparent' ? s.fillColor : 'none'}
-                  stroke={s.borderWidth ? (s.borderColor || '#ebebec') : 'none'} strokeWidth={s.borderWidth || 0} />}
-      </svg>
+      <div className="absolute inset-0 pointer-events-none" style={{ opacity: hidden ? 0 : undefined }}>
+        <OutlineShape element={el} />
+      </div>
     );
   }
   return (

@@ -17,12 +17,19 @@ import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { flexLayoutCss, textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
 import { BOOLEANABLE } from '../../lib/boolean';
+import { CornerBevelIcon, CornerInverseIcon, CornerRoundIcon, MaskIcon } from './ShapeIcons';
 
 const BOOL_OPS = [
   ['union', 'Union', Icons.SquaresUnite, 'U'], ['subtract', 'Subtract', Icons.SquaresSubtract, 'S'],
   ['intersect', 'Intersect', Icons.SquaresIntersect, 'I'], ['exclude', 'Exclude', Icons.SquaresExclude, 'X']
 ] as const;
 import { AutoLayoutSettings, EffectLayer } from '../../types/components';
+
+// Corner styles (round is Figma's; inverse and bevel are experimental)
+const CORNER_STYLES = [
+  ['round', 'Round', CornerRoundIcon], ['inverse', 'Inverse: each corner scooped inward', CornerInverseIcon],
+  ['bevel', 'Bevel: each corner cut straight', CornerBevelIcon]
+] as const;
 
 
 // A small Fixed / Hug / Fill menu, as in Figma's W and H fields.
@@ -686,6 +693,11 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
     setTimeout(() => setCopiedCss(false), 2000);
   };
 
+  // polygons and stars take one radius for all their corners
+  const manyCorners = element!.type === 'polygon' || element!.type === 'star';
+  // corners this shapes (circles, drawn paths and text have none to shape)
+  const shapedCorners = ['rectangle', 'container', 'polygon', 'star'].includes(element!.type) && !style.booleanOp &&
+    (!style.frameShape || style.frameShape === 'polygon' || style.frameShape === 'star');
   const cornerRadiusObj = typeof style.borderRadius === 'object' && style.borderRadius !== null
     ? style.borderRadius
     : { tl: Number(style.borderRadius) || 0, tr: Number(style.borderRadius) || 0, br: Number(style.borderRadius) || 0, bl: Number(style.borderRadius) || 0 };
@@ -740,6 +752,39 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
       {groupEls.length > 0 && (
         <div className="text-[11px] text-[#31C3F3] bg-[rgba(49,195,243,0.1)] rounded-lg px-2.5 py-1.5">{groupEls.length} layers selected · changes apply to all of them</div>
       )}
+
+      {/* 0. BOOLEANS & MASK - always here; each lights up when it can apply */}
+      {(() => {
+        const st = useProjectStore.getState();
+        const sel = st.elements.filter(e => st.selectedElementIds.includes(e.id));
+        const shapes = sel.filter(e => BOOLEANABLE.has(e.type));
+        const op = element?.type === 'container' ? style.booleanOp : undefined;
+        const canBool = shapes.length >= 2 || !!op;
+        const masked = sel.length === 1 && (sel[0].style.isMask || st.elements.some(e => e.parentId === sel[0].id && e.style.isMask));
+        const canMask = masked || (sel.length >= 2 && sel.every(e => e.parentId === sel[0].parentId));
+        const canFlatten = shapes.length >= 1 && (shapes.length > 1 || !!shapes[0].style.booleanOp || shapes[0].type !== 'vectorPath');
+        const btn = (on: boolean, active?: boolean) => `p-1.5 rounded ${active ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]'
+          : on ? 'hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.7)] hover:text-[rgb(235,235,236)]' : 'text-[rgba(235,235,236,0.2)] cursor-default'}`;
+        return (
+          <div className="flex items-center justify-between bg-[rgba(235,235,236,0.03)] p-1 rounded-xl border border-[rgba(235,235,236,0.08)]">
+            {BOOL_OPS.map(([o, label, Ic, key]) => (
+              <button key={o} disabled={!canBool} onClick={() => booleanSelection(o)} className={btn(canBool, op === o)}
+                      title={canBool ? `${label} (Ctrl+Alt+${key})` : `${label} - select two or more shapes`}>
+                <Ic size={14} />
+              </button>
+            ))}
+            <div className="h-3 w-px bg-[rgba(235,235,236,0.1)]" />
+            <button disabled={!canMask} onClick={() => st.maskSelection()} className={btn(canMask, masked)}
+                    title={masked ? 'Remove mask (Ctrl+Alt+M)' : canMask ? 'Use as mask: the bottom layer cuts the rest to its shape (Ctrl+Alt+M)' : 'Mask - select two or more layers'}>
+              <MaskIcon size={14} />
+            </button>
+            <button disabled={!canFlatten} onClick={() => st.flattenSelection()} className={btn(canFlatten)}
+                    title={canFlatten ? 'Flatten into one editable vector (Ctrl+E)' : 'Flatten - select a shape'}>
+              <Icons.Spline size={14} />
+            </button>
+          </div>
+        );
+      })()}
 
       {/* 1. ALIGNMENT & DISTRIBUTION TOOLBAR */}
       <div className="flex items-center justify-between bg-[rgba(235,235,236,0.03)] p-1 rounded-xl border border-[rgba(235,235,236,0.08)]">
@@ -802,29 +847,6 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <Icons.SendToBack size={13} />
         </button>
       </div>
-
-      {/* 1b. BOOLEANS - two or more shapes selected, or a boolean group */}
-      {(() => {
-        const st = useProjectStore.getState();
-        const shapes = st.elements.filter(e => st.selectedElementIds.includes(e.id) && BOOLEANABLE.has(e.type));
-        const op = element?.type === 'container' ? style.booleanOp : undefined;
-        if (shapes.length < 2 && !op) return null;
-        return (
-          <div className="flex items-center gap-1 bg-[rgba(235,235,236,0.03)] p-1 rounded-xl border border-[rgba(235,235,236,0.08)]">
-            <span className="text-[10px] font-bold text-[rgba(235,235,236,0.4)] uppercase tracking-wider px-1.5 mr-auto">Boolean</span>
-            <button onClick={() => useProjectStore.getState().flattenSelection()} title="Flatten into one editable vector (Ctrl+E)"
-                    className="px-1.5 py-1 rounded text-[10px] font-semibold hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)] mr-1">
-              Flatten
-            </button>
-            {BOOL_OPS.map(([o, label, Ic, key]) => (
-              <button key={o} onClick={() => booleanSelection(o)} title={`${label} (Ctrl+Alt+${key})`}
-                      className={`p-1.5 rounded ${op === o ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'hover:bg-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)]'}`}>
-                <Ic size={14} />
-              </button>
-            ))}
-          </div>
-        );
-      })()}
 
       {/* 2. MASTER COMPONENT BAR */}
       <div className="bg-[rgba(235,235,236,0.02)] p-2 rounded-xl border border-[rgba(235,235,236,0.08)]">
@@ -1016,11 +1038,32 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           </div>
         )}
 
+        {/* Polygon sides / star points, and how deep a star's points go */}
+        {(element!.type === 'polygon' || element!.type === 'star') && (
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title={element!.type === 'star' ? 'Number of points' : 'Number of sides'}>
+              <span className="text-[10px] text-[rgba(235,235,236,0.4)] mr-2">{element!.type === 'star' ? 'Points' : 'Sides'}</span>
+              <NumberInput min={3} max={60} value={style.pointCount ?? (element!.type === 'star' ? 5 : 3)}
+                           onChange={(e) => updateElementStyle(element!.id, { pointCount: Math.round(Number(e.target.value)) })}
+                           className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
+            </div>
+            {element!.type === 'star' && (
+              <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Inner radius: how deep the points go">
+                <span className="text-[10px] text-[rgba(235,235,236,0.4)] mr-2">Ratio</span>
+                <NumberInput min={1} max={100} value={Math.round((style.starRatio ?? 0.382) * 100)}
+                             onChange={(e) => updateElementStyle(element!.id, { starRatio: Number(e.target.value) / 100, pointCount: style.pointCount ?? 5 })}
+                             className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
+                <span className="text-[10px] text-[rgba(235,235,236,0.4)]">%</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Corner Radius Controls (Uniform vs Individual) */}
         <div className="mt-2 space-y-1.5">
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-[rgba(235,235,236,0.5)]">Corner Radius</span>
-            <button
+            {!manyCorners && <button
               onClick={() => setIsIndividualCorners(!isIndividualCorners)}
               className={`p-1 rounded text-[10px] transition-colors ${
                 isIndividualCorners ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)] font-bold' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'
@@ -1028,10 +1071,10 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
               title="Toggle Individual Corners"
             >
               <Icons.Square size={11} />
-            </button>
+            </button>}
           </div>
 
-          {!isIndividualCorners ? (
+          {!isIndividualCorners || manyCorners ? (
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <Icons.CornerUpRight size={12} className="text-[rgba(235,235,236,0.4)] mr-2" />
               <NumberInput
@@ -1061,6 +1104,35 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Smoothing (round corners) and, experimental, the corner style */}
+          {shapedCorners && (
+            <>
+              {(style.cornerStyle ?? 'round') === 'round' && (
+                <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Corner smoothing: the curve eases into the sides (60% is the iOS look)">
+                  <span className="text-[10px] text-[rgba(235,235,236,0.4)] mr-2 whitespace-nowrap">Smoothing</span>
+                  <NumberInput min={0} max={100} value={Math.round((style.cornerSmoothing ?? 0) * 100)}
+                               onChange={(e) => updateElementStyle(element!.id, { cornerSmoothing: Number(e.target.value) / 100 || undefined })}
+                               className="bg-transparent text-[rgb(235,235,236)] outline-none w-full font-mono text-xs" />
+                  <span className="text-[10px] text-[rgba(235,235,236,0.4)]">%</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-[rgba(235,235,236,0.5)] flex items-center gap-1.5">
+                  Corner style
+                  <span className="text-[9px] font-bold uppercase tracking-wider px-1 rounded bg-[rgba(49,195,243,0.12)] text-[#31C3F3]">Experimental</span>
+                </span>
+                <div className="flex items-center gap-0.5 bg-[rgba(235,235,236,0.04)] rounded-lg p-0.5 border border-[rgba(235,235,236,0.08)]">
+                  {CORNER_STYLES.map(([k, label, Ic]) => (
+                    <button key={k} title={label} onClick={() => updateElementStyle(element!.id, { cornerStyle: k === 'round' ? undefined : k })}
+                            className={`p-1 rounded ${(style.cornerStyle ?? 'round') === k ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'text-[rgba(235,235,236,0.55)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>
+                      <Ic size={13} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
