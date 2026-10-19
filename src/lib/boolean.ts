@@ -88,7 +88,11 @@ export const vectorAllD = (vd: VectorData) =>
 // is found by walking round it, always taking the next line clockwise. A
 // face's key names its points, so it survives points being moved.
 type Half = { from: string; to: string; a: VectorPoint; b: VectorPoint; c1: { x: number; y: number }; c2: { x: number; y: number }; twin: number; ang: number };
-const vectorFaces = (vd: VectorData): { ids: string[]; d: string }[] => {
+const vectorFaces = (vd: VectorData): { ids: string[]; d: string }[] => facesAndInterior(vd).faces;
+
+// The faces, and the lines with a face on both sides (inside the drawing),
+// named "aId>bId" both ways round.
+const facesAndInterior = (vd: VectorData): { faces: { ids: string[]; d: string }[]; interior: Set<string> } => {
   const at = (p: { x: number; y: number }) => `${Math.round(p.x * 2) / 2},${Math.round(p.y * 2) / 2}`;
   const half: Half[] = [];
   for (const path of vectorPaths(vd)) {
@@ -109,7 +113,7 @@ const vectorFaces = (vd: VectorData): { ids: string[]; d: string }[] => {
   const out = new Map<string, number[]>();
   half.forEach((h, i) => { const l = out.get(h.from); if (l) l.push(i); else out.set(h.from, [i]); });
   out.forEach(l => l.sort((p, q) => half[p].ang - half[q].ang));
-  const used = new Set<number>(), faces: { ids: string[]; d: string }[] = [];
+  const used = new Set<number>(), faces: { ids: string[]; d: string }[] = [], inner = new Set<number>();
   for (let s = 0; s < half.length; s++) {
     if (used.has(s)) continue;
     const loop: number[] = [];
@@ -127,13 +131,17 @@ const vectorFaces = (vd: VectorData): { ids: string[]; d: string }[] => {
       for (let j = 0; j < 3; j++) area += q[j].x * q[j + 1].y - q[j + 1].x * q[j].y;
     }
     if (area / 2 > 0.5) {
+      loop.forEach(i => inner.add(i));
       const f = half[loop[0]].a;
       const d = `M ${f.x} ${f.y} ` + loop.map(i => { const { c1, c2, b } = half[i]; return `C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`; }).join(' ') + ' Z';
       faces.push({ ids: Array.from(new Set(loop.map(i => half[i].a.id))).sort(), d });
     }
   }
-  return faces;
+  const interior = new Set<string>();
+  half.forEach((h, i) => { if (inner.has(i) && inner.has(h.twin)) { interior.add(`${h.a.id}>${h.b.id}`); interior.add(`${h.b.id}>${h.a.id}`); } });
+  return { faces, interior };
 };
+export const interiorLines = (vd: VectorData) => facesAndInterior(vd).interior;
 
 // a short, stable name for a set of point ids
 const hashIds = (ids: string[]) => {

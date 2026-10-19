@@ -74,6 +74,11 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
       finishWiring(frame.id);
       return;
     }
+    // the empty part of a screen is empty space: a click there first lets go
+    // of what was selected; with nothing selected it picks (and drags) the screen
+    const st = useProjectStore.getState();
+    const others = st.selectedElementIds.length || st.selectedFrameIds.some(id => id !== frame.id);
+    if (others && !e.shiftKey) { st.clearSelection(); st.setInlineEditingElementId(null); return; }
     selectFrame(frame.id, e.shiftKey);
     if (onStartDragFrame) onStartDragFrame(e);
   };

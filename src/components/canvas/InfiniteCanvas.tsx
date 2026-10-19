@@ -889,7 +889,7 @@ export const InfiniteCanvas: React.FC = () => {
             <div className="absolute pointer-events-none" data-export-skip style={{ left: b.x, top: b.y, width: b.w, height: b.h, zIndex: 999, transform: rotateCss(el) }}>
               {t === 'vectorPath' && vd ? (
                 <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none">
-                  <path d={vectorAllD(vd)} fill="none" stroke="#ff6b4a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+                  <path d={vectorAllD(vd)} fill="none" stroke="#ff6b4a" strokeWidth={1.25} opacity={0.6} vectorEffect="non-scaling-stroke" />
                 </svg>
               ) : t === 'polygon' || t === 'star' || needsOutline(el.style) ? (
                 <svg className="absolute inset-0 w-full h-full overflow-visible">

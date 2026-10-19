@@ -217,7 +217,7 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
   const screenW = Number(style.width) * z, screenH = Number(style.height) * z;
   const small = Math.min(screenW, screenH) < 28;
   const tiny = Math.min(screenW, screenH) < 12;
-  const stroke = 1.5 / z;                       // outline
+  const stroke = 1 / z;                         // outline: one screen pixel, as in Figma
   const H = (tiny ? 5 : 8) / z;                 // handle size
   const HB = 1.25 / z;                          // handle border
 
@@ -226,19 +226,23 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
     if (type === 'polygon' || type === 'star' || needsOutline(style)) {
       return (
         <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none">
-          <path d={shapeD({ ...element, style: { ...style, x: 0, y: 0 } })} fill="none" stroke={SELECTION_COLOR} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+          <path d={shapeD({ ...element, style: { ...style, x: 0, y: 0 } })} fill="none" stroke={SELECTION_COLOR} strokeWidth="1" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
       );
     }
     if (type === 'vectorPath') {
       const vectorData = style.vectorData;
-      if (vectorData && vectorData.points.length > 0) {
+      if (vectorData && (vectorData.points.length > 0 || vectorData.subpaths?.length)) {
         const pathD = vectorAllD(vectorData);
         return (
-          <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
-               viewBox={vectorData.w ? `0 0 ${vectorData.w} ${vectorData.h}` : undefined} preserveAspectRatio="none">
-            <path d={pathD} fill="none" stroke={SELECTION_COLOR} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-          </svg>
+          <>
+            {/* the box says it is selected; its lines only faintly, inner ones included */}
+            <div style={{ border: `${stroke}px solid ${SELECTION_COLOR}` }} className="absolute inset-0 pointer-events-none" />
+            <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none"
+                 viewBox={vectorData.w ? `0 0 ${vectorData.w} ${vectorData.h}` : undefined} preserveAspectRatio="none">
+              <path d={pathD} fill="none" stroke={SELECTION_COLOR} strokeWidth="1" opacity={0.35} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+            </svg>
+          </>
         );
       }
     }

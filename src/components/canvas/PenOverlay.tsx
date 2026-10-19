@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
-import { closedPathAt, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
+import { closedPathAt, interiorLines, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
 import { snapAxis, snapTargets } from '../../lib/snap';
 import { continueFrom, deleteSegment, isEndPoint, joinPoints, insertPoint, segmentPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
@@ -61,7 +61,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out' | 'pull'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean;
                        // moving points: where each selected one started
-                       orig?: Map<string, { x: number; y: number }> } | null>(null);
+                       orig?: Map<string, { x: number; y: number }>;
+                       // pressed inside a shape: its points, picked only once it is dragged
+                       pending?: string[]; px?: number; py?: number } | null>(null);
   // what the last handle move snapped to, so the handles can show it
   const [snapped, setSnapped] = useState(false);
   // a line picked in Edit (to delete), named by its two end points
@@ -69,6 +71,12 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   // box select of points, canvas units
   const [box, setBox] = useState<{ x0: number; y0: number; x1: number; y1: number; add: boolean } | null>(null);
   const segs = vd && vectorTool === 'select' ? segmentsOf(vd) : [];
+  // the line under the pointer: only it shows its add-a-point dot
+  const [hoverSeg, setHoverSeg] = useState<string | null>(null);
+  const segKey = (sg: { a: { id: string }; b: { id: string } }) => sg.a.id + '>' + sg.b.id;
+  // lines with an area on both sides (inside the drawing) are drawn fainter
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const inner = useMemo(() => (vd ? interiorLines(vd) : new Set<string>()), [vd]);
   // The pen snaps to a point near the pointer (a bit wider than a click), or
   // else onto a line; the target is ringed so it is plain what a click does.
   const penSnap = (w: { x: number; y: number }): { x: number; y: number; point?: VectorPoint } | null => {
@@ -199,7 +207,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     if (!hit) {
       if (vectorTool !== 'select' || !vd) return;
       // the dot at the middle of a line: a new point there, ready to drag
-      const midSeg = segs.find(sg => near(w, segmentMid(sg)));
+      const midSeg = segs.find(sg => segKey(sg) === hoverSeg && near(w, segmentMid(sg)));
       if (midSeg) {
         const at = segmentAt(vd, segmentMid(midSeg).x, segmentMid(midSeg).y, 0.5);
         if (at) {
@@ -233,8 +241,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         setSegSel(null);
         const picked = selectedVectorPointIds.filter(id => inShape.includes(id));
         const ids = picked.length > 1 ? selectedVectorPointIds : inShape;
-        useProjectStore.setState({ selectedVectorPointIds: ids });
+        // a drag moves it; a plain click is a click on empty space (lets go)
         dragPoints(ids, w);
+        if (drag.current) { drag.current.pending = ids; drag.current.px = e.clientX; drag.current.py = e.clientY; }
         return;
       }
       // empty: a box picks the points inside it (Shift keeps the ones picked)
@@ -305,6 +314,12 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     const d = drag.current;
     if (!d) {
       if (vectorTool === 'select') { const g = xfGrip(w); setGripCursor(g ? GRIP_CURSOR[g] : null); if (g) return; }
+      if (vectorTool === 'select' && vd) {
+        const on = !pointAt(w) && segmentAt(vd, w.x, w.y, (HIT * 1.5) / z);
+        const sg = on ? segsOfPath(on.path)[on.seg] : null;
+        const k = sg ? segKey(sg) : null;
+        if (k !== hoverSeg) setHoverSeg(k);
+      }
       if (vectorTool === 'select' && vd) setOverMovable(!pointAt(w) && (!!segmentAt(vd, w.x, w.y, HIT / z) || !!closedPathAt(vd, w.x, w.y)));
       return;
     }
@@ -317,6 +332,11 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       return;
     }
     if (d.kind === 'point') {
+      if (d.pending) {
+        if (Math.hypot(e.clientX - d.px!, e.clientY - d.py!) < 3) return;
+        useProjectStore.setState({ selectedVectorPointIds: d.pending });
+        d.pending = undefined;
+      }
       let dx = w.x - d.ox, dy = w.y - d.oy;
       const g: { x?: number; y?: number } = {};
       const lead = d.orig?.get(d.id);
@@ -390,6 +410,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     const d = drag.current;
     // Ctrl-click without a drag: sharp <-> smooth
     if (d?.kind === 'pull' && !d.alt) { const pt = allPoints.find(p => p.id === d.id); if (pt) toggleSmooth(pt); }
+    if (d?.pending) useProjectStore.setState({ selectedVectorPointIds: [] });
     if (box) {
       const x0 = Math.min(box.x0, box.x1), x1 = Math.max(box.x0, box.x1), y0 = Math.min(box.y0, box.y1), y1 = Math.max(box.y0, box.y1);
       const inside = allPoints.filter(p => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1).map(p => p.id);
@@ -602,10 +623,21 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
               : `M ${sx(last.x)} ${sy(last.y)} L ${sx(cursor.x)} ${sy(cursor.y)}`}
             fill="none" stroke={ACCENT} strokeWidth={1} strokeDasharray="4 3" />
         )}
-        {/* Edit: a dot at the middle of each line - click it for a new point */}
-        {segs.map(sg => {
-          const m = segmentMid(sg);
-          return <circle key={sg.a.id + sg.b.id} cx={sx(m.x)} cy={sy(m.y)} r={2.5} fill="rgb(20,20,19)" stroke={ACCENT} strokeWidth={1} opacity={0.85} />;
+        {/* every line, faint - and fainter still (dashed) inside the drawing */}
+        {vd && segmentsOf(vd).map(sg => {
+          const inside = inner.has(segKey(sg));
+          return <path key={'l' + segKey(sg)} d={segmentD(sg, (x, y) => [sx(x), sy(y)])} fill="none" stroke={ACCENT}
+                       strokeWidth={1} opacity={inside ? 0.22 : 0.45} strokeDasharray={inside ? '3 3' : undefined} />;
+        })}
+        {/* the line under the pointer: a small + at its middle - click it for a new point */}
+        {segs.filter(sg => segKey(sg) === hoverSeg).map(sg => {
+          const m = segmentMid(sg), X = sx(m.x), Y = sy(m.y);
+          return (
+            <g key={'m' + segKey(sg)} opacity={0.8}>
+              <circle cx={X} cy={Y} r={4.5} fill="rgba(20,20,19,0.85)" stroke={ACCENT} strokeWidth={1} strokeDasharray="2 1.5" />
+              <path d={`M ${X - 2} ${Y} H ${X + 2} M ${X} ${Y - 2} V ${Y + 2}`} stroke={ACCENT} strokeWidth={1} />
+            </g>
+          );
         })}
         {segSel && (() => {
           const sg = segs.find(x => x.a.id === segSel.a && x.b.id === segSel.b);
@@ -640,10 +672,20 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         {allPoints.map((p) => {
           const sel = selectedVectorPointIds.includes(p.id);
           const first = p === points[0] && closing;
+          const X = sx(p.x), Y = sy(p.y);
+          // joined: another point sits on the same spot - ringed, so a join shows
+          const joined = allPoints.some(q => q !== p && Math.abs(q.x - p.x) < 0.01 && Math.abs(q.y - p.y) < 0.01);
+          // a loose end: where an open line stops, joined to nothing - hollow
+          const loose = !joined && paths.some(pa => !pa.isClosed && pa.points.length > 1 && (pa.points[0] === p || pa.points[pa.points.length - 1] === p));
+          if (loose && !sel && !first)
+            return <circle key={p.id} cx={X} cy={Y} r={4.5} fill="rgba(20,20,19,0.9)" stroke={ACCENT} strokeWidth={1.5} />;
           return (
-            <rect key={p.id} x={sx(p.x) - (first ? 5 : 4)} y={sy(p.y) - (first ? 5 : 4)}
-                  width={first ? 10 : 8} height={first ? 10 : 8} rx={p.isCorner === false ? 5 : 1.5}
-                  fill={sel || first ? ACCENT : 'rgb(235,235,236)'} stroke={sel || first ? 'rgb(235,235,236)' : ACCENT} strokeWidth={1.25} />
+            <g key={p.id}>
+              {joined && <circle cx={X} cy={Y} r={8} fill="none" stroke={ACCENT} strokeWidth={1} opacity={0.6} />}
+              <rect x={X - (first ? 5 : 4)} y={Y - (first ? 5 : 4)}
+                    width={first ? 10 : 8} height={first ? 10 : 8} rx={p.isCorner === false ? 5 : 1.5}
+                    fill={sel || first ? ACCENT : 'rgb(235,235,236)'} stroke={sel || first ? 'rgb(235,235,236)' : ACCENT} strokeWidth={1.25} />
+            </g>
           );
         })}
       </svg>

@@ -86,8 +86,49 @@ export const FillsSection: React.FC<{ element: UIElement; update: (s: Partial<El
           )}
         </div>
       ))}
-      {!fills.length && <div className="text-[10px] text-[rgba(235,235,236,0.35)]">No fill - + adds one</div>}
+      {!fills.length && !Object.keys(element.style.vectorData?.regions || {}).length && <div className="text-[10px] text-[rgba(235,235,236,0.35)]">No fill - + adds one</div>}
+      <AreaFills element={element} update={update} />
     </Section>
+  );
+};
+
+// The areas of a vector filled with the paint bucket: one row per colour,
+// changed (or taken off) everywhere that colour was poured.
+const AreaFills: React.FC<{ element: UIElement; update: (s: Partial<ElementStyle>) => void }> = ({ element, update }) => {
+  const [open, setOpen] = useState<string | null>(null);
+  const vd = element.style.vectorData;
+  const regions = vd?.regions || {};
+  const colours = Array.from(new Set(Object.values(regions)));
+  if (!vd || !colours.length) return null;
+  const recolour = (from: string, to: string | null) => {
+    const next: Record<string, string> = {};
+    for (const [k, c] of Object.entries(regions)) { if (c !== from) next[k] = c; else if (to) next[k] = to; }
+    update({ vectorData: { ...vd, regions: next } });
+    if (to && open === from) setOpen(to);
+  };
+  return (
+    <div className="space-y-1.5 pt-1">
+      <div className="text-[10px] text-[rgba(235,235,236,0.4)]">Filled areas (paint bucket)</div>
+      {colours.map(c => {
+        const n = Object.values(regions).filter(x => x === c).length;
+        return (
+          <div key={c}>
+            <div className="flex items-center gap-1.5">
+              <button onClick={() => setOpen(open === c ? null : c)} title="Change this colour in every area it fills"
+                      className="w-6 h-6 rounded border border-[rgba(235,235,236,0.2)] shrink-0" style={{ background: c }} />
+              <input value={c} onChange={e => recolour(c, e.target.value)}
+                     className="flex-1 min-w-0 bg-transparent text-[rgb(235,235,236)] font-mono text-xs outline-none" />
+              <span className="text-[10px] text-[rgba(235,235,236,0.4)] whitespace-nowrap">{n} {n === 1 ? 'area' : 'areas'}</span>
+              <button onClick={() => recolour(c, null)} className={iconBtn} title="Empty these areas"><Icons.Minus size={12} /></button>
+            </div>
+            {open === c && (
+              <PaintEditor f={{ id: c, type: 'solid', color: c, opacity: 1, visible: true }} types={['solid']} letters={false}
+                           onChange={p => p.color && recolour(c, p.color)} preview={() => {}} canUp={false} canDown={false} move={() => {}} />
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 };
 
