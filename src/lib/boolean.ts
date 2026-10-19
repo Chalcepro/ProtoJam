@@ -82,12 +82,79 @@ export const vectorPaths = (vd: VectorData): { points: VectorPoint[]; isClosed: 
 export const vectorAllD = (vd: VectorData) =>
   vectorPaths(vd).map(p => vectorPathD({ points: p.points, isClosed: p.isClosed, faces: [] })).join(' ');
 
-// The areas the closed paths of a vector cut each other into. A region's key
-// lists the paths that contain it ("0,2"), so it survives point edits.
+// The areas a vector's lines close off, however they were drawn: a line that
+// comes back to one of its own points, lines that meet end to end, a line
+// across a shape. The lines meet where points sit on the same spot; each area
+// is found by walking round it, always taking the next line clockwise. A
+// face's key names its points, so it survives points being moved.
+type Half = { from: string; to: string; a: VectorPoint; b: VectorPoint; c1: { x: number; y: number }; c2: { x: number; y: number }; twin: number; ang: number };
+const vectorFaces = (vd: VectorData): { ids: string[]; d: string }[] => {
+  const at = (p: { x: number; y: number }) => `${Math.round(p.x * 2) / 2},${Math.round(p.y * 2) / 2}`;
+  const half: Half[] = [];
+  for (const path of vectorPaths(vd)) {
+    const pts = path.points, n = pts.length;
+    for (let i = 0; i < (path.isClosed ? n : n - 1); i++) {
+      const a = pts[i], b = pts[(i + 1) % n];
+      if (at(a) === at(b)) continue;
+      const c1 = { x: a.x + (a.handleOut?.x || 0), y: a.y + (a.handleOut?.y || 0) };
+      const c2 = { x: b.x + (b.handleIn?.x || 0), y: b.y + (b.handleIn?.y || 0) };
+      // which way each end leaves: along its handle, else straight at the other end
+      const dir = (p: { x: number; y: number }, c: { x: number; y: number }, q: { x: number; y: number }) =>
+        Math.hypot(c.x - p.x, c.y - p.y) > 0.01 ? Math.atan2(c.y - p.y, c.x - p.x) : Math.atan2(q.y - p.y, q.x - p.x);
+      const k = half.length;
+      half.push({ from: at(a), to: at(b), a, b, c1, c2, twin: k + 1, ang: dir(a, c1, b) },
+                { from: at(b), to: at(a), a: b, b: a, c1: c2, c2: c1, twin: k, ang: dir(b, c2, a) });
+    }
+  }
+  const out = new Map<string, number[]>();
+  half.forEach((h, i) => { const l = out.get(h.from); if (l) l.push(i); else out.set(h.from, [i]); });
+  out.forEach(l => l.sort((p, q) => half[p].ang - half[q].ang));
+  const used = new Set<number>(), faces: { ids: string[]; d: string }[] = [];
+  for (let s = 0; s < half.length; s++) {
+    if (used.has(s)) continue;
+    const loop: number[] = [];
+    for (let h = s, guard = 0; !used.has(h) && guard < 4000; guard++) {
+      used.add(h); loop.push(h);
+      // at the far end: the line just before the way back, going round
+      const l = out.get(half[h].to)!, back = l.indexOf(half[h].twin);
+      h = l[(back - 1 + l.length) % l.length];
+    }
+    // the inside of an area goes round one way; the outside of a drawing the other
+    let area = 0;
+    for (const i of loop) {
+      const { a, b, c1, c2 } = half[i];
+      const q = [a, c1, c2, b];
+      for (let j = 0; j < 3; j++) area += q[j].x * q[j + 1].y - q[j + 1].x * q[j].y;
+    }
+    if (area / 2 > 0.5) {
+      const f = half[loop[0]].a;
+      const d = `M ${f.x} ${f.y} ` + loop.map(i => { const { c1, c2, b } = half[i]; return `C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${b.x} ${b.y}`; }).join(' ') + ' Z';
+      faces.push({ ids: Array.from(new Set(loop.map(i => half[i].a.id))).sort(), d });
+    }
+  }
+  return faces;
+};
+
+// a short, stable name for a set of point ids
+const hashIds = (ids: string[]) => {
+  let h = 5381;
+  for (const c of ids.join('|')) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
+  return 'f' + h.toString(36);
+};
+
+// The areas the closed paths and closed-off faces of a vector cut each other
+// into. A region's key lists the outlines that contain it ("0,2"; a face is
+// "f..." by its points), so it survives point edits.
 export const vectorRegions = (vd: VectorData): { key: string; d: string }[] => {
-  const closed = vectorPaths(vd).filter(p => p.isClosed && p.points.length > 2)
-    .map(p => vectorPathD({ points: p.points, isClosed: true, faces: [] }));
-  if (!closed.length || closed.length > 8) return closed.length ? [{ key: '0', d: closed[0] }] : [];
+  const closedPaths = vectorPaths(vd).filter(p => p.isClosed && p.points.length > 2);
+  const loops = closedPaths.map((p, i) => ({ key: String(i), d: vectorPathD({ points: p.points, isClosed: true, faces: [] }) }));
+  // faces that are not just one of the closed paths again
+  const own = new Set(closedPaths.map(p => p.points.map(q => q.id).sort().join('|')));
+  for (const f of vectorFaces(vd)) if (!own.has(f.ids.join('|'))) loops.push({ key: hashIds(f.ids), d: f.d });
+  const closed = loops.map(l => l.d);
+  // too many to work out every overlap (2^n): each outline is a region of its own
+  if (closed.length > 8) return loops;
+  if (!closed.length) return [];
   const ck = 'regions|' + closed.join('|');
   const hit = cache.get(ck);
   if (hit !== undefined) return JSON.parse(hit);
@@ -107,7 +174,7 @@ export const vectorRegions = (vd: VectorData): { key: string; d: string }[] => {
       const r: paper.PathItem = (acc as paper.PathItem).subtract(p); (acc as paper.PathItem).remove(); p.remove(); acc = r;
     });
     const a = acc as paper.PathItem | null;
-    if (a && Math.abs((a as any).area) > 0.5) out.push({ key: closed.map((_, i) => i).filter(i => mask & (1 << i)).join(','), d: a.pathData });
+    if (a && Math.abs((a as any).area) > 0.5) out.push({ key: loops.filter((_, i) => mask & (1 << i)).map(l => l.key).join(','), d: a.pathData });
     a?.remove();
   }
   cache.set(ck, JSON.stringify(out));

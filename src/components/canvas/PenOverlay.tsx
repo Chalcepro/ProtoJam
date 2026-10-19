@@ -5,6 +5,22 @@ import type { VectorPoint } from '../../types/components';
 import { closedPathAt, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
 import { continueFrom, deleteSegment, isEndPoint, joinPoints, insertPoint, segmentPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
+type Grip = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+type Xform = {
+  kind: 'scale' | 'rotate';
+  grip?: Grip;                     // a box handle; none = S / R with the mouse
+  modal: boolean;                  // S / R: runs until a click, Enter or Esc
+  axis?: 'x' | 'y';
+  start: { x: number; y: number };
+  box: { x0: number; y0: number; x1: number; y1: number };
+  pivot: { x: number; y: number } | null;     // one point alone: itself
+  orig: Map<string, { x: number; y: number; hi?: { x: number; y: number }; ho?: { x: number; y: number } }>;
+};
+const ROTATE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>')}") 10 10, alias`;
+const GRIP_CURSOR: Record<Grip | 'rotate', string> = {
+  nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+  rotate: ROTATE_CURSOR
+};
 const ACCENT = '#ff6b4a';
 const SNAP = '#3ddc97';     // a handle that just snapped into line / length
 const HIT = 8;   // px on screen
@@ -20,6 +36,12 @@ const HIT = 8;   // px on screen
 //         it; drag inside a closed shape to move the shape (or its picked part). The two handles stay in line (lengths
 //         free); Alt-drag moves one alone; a broken pair snaps back into line
 //         within 3 degrees, and lengths snap equal within 4px (shown green).
+//         Two or more points picked (or one with handles): a box round them -
+//         drag a side or corner to scale (Shift: evenly, Alt: from the middle),
+//         just outside a corner to rotate (Shift: 15 degree steps). As in
+//         Blender, S scales and R rotates with the mouse, X / Y keep it to one
+//         axis, click or Enter keeps it, Esc or right-click puts it back. One
+//         point alone turns and stretches its handles round itself.
 //   Bend: click a point to switch it between sharp and smooth.
 //   Bucket: click a region where closed shapes overlap to fill it (again to empty).
 //   Enter / Esc: done.  Backspace / Delete: remove the selected point.
@@ -75,6 +97,10 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     const pick = allPoints.filter(p => ids.includes(p.id));
     return Array.from(new Set([...ids, ...allPoints.filter(q => pick.some(p => Math.abs(p.x - q.x) < 0.01 && Math.abs(p.y - q.y) < 0.01)).map(q => q.id)]));
   };
+  // scaling / rotating the picked points (box handles, or S / R as in Blender)
+  const xf = useRef<Xform | null>(null);
+  const lastW = useRef<{ x: number; y: number } | null>(null);
+  const [gripCursor, setGripCursor] = useState<string | null>(null);
   const [penTarget, setPenTarget] = useState<{ x: number; y: number; point?: VectorPoint } | null>(null);
   // Edit: what the pointer is over, for the cursor (a line or a shape can be dragged)
   const [overMovable, setOverMovable] = useState(false);
@@ -96,6 +122,12 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   };
 
   const down = (e: React.PointerEvent) => {
+    // S / R running: a click keeps it, a right-click puts it back
+    if (xf.current?.modal) {
+      e.stopPropagation();
+      if (e.button === 2) cancelXform(); else xf.current = null;
+      return;
+    }
     // middle button / space pans: leave it to the canvas
     if (e.button !== 0 || spaceDown.current) return;
     e.stopPropagation();
@@ -125,6 +157,11 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       return false;
     };
     if (grabHandle()) return;
+    // the box round the picked points: a side / corner scales, outside a corner turns
+    if (vectorTool === 'select') {
+      const g = xfGrip(w);
+      if (g) { startXform(g === 'rotate' ? 'rotate' : 'scale', w, false, g === 'rotate' ? undefined : g); return; }
+    }
 
     if (vectorTool === 'pen') {
       // closing a shape finishes it; the pen carries on with a new one in the
@@ -247,6 +284,8 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
 
   const move = (e: React.PointerEvent) => {
     const w = toWorld(e.clientX, e.clientY);
+    lastW.current = w;
+    if (xf.current) { applyXform(w, e.shiftKey, e.altKey); return; }
     const ps = !drag.current ? penSnap(w) : null;
     if (vectorTool === 'pen' && !drag.current && !ps && !e.shiftKey && !(e.ctrlKey || e.metaKey)) {
       const a = penAlign(w); setCursor({ x: a.x, y: a.y }); setGuides(a.g);
@@ -258,6 +297,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     if (box) { setBox({ ...box, x1: w.x, y1: w.y }); return; }
     const d = drag.current;
     if (!d) {
+      if (vectorTool === 'select') { const g = xfGrip(w); setGripCursor(g ? GRIP_CURSOR[g] : null); if (g) return; }
       if (vectorTool === 'select' && vd) setOverMovable(!pointAt(w) && (!!segmentAt(vd, w.x, w.y, HIT / z) || !!closedPathAt(vd, w.x, w.y)));
       return;
     }
@@ -336,6 +376,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   };
 
   const up = () => {
+    if (xf.current && !xf.current.modal) { xf.current = null; return; }
     const d = drag.current;
     // Ctrl-click without a drag: sharp <-> smooth
     if (d?.kind === 'pull' && !d.alt) { const pt = allPoints.find(p => p.id === d.id); if (pt) toggleSmooth(pt); }
@@ -349,6 +390,84 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     drag.current = null; setSnapped(false); setGuides({});
   };
 
+  // ---- scale / rotate the picked points --------------------------------------
+  const pickedPts = allPoints.filter(p => selectedVectorPointIds.includes(p.id));
+  // one point alone: its handles turn and stretch round it
+  const lone = pickedPts.length === 1 && (pickedPts[0].handleIn || pickedPts[0].handleOut) ? pickedPts[0] : null;
+  const xfBox = (() => {
+    if (vectorTool !== 'select' || (pickedPts.length < 2 && !lone)) return null;
+    const xs: number[] = [], ys: number[] = [];
+    for (const p of pickedPts) {
+      xs.push(p.x); ys.push(p.y);
+      if (lone) for (const h of [p.handleIn, p.handleOut]) if (h) { xs.push(p.x + h.x); ys.push(p.y + h.y); }
+    }
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  })();
+  // the box is drawn a little outside the points, so its handles never sit on one
+  const PAD = 10;
+  const grips = (b: NonNullable<typeof xfBox>): Record<Grip, { x: number; y: number }> => {
+    const p = PAD / z, L = b.x0 - p, R = b.x1 + p, T = b.y0 - p, B = b.y1 + p, cx = (L + R) / 2, cy = (T + B) / 2;
+    return { nw: { x: L, y: T }, n: { x: cx, y: T }, ne: { x: R, y: T }, e: { x: R, y: cy }, se: { x: R, y: B }, s: { x: cx, y: B }, sw: { x: L, y: B }, w: { x: L, y: cy } };
+  };
+  const xfGrip = (w: { x: number; y: number }): Grip | 'rotate' | null => {
+    if (!xfBox) return null;
+    const g = grips(xfBox);
+    for (const k of Object.keys(g) as Grip[]) if (Math.hypot(w.x - g[k].x, w.y - g[k].y) * z <= 6) return k;
+    // just outside a corner: turn
+    const outside = w.x < g.nw.x || w.x > g.se.x || w.y < g.nw.y || w.y > g.se.y;
+    for (const k of ['nw', 'ne', 'se', 'sw'] as const)
+      if (outside && Math.hypot(w.x - g[k].x, w.y - g[k].y) * z <= 22) return 'rotate';
+    return null;
+  };
+  const startXform = (kind: 'scale' | 'rotate', w: { x: number; y: number }, modal: boolean, grip?: Grip) => {
+    if (!xfBox) return;
+    const ids = lone ? [lone.id] : welded(pickedPts.map(p => p.id));
+    const orig = new Map(allPoints.filter(p => ids.includes(p.id)).map(p => [p.id, { x: p.x, y: p.y, hi: p.handleIn, ho: p.handleOut }]));
+    xf.current = { kind, grip, modal, start: w, box: xfBox, orig, pivot: lone ? { x: lone.x, y: lone.y } : null };
+  };
+  const cancelXform = () => {
+    const x = xf.current;
+    if (!x) return;
+    x.orig.forEach((o, id) => updateVectorPoint(id, { x: o.x, y: o.y, handleIn: o.hi, handleOut: o.ho }));
+    xf.current = null;
+  };
+  const applyXform = (w: { x: number; y: number }, shift: boolean, alt: boolean) => {
+    const x = xf.current;
+    if (!x) return;
+    const b = x.box, mid = x.pivot || { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    let fx = 1, fy = 1, ang = 0, piv = mid;
+    if (x.kind === 'rotate') {
+      ang = Math.atan2(w.y - mid.y, w.x - mid.x) - Math.atan2(x.start.y - mid.y, x.start.x - mid.x);
+      if (shift) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);
+    } else if (!x.grip) {
+      // S: by how far the mouse is from the middle, against where it started
+      const f = Math.hypot(w.x - mid.x, w.y - mid.y) / (Math.hypot(x.start.x - mid.x, x.start.y - mid.y) || 1);
+      fx = x.axis === 'y' ? 1 : f; fy = x.axis === 'x' ? 1 : f;
+    } else {
+      // a side / corner of the box: the opposite one stays put (Alt, or one point: the middle)
+      const g = x.grip, centred = alt || !!x.pivot;
+      const ax = centred ? mid.x : g.includes('w') ? b.x1 : b.x0, ay = centred ? mid.y : g.includes('n') ? b.y1 : b.y0;
+      const ex = g.includes('w') ? b.x0 : b.x1, ey = g.includes('n') ? b.y0 : b.y1;
+      const dx = w.x - x.start.x, dy = w.y - x.start.y;
+      // points all in one line across have no height to stretch (and the other way)
+      if ((g.includes('e') || g.includes('w')) && Math.abs(ex - ax) > 0.01) fx = (ex + dx - ax) / (ex - ax);
+      if ((g.includes('n') || g.includes('s')) && Math.abs(ey - ay) > 0.01) fy = (ey + dy - ay) / (ey - ay);
+      if (shift && g.length === 2) { const f = Math.abs(fx) > Math.abs(fy) ? fx : fy; fx = f; fy = f; }
+      piv = { x: ax, y: ay };
+    }
+    const c = Math.cos(ang), sn = Math.sin(ang);
+    const tf = (vx: number, vy: number) => ({ x: (vx * c - vy * sn) * fx, y: (vx * sn + vy * c) * fy });
+    x.orig.forEach((o, id) => {
+      const p = tf(o.x - piv.x, o.y - piv.y), hi = o.hi && tf(o.hi.x, o.hi.y), ho = o.ho && tf(o.ho.x, o.ho.y);
+      updateVectorPoint(id, { x: r2(piv.x + p.x), y: r2(piv.y + p.y),
+        handleIn: hi ? { x: r2(hi.x), y: r2(hi.y) } : undefined, handleOut: ho ? { x: r2(ho.x), y: r2(ho.y) } : undefined });
+    });
+  };
+  // for the key handler, which is set up once
+  const xfApi = useRef({ startXform, cancelXform, applyXform, canXform: !!xfBox });
+  xfApi.current = { startXform, cancelXform, applyXform, canXform: !!xfBox };
+
   const segSelRef = useRef(segSel);
   segSelRef.current = segSel;
   // keys while the pen is out; caught first so Delete does not delete the path
@@ -357,6 +476,24 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       const t = e.target as HTMLElement;
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
       const s = useProjectStore.getState();
+      // S / R as in Blender, and while one runs: X / Y one axis, Enter keeps, Esc puts back
+      const run = xf.current?.modal ? xf.current : null;
+      const kk = e.key.toLowerCase();
+      if (run) {
+        if (e.key === 'Escape') xfApi.current.cancelXform();
+        else if (e.key === 'Enter') xf.current = null;
+        else if ((kk === 'x' || kk === 'y') && run.kind === 'scale') {
+          run.axis = run.axis === kk ? undefined : kk;
+          if (lastW.current) xfApi.current.applyXform(lastW.current, e.shiftKey, false);
+        } else return;
+        e.preventDefault(); e.stopImmediatePropagation();
+        return;
+      }
+      if ((kk === 's' || kk === 'r') && !e.ctrlKey && !e.metaKey && !e.altKey && s.vectorTool === 'select' && xfApi.current.canXform && lastW.current) {
+        xfApi.current.startXform(kk === 's' ? 'scale' : 'rotate', lastW.current, true);
+        e.preventDefault(); e.stopImmediatePropagation();
+        return;
+      }
       const vdNow = s.elements.find(x => x.id === s.editingVectorId)?.style.vectorData;
       const allNow = vdNow ? vectorPaths(vdNow).flatMap(p => p.points) : [];
       if (e.ctrlKey || e.metaKey) {
@@ -437,14 +574,14 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   return (
     <div
       className="absolute inset-0 z-[35]"
-      style={{ cursor: vectorTool === 'pen' ? (closing ? 'pointer' : 'crosshair') : vectorTool === 'bucket' ? 'cell' : overMovable ? 'move' : 'default' }}
+      style={{ cursor: vectorTool === 'pen' ? (closing ? 'pointer' : 'crosshair') : vectorTool === 'bucket' ? 'cell' : gripCursor || (overMovable ? 'move' : 'default') }}
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
       onPointerLeave={() => setCursor(null)}
       onMouseDown={(e) => { if (e.button === 0 && !spaceDown.current) e.stopPropagation(); }}
       onDoubleClick={(e) => { e.stopPropagation(); if (vectorTool === 'pen' && (points.length > 1 || paths.length)) finishVectorEditing(); }}
-      onContextMenu={(e) => e.preventDefault()}
+      onContextMenu={(e) => { e.preventDefault(); if (xf.current?.modal) cancelXform(); }}
     >
       <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
         {/* where the next segment will go */}
@@ -475,6 +612,19 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         {vectorTool === 'pen' && penTarget && (
           <circle cx={sx(penTarget.x)} cy={sy(penTarget.y)} r={penTarget.point ? 8 : 5} fill="none" stroke={SNAP} strokeWidth={2} />
         )}
+        {/* the scale / rotate box round the picked points */}
+        {xfBox && !box && (() => {
+          const g = grips(xfBox);
+          return (
+            <g>
+              <rect x={sx(g.nw.x)} y={sy(g.nw.y)} width={(g.se.x - g.nw.x) * z} height={(g.se.y - g.nw.y) * z}
+                    fill="none" stroke={ACCENT} strokeWidth={1} strokeDasharray="3 3" opacity={0.8} />
+              {(Object.keys(g) as Grip[]).map(k => (
+                <rect key={k} x={sx(g[k].x) - 3.5} y={sy(g[k].y) - 3.5} width={7} height={7} fill="rgb(235,235,236)" stroke={ACCENT} strokeWidth={1.25} />
+              ))}
+            </g>
+          );
+        })()}
         {selected && handleLines(selected)}
         {vectorTool === 'pen' && last && last !== selected && handleLines(last)}
         {allPoints.map((p) => {
