@@ -227,6 +227,10 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     "Images / videos: stretch freely"
    ],
    [
+    "Ctrl + drag a side",
+    "Grab anywhere along a side and pull it in or out (the other side stays)"
+   ],
+   [
     "Alt (drag a handle)",
     "Resize from the centre"
    ],
@@ -312,12 +316,20 @@ export const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     "Nudge selected points 1px / 10px"
    ],
    [
+    "S / R (points selected)",
+    "Scale / rotate them with the mouse, as in Blender: X / Y one axis, click or Enter keeps, Esc or right-click undoes"
+   ],
+   [
+    "Box round selected points",
+    "Drag a side or corner to scale (Shift: evenly, Alt: from the middle); just outside a corner to rotate"
+   ],
+   [
     "Ctrl+J",
     "Join the selected points (two loose ends join; otherwise a new line between them)"
    ],
    [
     "Ctrl (moving points / pen)",
-    "No snapping to other points' alignment"
+    "No snapping (other points, layers, guides, ruler marks)"
    ],
    [
     "Delete or Backspace",

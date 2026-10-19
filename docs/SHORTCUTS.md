@@ -84,6 +84,7 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 |---|---|
 | Shift (drag a handle) | Keep proportions (images and videos keep them by default) |
 | Ctrl (drag a handle) | Images / videos: stretch freely |
+| Ctrl + drag a side | Grab anywhere along a side and pull it in or out (the other side stays) |
 | Alt (drag a handle) | Resize from the centre |
 | Shift (rotate) | Snap to 15° |
 | Ctrl (while moving) | Move without snapping to guides |
@@ -109,8 +110,10 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Click a line | Select the line (Delete removes it) |
 | Drag a line / inside a shape | Move the line / the shape (or its selected points) |
 | Arrow keys / Shift+Arrow keys | Nudge selected points 1px / 10px |
+| S / R (points selected) | Scale / rotate them with the mouse, as in Blender: X / Y one axis, click or Enter keeps, Esc or right-click undoes |
+| Box round selected points | Drag a side or corner to scale (Shift: evenly, Alt: from the middle); just outside a corner to rotate |
 | Ctrl+J | Join the selected points (two loose ends join; otherwise a new line between them) |
-| Ctrl (moving points / pen) | No snapping to other points' alignment |
+| Ctrl (moving points / pen) | No snapping (other points, layers, guides, ruler marks) |
 | Delete or Backspace | Delete selected points - delete and heal: the neighbours reshape to keep the curve (or the selected line) |
 | Enter or Esc / double-click | Done |
 

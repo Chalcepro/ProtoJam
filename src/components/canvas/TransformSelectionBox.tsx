@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -84,7 +84,8 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
   };
 
   // ---------------- INTERACTIVE SCALE / RESIZE HANDLER ----------------
-  const handleScaleStart = (handle: string, e: React.PointerEvent) => {
+  // viaSide: Ctrl-grabbed along a side (Ctrl then does not turn snapping off)
+  const handleScaleStart = (handle: string, e: React.PointerEvent, viaSide = false) => {
     e.stopPropagation();
     e.preventDefault();
 
@@ -127,7 +128,7 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       let h = Math.max(1, initialH + sy * dy * k);
       const keep = media ? !(moveEvent.ctrlKey || moveEvent.metaKey) : moveEvent.shiftKey;
       const lines: SnapLine[] = [];
-      if (targets && !moveEvent.altKey && !keep && !(moveEvent.ctrlKey || moveEvent.metaKey)) {
+      if (targets && !moveEvent.altKey && !keep && (viaSide || !(moveEvent.ctrlKey || moveEvent.metaKey))) {
         // where the pulled edge would be on the canvas, and what it meets there
         const x0 = org.x + initialElX, y0 = org.y + initialElY;
         const edge = (axis: 'x' | 'y', s: number, start: number, size0: number, size: number) => {
@@ -264,6 +265,20 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       }}
     />
   );
+  // Ctrl held: a whole side can be grabbed, not just its handle, and pulled
+  // in or out (the opposite side stays put)
+  const [ctrl, setCtrl] = useState(false);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => setCtrl(e.ctrlKey || e.metaKey);
+    const off = () => setCtrl(false);
+    window.addEventListener('keydown', k); window.addEventListener('keyup', k); window.addEventListener('blur', off);
+    return () => { window.removeEventListener('keydown', k); window.removeEventListener('keyup', k); window.removeEventListener('blur', off); };
+  }, []);
+  const SIDE = 8 / z;
+  const sideZone = (h: 'n' | 's' | 'e' | 'w', pos: React.CSSProperties) => (
+    <div data-handle={`side-${h}`} onPointerDown={(e) => handleScaleStart(h, e, true)}
+         style={{ position: 'absolute', ...pos, cursor: h === 'n' || h === 's' ? 'ns-resize' : 'ew-resize', pointerEvents: 'auto' }} />
+  );
   const o = -H / 2;                              // a handle centred on the edge
   const mid = `calc(50% - ${H / 2}px)`;
 
@@ -297,6 +312,12 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
         </div>
       )}
 
+      {ctrl && !editing && <>
+        {sideZone('n', { left: 0, right: 0, top: -SIDE / 2, height: SIDE })}
+        {sideZone('s', { left: 0, right: 0, bottom: -SIDE / 2, height: SIDE })}
+        {sideZone('e', { top: 0, bottom: 0, right: -SIDE / 2, width: SIDE })}
+        {sideZone('w', { top: 0, bottom: 0, left: -SIDE / 2, width: SIDE })}
+      </>}
       {/* corners always; edge handles only when there is room for them */}
       {handle('nw', 'nwse-resize', { left: o, top: o }, 'Scale (Shift keeps shape, Alt from centre; pictures: Ctrl stretches)')}
       {handle('ne', 'nesw-resize', { right: o, top: o }, 'Scale top-right')}
