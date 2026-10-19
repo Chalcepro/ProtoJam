@@ -2,10 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { startGesture } from '../../lib/gesture';
+import { rulerMark, rulerStep } from '../../lib/snap';
 
 export const RULER = 20;                // thickness, px
 const GUIDE = '#ff4fa3';               // guides and their labels
-const STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 
 // Figma-style rulers along the top and left of the canvas.
 //   - numbers in canvas units that follow pan and zoom
@@ -42,8 +42,8 @@ export const Rulers: React.FC<{
   const sy = (wy: number) => wy * zoom + vy;
 
   // a step whose labels land at least ~60px apart
-  const step = STEPS.find(s => s * zoom >= 60) ?? STEPS[STEPS.length - 1];
-  const minor = step / 5;
+  const step = rulerStep(zoom);
+  const minor = rulerMark(zoom);
 
   const ticks = (axisLen: number, origin: number) => {
     const out: { pos: number; v: number; major: boolean }[] = [];

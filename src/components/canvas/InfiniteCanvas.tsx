@@ -19,13 +19,12 @@ import { needsOutline } from '../../lib/corners';
 import { ElementNode } from './ElementNode';
 import { absBoxOf, chainOf, frameAbove, inFlow, originOf, pickTarget, subtreeIds, takesDrops } from '../../lib/tree';
 import { startGesture } from '../../lib/gesture';
+import { showSnap, snapAxis, snapLine, snapTargets, useSnapLines, type Box, type SnapLine } from '../../lib/snap';
 import { placeIcon } from '../sidebar/IconsPanel';
 import { useIconPop } from './IconPopover';
 
-type Box = { x0: number; y0: number; x1: number; y1: number };
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
 // the thing it lined up with when there is one.
-type SnapLine = { axis: 'x' | 'y'; at: number; from: number; to: number; gap?: { value: number; mid: number } };
 
 // What Ctrl+C / Ctrl+X last took. Kept outside React state: it is not
 // something anything renders, and it must survive the canvas re-rendering.
@@ -82,7 +81,7 @@ export const InfiniteCanvas: React.FC = () => {
   const pressedSelectedText = useRef(false);
   // a laid-out element's box when its drag began
   const flowStart = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
+  const snapLines = useSnapLines(s => s.lines), setSnapLines = showSnap;
   // Dragging over an auto-layout row / column: where it would go in, and the
   // line that shows it (canvas units). index -1: dropped by position instead.
   const [flowDrop, setFlowDrop] = useState<{ parentId?: string; index: number; line?: { x: number; y: number; w: number; h: number } } | null>(null);
@@ -183,47 +182,14 @@ export const InfiniteCanvas: React.FC = () => {
       m = m ? { x0: Math.min(m.x0, b.x0), y0: Math.min(m.y0, b.y0), x1: Math.max(m.x1, b.x1), y1: Math.max(m.y1, b.y1) } : b;
     }
     if (!m) return { dx: 0, dy: 0, lines: [] as SnapLine[] };
-    const others: Box[] = [
-      ...elements.filter(el => !el.hidden && placed(el) && !ids.some(id => subtreeIds(id, elements).includes(el.id))).map(el => boxOf(el)),
-      ...frames.filter(f => !f.hidden).map(f => ({ x0: f.x, y0: f.y, x1: f.x + f.width, y1: f.y + f.height }))
-    ];
-    const thr = 6 / viewport.zoom;
-    type Hit = { d: number; line: number; box: Box | null };
-    const best = (mine: number[], axis: 'x' | 'y'): Hit | null => {
-      let hit: Hit | null = null;
-      const consider = (line: number, box: Box | null) => {
-        for (const v of mine) {
-          const d = line - v;
-          if (Math.abs(d) <= thr && (!hit || Math.abs(d) < Math.abs(hit.d))) hit = { d, line, box };
-        }
-      };
-      for (const b of others) {
-        const ls = axis === 'x' ? [b.x0, (b.x0 + b.x1) / 2, b.x1] : [b.y0, (b.y0 + b.y1) / 2, b.y1];
-        ls.forEach(l => consider(l, b));
-      }
-      guides.filter(g => g.axis === axis).forEach(g => consider(g.pos, null));
-      return hit;
-    };
-    const hx = best([m.x0, (m.x0 + m.x1) / 2, m.x1], 'x');
-    const hy = best([m.y0, (m.y0 + m.y1) / 2, m.y1], 'y');
+    const t = snapTargets(ids);
+    const hx = snapAxis([m.x0, (m.x0 + m.x1) / 2, m.x1], t.x, viewport.zoom);
+    const hy = snapAxis([m.y0, (m.y0 + m.y1) / 2, m.y1], t.y, viewport.zoom);
     const sdx = hx ? hx.d : 0, sdy = hy ? hy.d : 0;
     const s: Box = { x0: m.x0 + sdx, y0: m.y0 + sdy, x1: m.x1 + sdx, y1: m.y1 + sdy };
     const lines: SnapLine[] = [];
-    const span = 1e5;
-    if (hx) {
-      const b = hx.box;
-      let gap: SnapLine['gap'];
-      if (b && b.y0 >= s.y1) gap = { value: b.y0 - s.y1, mid: (b.y0 + s.y1) / 2 };
-      else if (b && s.y0 >= b.y1) gap = { value: s.y0 - b.y1, mid: (s.y0 + b.y1) / 2 };
-      lines.push({ axis: 'x', at: hx.line, from: b ? Math.min(s.y0, b.y0) : -span, to: b ? Math.max(s.y1, b.y1) : span, gap });
-    }
-    if (hy) {
-      const b = hy.box;
-      let gap: SnapLine['gap'];
-      if (b && b.x0 >= s.x1) gap = { value: b.x0 - s.x1, mid: (b.x0 + s.x1) / 2 };
-      else if (b && s.x0 >= b.x1) gap = { value: s.x0 - b.x1, mid: (s.x0 + b.x1) / 2 };
-      lines.push({ axis: 'y', at: hy.line, from: b ? Math.min(s.x0, b.x0) : -span, to: b ? Math.max(s.x1, b.x1) : span, gap });
-    }
+    if (hx) lines.push(snapLine('x', hx, s));
+    if (hy) lines.push(snapLine('y', hy, s));
     return { dx: sdx, dy: sdy, lines };
   };
 

@@ -4,7 +4,8 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { shapeD, vectorAllD } from '../../lib/boolean';
 import { needsOutline } from '../../lib/corners';
-import { pickTarget } from '../../lib/tree';
+import { inFlow, originOf, pickTarget } from '../../lib/tree';
+import { showSnap, snapAxis, snapLine, snapTargets, type Hit, type SnapLine } from '../../lib/snap';
 import { startGesture } from '../../lib/gesture';
 
 interface TransformSelectionBoxProps {
@@ -109,6 +110,12 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
     // Pulling a text box's size by hand fixes that side, as in Figma:
     // width only -> it wraps and grows down; height too -> fixed box.
     let moved = false;
+    // The edge being pulled snaps to other layers, guides and ruler marks
+    // (not when turned, or laid out by auto layout - its place is the page's).
+    const st0 = useProjectStore.getState();
+    const canSnap = !rot && !inFlow(element, st0.elements, st0.frames);
+    const org = canSnap ? originOf(element.parentId, st0.elements, st0.frames) : { x: 0, y: 0 };
+    const targets = canSnap ? snapTargets(st0.selectedElementIds.includes(element.id) ? st0.selectedElementIds : [element.id]) : null;
 
     const onPointerMove = (moveEvent: PointerEvent) => {
       if (!moved && isText) updateElementStyle(element.id, { textResize: sy ? 'fixed' : 'autoHeight', autoSize: false });
@@ -119,6 +126,24 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       let w = Math.max(1, initialW + sx * dx * k);
       let h = Math.max(1, initialH + sy * dy * k);
       const keep = media ? !(moveEvent.ctrlKey || moveEvent.metaKey) : moveEvent.shiftKey;
+      const lines: SnapLine[] = [];
+      if (targets && !moveEvent.altKey && !keep && !(moveEvent.ctrlKey || moveEvent.metaKey)) {
+        // where the pulled edge would be on the canvas, and what it meets there
+        const x0 = org.x + initialElX, y0 = org.y + initialElY;
+        const edge = (axis: 'x' | 'y', s: number, start: number, size0: number, size: number) => {
+          if (!s) return { size, hit: null as Hit | null };
+          const at = s > 0 ? start + size : start + size0 - size;
+          const hit = snapAxis([at], axis === 'x' ? targets.x : targets.y, zoom);
+          return { size: hit ? Math.max(1, size + s * hit.d) : size, hit };
+        };
+        const ex = edge('x', sx, x0, initialW, w), ey = edge('y', sy, y0, initialH, h);
+        w = ex.size; h = ey.size;
+        const box = { x0: sx < 0 ? x0 + initialW - w : x0, y0: sy < 0 ? y0 + initialH - h : y0, x1: 0, y1: 0 };
+        box.x1 = box.x0 + w; box.y1 = box.y0 + h;
+        if (ex.hit) lines.push(snapLine('x', ex.hit, box));
+        if (ey.hit) lines.push(snapLine('y', ey.hit, box));
+      }
+      showSnap(lines);
       if (keep) {
         if (sx && sy) { if (w / initialW > h / initialH) h = w / ratio; else w = h * ratio; }
         else if (sx) h = w / ratio;
@@ -137,12 +162,12 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       window.removeEventListener('pointermove', onPointerMove, true);
       window.removeEventListener('pointerup', onPointerUp, true);
     };
-    const onPointerUp = () => { off(); end(); pushHistory(); };
+    const onPointerUp = () => { off(); end(); showSnap([]); pushHistory(); };
 
     window.addEventListener('pointermove', onPointerMove, true);
     window.addEventListener('pointerup', onPointerUp, true);
     // right-click or Esc mid-drag puts it all back (src/lib/gesture.ts)
-    const end = startGesture(off);
+    const end = startGesture(() => { off(); showSnap([]); });
   };
 
   // ---------------- INTERACTIVE ROTATION HANDLER ----------------

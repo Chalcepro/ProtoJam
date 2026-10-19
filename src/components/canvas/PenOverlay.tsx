@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
 import { closedPathAt, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
+import { snapAxis, snapTargets } from '../../lib/snap';
 import { continueFrom, deleteSegment, isEndPoint, joinPoints, insertPoint, segmentPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
 type Grip = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -54,6 +55,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
   const points = vd?.points || [];          // the path being drawn
   const paths = vd ? vectorPaths(vd) : [];   // every path, finished ones too
   const allPoints = paths.flatMap(p => p.points);
+  // the layers and screens outside this vector, to snap points to (redone only when the document changes)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const outside = useMemo(() => snapTargets(editingVectorId ? [editingVectorId] : []), [elements, editingVectorId]);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const drag = useRef<{ kind: 'new' | 'point' | 'in' | 'out' | 'pull'; id: string; ox: number; oy: number; alt: boolean; linked?: boolean;
                        // moving points: where each selected one started
@@ -87,6 +91,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
     let { x, y } = w;
     if (nx !== undefined && Math.abs(nx - w.x) <= thr) { x = nx; g.x = nx; }
     if (ny !== undefined && Math.abs(ny - w.y) <= thr) { y = ny; g.y = ny; }
+    // else the edges / middles of the layers around it, guides, ruler marks
+    if (g.x === undefined) { const h = snapAxis([w.x], outside.x, z); if (h) { x = h.line; g.x = h.line; } }
+    if (g.y === undefined) { const h = snapAxis([w.y], outside.y, z); if (h) { y = h.line; g.y = h.line; } }
     return { x, y, g };
   };
   // alignment guides while moving points (canvas units): a line at x / at y
@@ -321,6 +328,9 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         const ny = others.map(p => p.y).sort((a, b) => Math.abs(a - (lead.y + dy)) - Math.abs(b - (lead.y + dy)))[0];
         if (nx !== undefined && Math.abs(nx - (lead.x + dx)) <= thr) { dx = nx - lead.x; g.x = nx; }
         if (ny !== undefined && Math.abs(ny - (lead.y + dy)) <= thr) { dy = ny - lead.y; g.y = ny; }
+        // else the layers in the design around it, guides, ruler marks
+        if (g.x === undefined) { const h = snapAxis([lead.x + dx], outside.x, z); if (h) { dx = h.line - lead.x; g.x = h.line; } }
+        if (g.y === undefined) { const h = snapAxis([lead.y + dy], outside.y, z); if (h) { dy = h.line - lead.y; g.y = h.line; } }
       }
       setGuides(g);
       d.orig?.forEach((o, id) => updateVectorPoint(id, { x: Math.round(o.x + dx), y: Math.round(o.y + dy) }));
