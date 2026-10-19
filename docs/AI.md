@@ -62,3 +62,15 @@ Unsaved work is kept in a draft (`protojam-draft` in local storage) and comes
 back after a reload or a crash. The dev server reloads the window whenever
 ProtoJam's own code changes, which used to lose everything since the last
 Ctrl+S.
+
+## Speaking instead of typing
+
+The microphone button in the Chat tab records you (16 kHz mono, in the page)
+and the dev server writes it down with whisper.cpp on this computer: no cloud,
+no key, about 3 seconds for a sentence. Click to start, click again to stop;
+the words land in the box to read over, then Enter sends. Esc cancels.
+
+It uses `..\whisper-dictate\bin\whisper-cli.exe` and
+`..\whisper.cpp\models\ggml-base.en.bin` (next to this repo). Point
+`PJ_WHISPER_CLI` / `PJ_WHISPER_MODEL` elsewhere to use another build or a
+bigger model (small.en is more accurate, slower).

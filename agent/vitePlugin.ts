@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -11,6 +11,7 @@ import type { Plugin, ViteDevServer } from 'vite';
 //   POST /__pj/chat  {message, model, effort, session}
 //                                   one Chat-tab turn: Claude Code, headless, with
 //                                   only the ProtoJam tools; its events stream back
+//   POST /__pj/transcribe  (a WAV)  speech to text, offline (whisper.cpp)
 //   GET  /__pj/status
 //
 // Only this computer may call these: the dev server also listens on the
@@ -24,6 +25,16 @@ const claudeExe = () => {
   const npmExe = join(process.env.APPDATA || '', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
   return existsSync(npmExe) ? npmExe : 'claude';
 };
+
+// Speech to text: the whisper.cpp command line and a model, both on this
+// computer. By default the ones next to this repo (whisper-dictate's build,
+// whisper.cpp's base.en model); PJ_WHISPER_CLI / PJ_WHISPER_MODEL override.
+const whisper = () => ({
+  cli: process.env.PJ_WHISPER_CLI || resolve(ROOT, '..', 'whisper-dictate', 'bin', 'whisper-cli.exe'),
+  model: process.env.PJ_WHISPER_MODEL || resolve(ROOT, '..', 'whisper.cpp', 'models', 'ggml-base.en.bin')
+});
+// What Whisper writes for silence and sounds, and doubled spaces, away.
+const cleanTranscript = (t: string) => t.replace(/\[[^\]]*\]|\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
 
 const SYSTEM = `You are the design assistant inside ProtoJam, a Figma-like prototyping app. You change the open project only through the protojam tools.
 - Start by reading what is there (get_document, get_selection). If the user has something selected, "this" means the selection.
@@ -77,6 +88,13 @@ const body = (req: IncomingMessage) => new Promise<any>((ok, bad) => {
   let s = '';
   req.on('data', c => { s += c; if (s.length > 5e6) req.destroy(); });
   req.on('end', () => { try { ok(s ? JSON.parse(s) : {}); } catch (e) { bad(e); } });
+});
+
+const rawBody = (req: IncomingMessage, limit: number) => new Promise<Buffer>((ok, bad) => {
+  const parts: Buffer[] = [];
+  let n = 0;
+  req.on('data', (c: Buffer) => { n += c.length; if (n > limit) { req.destroy(); bad(new Error('Recording too long.')); } else parts.push(c); });
+  req.on('end', () => ok(Buffer.concat(parts)));
 });
 
 const json = (res: ServerResponse, code: number, data: unknown) => {
@@ -139,6 +157,25 @@ export const protojamAgent = (): Plugin => ({
         if (req.url === '/__pj/tool' && req.method === 'POST') {
           const { tool, args } = await body(req);
           return json(res, 200, await runTool(String(tool), args || {}));
+        }
+
+        if (req.url === '/__pj/transcribe' && req.method === 'POST') {
+          const { cli, model } = whisper();
+          if (!existsSync(cli) || !existsSync(model))
+            return json(res, 500, { error: `Speech to text needs whisper.cpp: ${existsSync(cli) ? model : cli} is missing (set PJ_WHISPER_CLI / PJ_WHISPER_MODEL).` });
+          const file = join(tmpdir(), `protojam-dictate-${Date.now()}.wav`);
+          writeFileSync(file, await rawBody(req, 40e6));           // ~20 minutes at 16 kHz
+          const out = await new Promise<{ code: number | null; text: string; err: string }>((ok) => {
+            const p = spawn(cli, ['-m', model, '-f', file, '-t', '4', '-l', 'en', '-np', '-nt', '--no-fallback'], { windowsHide: true });
+            let text = '', err = '';
+            p.stdout.on('data', b => { text += b; });
+            p.stderr.on('data', b => { err += b; });
+            p.on('error', e => ok({ code: -1, text: '', err: e.message }));
+            p.on('close', code => ok({ code, text, err }));
+          });
+          try { unlinkSync(file); } catch { /* already gone */ }
+          if (out.code !== 0) return json(res, 500, { error: `whisper.cpp failed: ${out.err.trim().slice(-300)}` });
+          return json(res, 200, { text: cleanTranscript(out.text) });
         }
 
         if (req.url === '/__pj/chat/sessions') return json(res, 200, pastSessions());

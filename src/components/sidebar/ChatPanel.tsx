@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as Icons from 'lucide-react';
+import { startRecording, transcribe, type Recording } from '../../lib/dictate';
 import { create } from 'zustand';
 import { useProjectStore } from '../../store/useProjectStore';
 import { beginTurn, endTurn, useAgent } from '../../lib/agentBridge';
@@ -97,6 +98,40 @@ export const ChatPanel: React.FC = () => {
   const setView = (v: View) => useChat.setState({ view: view === v ? 'chat' : v });
   const linked = useAgent(s => s.linked);
   const [draft, setDraft] = useState('');
+  // the microphone: off, listening (with how loud), or turning speech into text
+  const [mic, setMic] = useState<'off' | 'rec' | 'text'>('off');
+  const [micLevel, setMicLevel] = useState(0);
+  const [micError, setMicError] = useState('');
+  const rec = useRef<Recording | null>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (mic !== 'rec') return;
+    // only while listening: the level, ten times a second
+    const t = setInterval(() => setMicLevel(rec.current?.level() ?? 0), 100);
+    return () => clearInterval(t);
+  }, [mic]);
+  useEffect(() => () => rec.current?.cancel(), []);
+  const toggleMic = async () => {
+    setMicError('');
+    if (mic === 'text') return;
+    if (mic === 'off') {
+      try { rec.current = await startRecording(); setMic('rec'); }
+      catch { setMicError('The microphone could not start - is one plugged in and allowed?'); }
+      return;
+    }
+    const r = rec.current; rec.current = null;
+    if (!r) return;
+    setMic('text');
+    try {
+      const text = await transcribe(await r.stop());
+      if (text) setDraft(d => (d.trim() ? d.replace(/\s*$/, ' ') : '') + text);
+      else setMicError('Nothing heard.');
+    } catch (e) { setMicError(e instanceof Error ? e.message : String(e)); }
+    setMic('off');
+    // ready to read over and send with Enter
+    requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+  };
+  const cancelMic = () => { rec.current?.cancel(); rec.current = null; setMic('off'); };
   const abort = useRef<AbortController | null>(null);
   const list = useRef<HTMLDivElement>(null);
   useEffect(() => { list.current?.scrollTo({ top: list.current.scrollHeight }); }, [msgs]);
@@ -232,13 +267,26 @@ export const ChatPanel: React.FC = () => {
       {/* kept clear of the floating panel button in the bottom-left corner */}
       <div className="p-2 pb-14 border-t border-[rgba(235,235,236,0.08)]">
         <div className="flex items-end gap-1.5 bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.1)] p-1.5">
-          <textarea value={draft} onChange={e => setDraft(e.target.value)} rows={2} placeholder={linked ? 'Ask for a screen or a change…' : 'Start ProtoJam with npm run dev to chat'}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          <textarea ref={input} value={draft} onChange={e => setDraft(e.target.value)} rows={2}
+                    placeholder={mic === 'rec' ? 'Listening… click the microphone again when you are done' : mic === 'text' ? 'Writing down what you said…' : linked ? 'Ask for a screen or a change…' : 'Start ProtoJam with npm run dev to chat'}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape' && mic === 'rec') { e.preventDefault(); cancelMic(); return; }
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+                    }}
                     className="flex-1 bg-transparent resize-none outline-none text-xs text-[rgb(235,235,236)] placeholder:text-[rgba(235,235,236,0.35)] max-h-40" />
+          <button onClick={toggleMic} disabled={mic === 'text'}
+                  title={mic === 'rec' ? 'Stop and write it down (Esc in the box cancels)' : 'Speak instead of typing - turned into text on this computer'}
+                  className={`relative p-1.5 rounded ${mic === 'rec' ? 'bg-[#ff4242] text-white' : 'text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>
+            {mic === 'text' ? <Icons.Loader2 size={12} className="animate-spin" /> : <Icons.Mic size={12} />}
+            {/* how loud: a ring that grows with the voice */}
+            {mic === 'rec' && <span className="absolute inset-0 rounded pointer-events-none ring-2 ring-[#ff4242]"
+                                    style={{ transform: `scale(${1 + Math.min(1, micLevel * 3) * 0.45})`, opacity: 0.55 }} />}
+          </button>
           {busy
             ? <button onClick={stop} title="Stop" className="p-1.5 rounded bg-[rgba(235,235,236,0.12)] text-[rgb(235,235,236)]"><Icons.Square size={12} /></button>
             : <button onClick={send} disabled={!draft.trim()} title="Send (Enter)" className="p-1.5 rounded bg-[#31C3F3] text-[rgb(20,20,19)] disabled:opacity-30"><Icons.ArrowUp size={12} /></button>}
         </div>
+        {micError && <div className="text-[#ff7b72] text-[10.5px] mt-1 px-1">{micError}</div>}
       </div>
     </div>
   );
