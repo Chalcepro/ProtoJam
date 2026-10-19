@@ -17,7 +17,8 @@ import { familyOf, findFont, fontStack } from '../../lib/fonts';
 import { flexLayoutCss, textResizeOf } from '../../lib/styleCss';
 import { inFlow as treeInFlow } from '../../lib/tree';
 import { BOOLEANABLE } from '../../lib/boolean';
-import { CornerBevelIcon, CornerInverseIcon, CornerRoundIcon, MaskIcon } from './ShapeIcons';
+import { CornerBevelIcon, CornerFlareIcon, CornerInverseIcon, CornerRoundIcon, MaskIcon } from './ShapeIcons';
+import { pointStyles } from '../../lib/corners';
 
 const BOOL_OPS = [
   ['union', 'Union', Icons.SquaresUnite, 'U'], ['subtract', 'Subtract', Icons.SquaresSubtract, 'S'],
@@ -28,7 +29,8 @@ import { AutoLayoutSettings, EffectLayer } from '../../types/components';
 // Corner styles (round is Figma's; inverse and bevel are experimental)
 const CORNER_STYLES = [
   ['round', 'Round', CornerRoundIcon], ['inverse', 'Inverse: each corner scooped inward', CornerInverseIcon],
-  ['bevel', 'Bevel: each corner cut straight', CornerBevelIcon]
+  ['bevel', 'Bevel: each corner cut straight', CornerBevelIcon],
+  ['flare', 'Flare: each corner grows out past the box (ears); W and H stay the box', CornerFlareIcon]
 ] as const;
 
 
@@ -698,6 +700,10 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
   // corners this shapes (circles, drawn paths and text have none to shape)
   const shapedCorners = ['rectangle', 'container', 'polygon', 'star'].includes(element!.type) && !style.booleanOp &&
     (!style.frameShape || style.frameShape === 'polygon' || style.frameShape === 'star');
+  const cornerStylesNow = pointStyles(style, 4);
+  // corners that differ (radius or style) open one field per corner
+  const perCorner = isIndividualCorners || !!style.cornerStyles ||
+    (typeof style.borderRadius === 'object' && !!style.borderRadius && new Set(Object.values(style.borderRadius)).size > 1);
   const cornerRadiusObj = typeof style.borderRadius === 'object' && style.borderRadius !== null
     ? style.borderRadius
     : { tl: Number(style.borderRadius) || 0, tr: Number(style.borderRadius) || 0, br: Number(style.borderRadius) || 0, bl: Number(style.borderRadius) || 0 };
@@ -1064,9 +1070,9 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
           <div className="flex items-center justify-between text-[11px]">
             <span className="text-[rgba(235,235,236,0.5)]">Corner Radius</span>
             {!manyCorners && <button
-              onClick={() => setIsIndividualCorners(!isIndividualCorners)}
+              onClick={() => setIsIndividualCorners(!perCorner)}
               className={`p-1 rounded text-[10px] transition-colors ${
-                isIndividualCorners ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)] font-bold' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'
+                perCorner ? 'bg-[rgba(235,235,236,0.15)] text-[rgb(235,235,236)] font-bold' : 'text-[rgba(235,235,236,0.4)] hover:text-[rgb(235,235,236)]'
               }`}
               title="Toggle Individual Corners"
             >
@@ -1074,7 +1080,7 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
             </button>}
           </div>
 
-          {!isIndividualCorners || manyCorners ? (
+          {!perCorner || manyCorners ? (
             <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]">
               <Icons.CornerUpRight size={12} className="text-[rgba(235,235,236,0.4)] mr-2" />
               <NumberInput
@@ -1103,14 +1109,28 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                   />
                 </div>
               ))}
+              {/* each corner its own style: click to step through them */}
+              {shapedCorners && (['tl', 'tr', 'br', 'bl'] as const).map((corner, i) => {
+                const k = cornerStylesNow[i], at = CORNER_STYLES.findIndex(c => c[0] === k);
+                const [, label, Ic] = CORNER_STYLES[at];
+                const next = CORNER_STYLES[(at + 1) % CORNER_STYLES.length][0];
+                return (
+                  <button key={corner + '-style'} title={`${corner.toUpperCase()}: ${label} - click for the next style`}
+                          onClick={() => updateElementStyle(element!.id, { cornerStyles: { tl: cornerStylesNow[0], tr: cornerStylesNow[1], br: cornerStylesNow[2], bl: cornerStylesNow[3], [corner]: next }, cornerStyle: undefined })}
+                          className="flex items-center justify-center py-1 rounded-md border border-[rgba(235,235,236,0.08)] text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]">
+                    <Ic size={12} />
+                  </button>
+                );
+              })}
             </div>
           )}
 
           {/* Smoothing (round corners) and, experimental, the corner style */}
           {shapedCorners && (
             <>
-              {(style.cornerStyle ?? 'round') === 'round' && (
-                <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]" title="Corner smoothing: the curve eases into the sides (60% is the iOS look)">
+              {cornerStylesNow.some(k => k === 'round' || k === 'flare') && (
+                <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg px-2.5 py-1.5 border border-[rgba(235,235,236,0.08)]"
+                     title="Corner smoothing: round corners ease into the sides (60% is the iOS look); a flare's ramp gets longer">
                   <span className="text-[10px] text-[rgba(235,235,236,0.4)] mr-2 whitespace-nowrap">Smoothing</span>
                   <NumberInput min={0} max={100} value={Math.round((style.cornerSmoothing ?? 0) * 100)}
                                onChange={(e) => updateElementStyle(element!.id, { cornerSmoothing: Number(e.target.value) / 100 || undefined })}
@@ -1125,13 +1145,27 @@ export const DesignProperties: React.FC<DesignPropertiesProps> = ({ element, fra
                 </span>
                 <div className="flex items-center gap-0.5 bg-[rgba(235,235,236,0.04)] rounded-lg p-0.5 border border-[rgba(235,235,236,0.08)]">
                   {CORNER_STYLES.map(([k, label, Ic]) => (
-                    <button key={k} title={label} onClick={() => updateElementStyle(element!.id, { cornerStyle: k === 'round' ? undefined : k })}
-                            className={`p-1 rounded ${(style.cornerStyle ?? 'round') === k ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'text-[rgba(235,235,236,0.55)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>
+                    <button key={k} title={`${label} (all corners)`} onClick={() => updateElementStyle(element!.id, { cornerStyle: k === 'round' ? undefined : k, cornerStyles: undefined })}
+                            className={`p-1 rounded ${cornerStylesNow.every(c => c === k) ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'text-[rgba(235,235,236,0.55)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>
                       <Ic size={13} />
                     </button>
                   ))}
                 </div>
               </div>
+              {cornerStylesNow.includes('flare') && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[rgba(235,235,236,0.5)]">Flare grows</span>
+                  <div className="flex items-center gap-0.5 bg-[rgba(235,235,236,0.04)] rounded-lg p-0.5 border border-[rgba(235,235,236,0.08)]">
+                    {([['vertical', 'Up / down', 'The side walls rise past the top and bottom (ears)', Icons.MoveVertical],
+                       ['horizontal', 'Sideways', 'The top and bottom run out past the sides (the feet of a tab)', Icons.MoveHorizontal]] as const).map(([k, label, tip, Ic]) => (
+                      <button key={k} title={tip} onClick={() => updateElementStyle(element!.id, { flareAxis: k === 'vertical' ? undefined : k })}
+                              className={`px-1.5 py-1 rounded flex items-center gap-1 text-[10px] ${(style.flareAxis ?? 'vertical') === k ? 'bg-[rgb(235,235,236)] text-[rgb(20,20,19)]' : 'text-[rgba(235,235,236,0.55)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>
+                        <Ic size={11} />{label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

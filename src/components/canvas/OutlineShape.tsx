@@ -25,7 +25,7 @@ export const OutlineShape: React.FC<{
   const d = useMemo(() => shapeD({ ...element, style: { ...s, x: 0, y: 0 } }),
     // only the geometry matters
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.type, s.width, s.height, s.borderRadius, s.cornerStyle, s.cornerSmoothing, s.pointCount, s.starRatio, s.frameShape, s.vectorData]);
+    [element.type, s.width, s.height, s.borderRadius, s.cornerStyle, s.cornerStyles, s.flareAxis, s.cornerSmoothing, s.pointCount, s.starRatio, s.frameShape, s.vectorData]);
   const fills: FillLayer[] = hasLayeredPaint(s) || s.fillColor || !fallbackFill
     ? fillsOf(element) : [{ id: 'default', type: 'solid', color: fallbackFill, opacity: 1, visible: true }];
   return (

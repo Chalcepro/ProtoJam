@@ -249,7 +249,14 @@ export interface ElementStyle {
   borderRadius?: number | { tl: number; tr: number; br: number; bl: number };
   // How the corners are shaped (experimental beyond round): 'inverse' scoops
   // each corner inward, 'bevel' cuts it straight. Unset = round.
-  cornerStyle?: 'round' | 'inverse' | 'bevel';
+  // 'flare' grows each corner OUTSIDE the box: a side carries on past it and
+  // the other ramps up into it (ears / a tab's feet); W and H stay the box.
+  cornerStyle?: 'round' | 'inverse' | 'bevel' | 'flare';
+  // Per corner, over cornerStyle (boxes only).
+  cornerStyles?: Partial<Record<'tl' | 'tr' | 'br' | 'bl', 'round' | 'inverse' | 'bevel' | 'flare'>>;
+  // Which way flares grow: 'vertical' (default) the walls rise past the top /
+  // bottom; 'horizontal' the top / bottom run out past the sides.
+  flareAxis?: 'vertical' | 'horizontal';
   // Figma's corner smoothing, 0-1: round corners ease into the sides.
   cornerSmoothing?: number;
   // Polygon: number of sides; star: number of points. Unset = the old fixed outline.

@@ -22,3 +22,7 @@ export const CornerInverseIcon: React.FC<{ size?: number }> = ({ size }) => (
 export const CornerBevelIcon: React.FC<{ size?: number }> = ({ size }) => (
   <Svg size={size}><path d="M3 14 V9 L9 3 H14" /></Svg>
 );
+// the wall carries on up; the top ramps up into it
+export const CornerFlareIcon: React.FC<{ size?: number }> = ({ size }) => (
+  <Svg size={size}><path d="M3 14 V2 C3 6 7 8 14 8" /></Svg>
+);
