@@ -99,9 +99,9 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       onDoubleClick={(e) => {
         e.stopPropagation();
         const st = useProjectStore.getState();
-        // a selected shape: double-click opens its points (it becomes a vector)
+        // a selected vector or shape: double-click opens its points (a shape becomes a vector)
         if (st.selectedElementIds.length === 1 && st.selectedElementIds[0] === element.id &&
-            ['rectangle', 'ellipse', 'polygon', 'star'].includes(element.type)) { st.editShapePoints(element.id); return; }
+            ['vectorPath', 'rectangle', 'ellipse', 'polygon', 'star'].includes(element.type)) { st.editShapePoints(element.id); return; }
         const from = element.id;
         const next = stepInto(from, st.elements, st.selectedElementIds);
         if (!st.selectedElementIds.includes(next)) setSelection([next]);

@@ -315,11 +315,6 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       const regions = regionKeys.length ? vectorRegions(vd).filter(r => vd.regions![r.key]) : [];
       return (
         <svg width="100%" height="100%" overflow="visible" onClick={handleClick}
-             // double-click a selected path to edit its points
-             onDoubleClick={() => {
-               const st = useProjectStore.getState();
-               if (!isInteractive && st.selectedElementIds.includes(element.id)) st.startVectorEditing(element.id);
-             }}
              viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none"
              style={{ display: 'block', opacity: style.opacity ?? 1, ...effectsCss(style, false), boxShadow: undefined }}>
           {/* regions filled one by one (paint bucket), each its own colour */}

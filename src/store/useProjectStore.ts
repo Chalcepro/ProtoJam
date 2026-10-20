@@ -1,6 +1,6 @@
 import { vectorBounds } from '../lib/vector';
 import { absBoxOf, chainOf, flowsChildren, inFlow, isContainer, originOf, subtreeIds, takesDrops } from '../lib/tree';
-import { BOOLEANABLE, dToVectorData, shapeD } from '../lib/boolean';
+import { BOOLEANABLE, dToVectorData, shapeD, withCrossings } from '../lib/boolean';
 import { healDelete } from '../lib/vectorEdit';
 import { create } from 'zustand';
 import {
@@ -1587,7 +1587,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = get().editingVectorId;
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd || vd.points.length < 3) return;
-    const data: VectorData = { ...vd, subpaths: [...(vd.subpaths || []), { points: vd.points, isClosed: true }], points: [], isClosed: false };
+    const data: VectorData = withCrossings({ ...vd, subpaths: [...(vd.subpaths || []), { points: vd.points, isClosed: true }], points: [], isClosed: false });
     set({ activeVectorData: data, selectedVectorPointIds: [] });
     get().updateElementStyle(id, { vectorData: data });
   },
@@ -1844,7 +1844,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return shapeD(e, o.x, o.y, elements);
     }).filter(Boolean).join(' ');
     if (!d) return;
-    const raw = dToVectorData(d);
+    // where the outlines cross, a point on each
+    const raw = withCrossings(dToVectorData(d));
     const b = vectorBounds(raw);
     const shift = (pts: VectorPoint[]) => pts.map(p => ({ ...p, x: p.x - b.x0, y: p.y - b.y0 }));
     const data: VectorData = { ...raw, w: b.w, h: b.h, points: shift(raw.points), subpaths: raw.subpaths?.map(sp => ({ ...sp, points: shift(sp.points) })) };
@@ -1905,9 +1906,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set((state) => ({ ...end, elements: state.elements.filter(e => e.id !== id), selectedElementIds: [] }));
       return;
     }
-    const merged: VectorData = paths.length === 1
+    // lines that cross get a point there
+    const merged: VectorData = withCrossings(paths.length === 1
       ? { ...vd, points: paths[0].points, isClosed: paths[0].isClosed, subpaths: undefined }
-      : { ...vd, points: paths[paths.length - 1].points, isClosed: paths[paths.length - 1].isClosed, subpaths: paths.slice(0, -1) };
+      : { ...vd, points: paths[paths.length - 1].points, isClosed: paths[paths.length - 1].isClosed, subpaths: paths.slice(0, -1) });
     const b = vectorBounds(merged);
     // an edited path goes back where it was; a new one into the deepest frame
     // (screen or frame inside one) it was drawn in

@@ -115,7 +115,7 @@ Press `?` (or `Ctrl+/`) in the app to see this list. On a Mac, Ctrl is Cmd.
 | Ctrl+J | Join the selected points (two loose ends join; otherwise a new line between them) |
 | Ctrl (moving points / pen) | No snapping (other points, layers, guides, ruler marks) |
 | Delete or Backspace | Delete selected points - delete and heal: the neighbours reshape to keep the curve (or the selected line) |
-| Enter or Esc / double-click | Done |
+| Enter or Esc / double-click empty space | Done - lines that cross get a point where they cross |
 
 ## Text
 

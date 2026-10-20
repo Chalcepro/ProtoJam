@@ -288,3 +288,110 @@ export const healDelete = (vd: VectorData, ids: string[]): VectorData => {
   }
   return fromPaths(vd, paths);
 };
+
+// ---- crossings ---------------------------------------------------------------
+
+type Pt = { x: number; y: number };
+type Bez = [Pt, Pt, Pt, Pt];
+const lerp = (u: Pt, v: Pt, t: number): Pt => ({ x: u.x + (v.x - u.x) * t, y: u.y + (v.y - u.y) * t });
+const cut = ([P0, P1, P2, P3]: Bez, t: number): [Bez, Bez] => {
+  const a = lerp(P0, P1, t), b = lerp(P1, P2, t), c = lerp(P2, P3, t), d = lerp(a, b, t), e = lerp(b, c, t), m = lerp(d, e, t);
+  return [[P0, a, d, m], [m, e, c, P3]];
+};
+const boxOf = (c: Bez) => {
+  const xs = c.map(p => p.x), ys = c.map(p => p.y);
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+};
+type Box4 = ReturnType<typeof boxOf>;
+const apart = (a: Box4, b: Box4) => a.x1 < b.x0 - 1e-6 || b.x1 < a.x0 - 1e-6 || a.y1 < b.y0 - 1e-6 || b.y1 < a.y0 - 1e-6;
+
+// Where two lines cross, as [t on A, t on B]. Straight lines exactly; curves
+// by halving both until the pieces are tiny (a budget stops lines lying on
+// top of each other, which touch everywhere).
+const crossings = (A: Bez, B: Bez, straight: boolean): [number, number][] => {
+  if (straight) {
+    const r = { x: A[3].x - A[0].x, y: A[3].y - A[0].y }, s = { x: B[3].x - B[0].x, y: B[3].y - B[0].y };
+    const den = r.x * s.y - r.y * s.x;
+    if (Math.abs(den) < 1e-9) return [];
+    const qx = B[0].x - A[0].x, qy = B[0].y - A[0].y;
+    const t = (qx * s.y - qy * s.x) / den, u = (qx * r.y - qy * r.x) / den;
+    return t >= -1e-6 && t <= 1 + 1e-6 && u >= -1e-6 && u <= 1 + 1e-6 ? [[t, u]] : [];
+  }
+  const out: [number, number][] = [];
+  let budget = 6000;
+  const go = (a: Bez, a0: number, a1: number, b: Bez, b0: number, b1: number) => {
+    if (--budget < 0) return;
+    const ba = boxOf(a), bb = boxOf(b);
+    if (apart(ba, bb)) return;
+    const sa = Math.max(ba.x1 - ba.x0, ba.y1 - ba.y0), sb = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0);
+    if (sa < 0.01 && sb < 0.01) { out.push([(a0 + a1) / 2, (b0 + b1) / 2]); return; }
+    if (sa >= sb) { const [l, r] = cut(a, 0.5), m = (a0 + a1) / 2; go(l, a0, m, b, b0, b1); go(r, m, a1, b, b0, b1); }
+    else { const [l, r] = cut(b, 0.5), m = (b0 + b1) / 2; go(a, a0, a1, l, b0, m); go(a, a0, a1, r, m, b1); }
+  };
+  go(A, 0, 1, B, 0, 1);
+  return budget < 0 ? [] : out;
+};
+
+// Lines that cross get a point where they cross - one on each line, on the
+// very same spot, so they meet there (as joined points do) and the areas
+// between them can be filled. A line whose end lands on another line's
+// middle splits that one too. Curves keep their shape.
+export const splitCrossings = (vd: VectorData): VectorData => {
+  const paths = pathsOf(vd);
+  const segs: { pi: number; si: number; c: Bez; box: Box4; straight: boolean }[] = [];
+  paths.forEach((p, pi) => {
+    const n = p.points.length;
+    for (let si = 0; si < (p.isClosed ? n : n - 1) && n > 1; si++) {
+      const a = p.points[si], b = p.points[(si + 1) % n], straight = !a.handleOut && !b.handleIn;
+      // a straight line as a curve with its controls at the thirds, so t runs evenly along it
+      const c: Bez = straight ? [a, lerp(a, b, 1 / 3), lerp(a, b, 2 / 3), b] : ctrl(a, b) as unknown as Bez;
+      segs.push({ pi, si, c, box: boxOf(c), straight });
+    }
+  });
+  const END = 0.5;                                        // this close to an end point is the end point
+  const cuts = new Map<number, { t: number; at: Pt }[]>();
+  const add = (k: number, t: number, at: Pt) => {
+    const l = cuts.get(k) || [];
+    if (!l.some(c => Math.hypot(c.at.x - at.x, c.at.y - at.y) < END)) l.push({ t, at });
+    cuts.set(k, l);
+  };
+  const endOf = (c: Bez, p: Pt) => [c[0], c[3]].find(q => Math.hypot(q.x - p.x, q.y - p.y) < END);
+  for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
+    const A = segs[i], B = segs[j];
+    if (apart(A.box, B.box)) continue;
+    for (const [ta, tb] of crossings(A.c, B.c, A.straight && B.straight)) {
+      const pa = cut(A.c, Math.min(1, Math.max(0, ta)))[0][3];
+      const ea = endOf(A.c, pa), eb = endOf(B.c, pa);
+      if (ea && eb) continue;                             // they already meet at a point
+      const at = ea || eb || { x: Math.round(pa.x * 100) / 100, y: Math.round(pa.y * 100) / 100 };
+      if (!ea) add(i, ta, at);
+      if (!eb) add(j, tb, at);
+    }
+  }
+  if (!cuts.size) return vd;
+  const h = (u: Pt, v: Pt) => (Math.hypot(u.x - v.x, u.y - v.y) < 1e-6 ? undefined : { x: u.x - v.x, y: u.y - v.y });
+  let made = 0;
+  const out = paths.map((p, pi) => {
+    const n = p.points.length, pts = p.points.map(q => ({ ...q })), extra: VectorPoint[][] = pts.map(() => []);
+    segs.forEach((sg, k) => {
+      const list = sg.pi === pi ? cuts.get(k) : undefined;
+      if (!list) return;
+      list.sort((a, b) => a.t - b.t);
+      // a straight line just gets the points; a curve is cut so it keeps its shape
+      if (sg.straight) { extra[sg.si].push(...list.map(({ at }) => ({ id: newId(made++), x: at.x, y: at.y, isCorner: true }))); return; }
+      let c = sg.c, prev = 0;
+      for (const { t, at } of list) {
+        const [l, r] = cut(c, (t - prev) / (1 - prev));
+        const before = extra[sg.si][extra[sg.si].length - 1] || pts[sg.si];
+        before.handleOut = h(l[1], l[0]);
+        extra[sg.si].push({ id: newId(made++), x: at.x, y: at.y, handleIn: h(l[2], l[3]), isCorner: false });
+        c = r; prev = t;
+      }
+      extra[sg.si][extra[sg.si].length - 1].handleOut = h(c[1], c[0]);
+      pts[(sg.si + 1) % n].handleIn = h(c[2], c[3]);
+    });
+    return { ...p, points: pts.flatMap((q, i) => [q, ...extra[i]]) };
+  });
+  const last = out[out.length - 1];
+  return { ...vd, subpaths: out.slice(0, -1), points: last.points, isClosed: last.isClosed };
+};

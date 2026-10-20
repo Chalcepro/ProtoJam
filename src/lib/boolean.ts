@@ -1,6 +1,7 @@
 import paper from 'paper/dist/paper-core';
 import type { UIElement, VectorData, VectorPoint } from '../types/components';
 import { vectorPathD } from './vector';
+import { splitCrossings } from './vectorEdit';
 import { cornerShapeD } from './corners';
 
 // Shape geometry for booleans (Union / Subtract / Intersect / Exclude) and for
@@ -160,13 +161,29 @@ export const vectorRegions = (vd: VectorData): { key: string; d: string }[] => {
   const own = new Set(closedPaths.map(p => p.points.map(q => q.id).sort().join('|')));
   for (const f of vectorFaces(vd)) if (!own.has(f.ids.join('|'))) loops.push({ key: hashIds(f.ids), d: f.d });
   const closed = loops.map(l => l.d);
-  // too many to work out every overlap (2^n): each outline is a region of its own
-  if (closed.length > 8) return loops;
   if (!closed.length) return [];
   const ck = 'regions|' + closed.join('|');
   const hit = cache.get(ck);
   if (hit !== undefined) return JSON.parse(hit);
   setup();
+  // too many to work out every overlap (2^n): each outline less the outlines
+  // inside it - right when the lines meet at points where they cross
+  if (closed.length > 8) {
+    const items = loops.map(l => { const p = toPath(l.d); return { key: l.key, p, area: Math.abs((p as any).area), inner: p.interiorPoint }; });
+    const out: { key: string; d: string }[] = [];
+    for (const L of items) {
+      let acc: paper.PathItem = L.p.clone() as paper.PathItem;
+      for (const G of items) {
+        if (G === L || G.area >= L.area || !L.p.contains(G.inner)) continue;
+        const r = acc.subtract(G.p); acc.remove(); acc = r;
+      }
+      if (Math.abs((acc as any).area) > 0.5) out.push({ key: L.key, d: acc.pathData });
+      acc.remove();
+    }
+    items.forEach(i => i.p.remove());
+    cache.set(ck, JSON.stringify(out));
+    return out;
+  }
   const out: { key: string; d: string }[] = [];
   for (let mask = 1; mask < 1 << closed.length; mask++) {
     let acc: paper.PathItem | null = null;
@@ -187,6 +204,22 @@ export const vectorRegions = (vd: VectorData): { key: string; d: string }[] => {
   }
   cache.set(ck, JSON.stringify(out));
   return out;
+};
+
+// Points where lines cross (splitCrossings), keeping the fills: each new
+// area takes the colour of the area it lies in.
+export const withCrossings = (vd: VectorData): VectorData => {
+  const next = splitCrossings(vd);
+  if (next === vd || !vd.regions || !Object.keys(vd.regions).length) return next;
+  const before = vectorRegions(vd), regions: Record<string, string> = {};
+  setup();
+  for (const r of vectorRegions(next)) {
+    const p = toPath(r.d), inner = p.interiorPoint;
+    p.remove();
+    const was = regionAt(before, inner.x, inner.y), colour = was && vd.regions[was];
+    if (colour) regions[r.key] = colour;
+  }
+  return { ...next, regions };
 };
 
 // Which region a point is in (canvas units of the vector's own points).

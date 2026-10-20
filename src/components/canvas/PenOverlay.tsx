@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import type { VectorPoint } from '../../types/components';
-import { closedPathAt, interiorLines, regionAt, vectorPaths, vectorRegions } from '../../lib/boolean';
+import { closedPathAt, interiorLines, regionAt, vectorPaths, vectorRegions, withCrossings } from '../../lib/boolean';
 import { snapAxis, snapTargets } from '../../lib/snap';
 import { continueFrom, deleteSegment, isEndPoint, joinPoints, insertPoint, segmentPoint, segmentAt, segmentD, segmentMid, segmentsOf } from '../../lib/vectorEdit';
 
@@ -191,7 +191,7 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         if (j) {
           // the joined line is finished; the next click starts a new one
           const merged = { points: j.points, isClosed: j.isClosed };
-          useProjectStore.getState().setVectorData({ ...j, subpaths: [...(j.subpaths || []), merged], points: [], isClosed: false });
+          useProjectStore.getState().setVectorData(withCrossings({ ...j, subpaths: [...(j.subpaths || []), merged], points: [], isClosed: false }));
           useProjectStore.setState({ selectedVectorPointIds: [] });
           return;
         }
@@ -533,14 +533,14 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         if (k2 === 'j' && vdNow && s.selectedVectorPointIds.length >= 2) {
           const sel = s.selectedVectorPointIds;
           const j = sel.length === 2 ? joinPoints(vdNow, sel[0], sel[1]) : null;
-          if (j) s.setVectorData(j);
+          if (j) s.setVectorData(withCrossings(j));
           else {
             // not two loose ends: a new line through the picked points, in the
             // order they were picked; its ends sit on them and move with them
             const pts = sel.map(id => allNow.find(p => p.id === id)!).filter(Boolean)
               .map((p, i) => ({ id: `pt-${Date.now()}-j${i}`, x: p.x, y: p.y, isCorner: true }));
             const paths = vectorPaths(vdNow);
-            s.setVectorData({ ...vdNow, subpaths: [...paths, { points: pts, isClosed: false }], points: [], isClosed: false });
+            s.setVectorData(withCrossings({ ...vdNow, subpaths: [...paths, { points: pts, isClosed: false }], points: [], isClosed: false }));
           }
         } else if (k2 === 'a') {
           useProjectStore.setState({ selectedVectorPointIds: allNow.map(p => p.id), vectorTool: 'select' });
@@ -611,7 +611,13 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
       onPointerUp={up}
       onPointerLeave={() => setCursor(null)}
       onMouseDown={(e) => { if (e.button === 0 && !spaceDown.current) e.stopPropagation(); }}
-      onDoubleClick={(e) => { e.stopPropagation(); if (vectorTool === 'pen' && (points.length > 1 || paths.length)) finishVectorEditing(); }}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        if (vectorTool === 'pen') { if (points.length > 1 || paths.length) finishVectorEditing(); return; }
+        // a double-click on empty space (no point, line or area) leaves vector edit
+        const w = toWorld(e.clientX, e.clientY);
+        if (vd && !pointAt(w) && !segmentAt(vd, w.x, w.y, HIT / z) && !regionAt(vectorRegions(vd), w.x, w.y) && !closedPathAt(vd, w.x, w.y)) finishVectorEditing();
+      }}
       onContextMenu={(e) => { e.preventDefault(); if (xf.current?.modal) cancelXform(); }}
     >
       <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
