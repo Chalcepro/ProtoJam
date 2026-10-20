@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { UIElement } from '../../types/components';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
-import { cornerOf, radiusOf, shapeD, vectorAllD } from '../../lib/boolean';
+import { cornerOf, radiusOf, shapeD, smoothOf, vectorAllD } from '../../lib/boolean';
 import { needsOutline } from '../../lib/corners';
 import { inFlow, originOf, pickTarget } from '../../lib/tree';
 import { showSnap, snapAxis, snapLine, snapTargets, type Hit, type SnapLine } from '../../lib/snap';
@@ -234,7 +234,7 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
       const vectorData = style.vectorData;
       if (vectorData && (vectorData.points.length > 0 || vectorData.subpaths?.length)) {
         const scale = vectorData.w && vectorData.h ? (Number(style.width) / vectorData.w + Number(style.height) / vectorData.h) / 2 || 1 : 1;
-        const pathD = vectorAllD(vectorData, radiusOf(style) / scale, cornerOf(style));
+        const pathD = vectorAllD(vectorData, radiusOf(style) / scale, cornerOf(style), smoothOf(style));
         return (
           <>
             {/* the box says it is selected; its lines only faintly, inner ones included */}

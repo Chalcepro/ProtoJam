@@ -6,7 +6,7 @@ import { IconView } from './IconView';
 import { OutlineShape } from './OutlineShape';
 import { needsOutline } from '../../lib/corners';
 import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
-import { cornerOf, radiusOf, roundCornersD, vectorAllD, vectorRegions } from '../../lib/boolean';
+import { cornerOf, radiusOf, roundCornersD, smoothOf, vectorAllD, vectorRegions } from '../../lib/boolean';
 import { isPlainStroke } from '../../lib/strokeArt';
 import { clearTextSel, fillEditor, normalize, readRuns, registerEditor, runCss, runsOf, selectionOffsets, setSelectionOffsets, useTextSel } from '../../lib/richText';
 import { UIElement } from '../../types/components';
@@ -317,8 +317,9 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       const scale = vd.w && vd.h ? (Number(style.width) / vd.w + Number(style.height) / vd.h) / 2 || 1 : 1;
       const rr = radiusOf(style) / scale;
       const corner = cornerOf(style);
-      const allD = vectorAllD(vd, rr, corner);
-      const regions = regionKeys.length ? vectorRegions(vd).filter(r => vd.regions![r.key]).map(r => ({ ...r, d: roundCornersD(r.d, rr, corner) })) : [];
+      const soft = smoothOf(style);
+      const allD = vectorAllD(vd, rr, corner, soft);
+      const regions = regionKeys.length ? vectorRegions(vd).filter(r => vd.regions![r.key]).map(r => ({ ...r, d: roundCornersD(r.d, rr, corner, soft) })) : [];
       return (
         <svg width="100%" height="100%" overflow="visible" onClick={handleClick}
              viewBox={vd.w ? `0 0 ${vd.w} ${vd.h}` : undefined} preserveAspectRatio="none"

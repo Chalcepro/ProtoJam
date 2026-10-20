@@ -29,6 +29,12 @@ export const vectorBounds = (vd: VectorData) => {
 };
 
 // ---- Rounding any sharp corner -------------------------------------------
+// Like Blender's bevel with an angle limit: only corners where the outline
+// turns by ANGLE_LIMIT or more are touched, so arcs and gentle bends stay as
+// drawn. With smoothing the rounding reaches further along both sides and
+// eases in (corner smoothing, as Figma's), so it blends into the curves next
+// to it. Each outline is rounded on its own: nothing melts together.
+export const ANGLE_LIMIT = Math.PI / 6;     // 30 degrees, Blender's default
 // Corner radius for any outline, not just boxes: wherever two segments meet
 // at an angle (straight or curved ones), the corner is cut back along both
 // segments and, by the corner style, a circular arc of radius r put in its
@@ -79,7 +85,7 @@ const endDir = ([p0, c1, c2, p3]: Cubic) => unit(sub(p3, !near(c2, p3) ? c2 : !n
 const f3 = (v: number) => Math.round(v * 1000) / 1000;
 
 export type PathCorner = 'round' | 'bevel' | 'inverse' | 'flare';
-export const roundedPathD = (pts: VectorPoint[], isClosed: boolean, r: number, style: PathCorner = 'round'): string => {
+export const roundedPathD = (pts: VectorPoint[], isClosed: boolean, r: number, style: PathCorner = 'round', smooth = 0): string => {
   const n = pts.length;
   if (!n) return '';
   const segs: Cubic[] = [];
@@ -91,16 +97,25 @@ export const roundedPathD = (pts: VectorPoint[], isClosed: boolean, r: number, s
   if (!segs.length || r <= 0) return vectorPathD({ points: pts, isClosed, faces: [] });
   const ls = segs.map(lengths);
   const trimStart = segs.map(() => 0), trimEnd = segs.map(() => 0);
-  const corners: { into: number; outOf: number; rr: number; th: number }[] = [];
+  const corners: { into: number; outOf: number; rr: number; th: number; ext: number }[] = [];
   // corner k sits where segment k-1 ends and segment k starts
-  for (let k = isClosed ? 0 : 1; k < segs.length; k++) {
-    const into = (k + segs.length - 1) % segs.length, outOf = k;
-    const back = unit(sub({ x: 0, y: 0 }, endDir(segs[into]))), on = startDir(segs[outOf]);
-    const th = Math.acos(Math.max(-1, Math.min(1, back.x * on.x + back.y * on.y)));   // angle between the two sides
-    if (th > Math.PI - 0.03 || th < 1e-3) continue;           // runs straight through: not a corner
-    const cut = Math.min(r / Math.tan(th / 2), ls[into][SAMPLES] / 2, ls[outOf][SAMPLES] / 2);
+  const angle = (k: number) => {
+    const into = (k + segs.length - 1) % segs.length;
+    const back = unit(sub({ x: 0, y: 0 }, endDir(segs[into]))), on = startDir(segs[k]);
+    return Math.acos(Math.max(-1, Math.min(1, back.x * on.x + back.y * on.y)));   // angle between the two sides
+  };
+  const first = isClosed ? 0 : 1;
+  const isCorner = segs.map((_, k) => k >= first && Math.PI - angle(k) >= ANGLE_LIMIT && angle(k) >= 1e-3);
+  for (let k = first; k < segs.length; k++) {
+    if (!isCorner[k]) continue;                               // an arc or a gentle bend: left as drawn
+    const into = (k + segs.length - 1) % segs.length, outOf = k, th = angle(k);
+    const s = style === 'round' ? Math.max(0, Math.min(1, smooth)) : 0;
+    // a side can be used up to its far end, or half way if a corner waits there too
+    const room = (seg: number, farCorner: boolean) => ls[seg][SAMPLES] * (farCorner ? 0.5 : 0.95);
+    const cut = Math.min(r / Math.tan(th / 2) * (1 + s), room(into, isCorner[into]), room(outOf, isCorner[(outOf + 1) % segs.length] && (isClosed || outOf + 1 < segs.length)));
+    const plain = cut / (1 + s);                               // where a plain circular corner would start
     trimEnd[into] = cut; trimStart[outOf] = cut;
-    corners[k] = { into, outOf, rr: cut * Math.tan(th / 2), th };
+    corners[k] = { into, outOf, rr: plain * Math.tan(th / 2), th, ext: cut - plain };
   }
   const pieces: Cubic[] = segs.map((cu, i) => part(cu, tAt(ls[i], trimStart[i]), tAt(ls[i], ls[i][SAMPLES] - trimEnd[i])));
   const out: Cubic[] = [];
@@ -117,7 +132,8 @@ export const roundedPathD = (pts: VectorPoint[], isClosed: boolean, r: number, s
       out.push([a, add(a, perp(va, vb), h), add(b, perp(vb, va), h), b]);
       return;
     }
-    const h = (4 / 3) * Math.tan((Math.PI - c.th) / 4) * c.rr;   // a circular arc's handle length
+    // a circular arc's handle length, longer by the smoothing's extra reach so it eases in
+    const h = (4 / 3) * Math.tan((Math.PI - c.th) / 4) * c.rr + c.ext * 0.9;
     out.push([a, add(a, endDir(pieces[c.into]), h), add(b, startDir(pieces[c.outOf]), -h), b]);
   };
   pieces.forEach((pc, i) => { if (i > 0) fillet(i); out.push(pc); });

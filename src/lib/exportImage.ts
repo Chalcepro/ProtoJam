@@ -81,18 +81,23 @@ const pdfFromJpeg = (jpegDataUrl: string, w: number, h: number): Blob => {
   return new Blob(parts as BlobPart[], { type: 'application/pdf' });
 };
 
+// The layer is drawn as itself, not where it sits on the canvas. Resetting
+// left/top isn't enough: the copied style keeps the position in its 'inset'
+// shorthand too, which drew a canvas-level layer off the picture (blank export).
+export const AT_ORIGIN = { position: 'static', inset: 'auto', margin: '0' };
+
 export const exportLayer = async (node: HTMLElement, name: string, settings: ExportSetting[], background?: string) => {
   const w = node.offsetWidth, h = node.offsetHeight;
   const base = (name || 'export').replace(/[\\/:*?"<>|]+/g, '-');
   const fontEmbedCSS = await fontCssFor(node);
   for (const s of settings) {
     const file = `${base}${s.suffix || ''}`;
-    if (s.format === 'PNG') save(await toPng(node, { pixelRatio: s.scale, filter: skip, fontEmbedCSS }), `${file}.png`);
-    else if (s.format === 'JPG') save(await toJpeg(node, { pixelRatio: s.scale, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS }), `${file}.jpg`);
-    else if (s.format === 'SVG') save(await toSvg(node, { filter: skip, fontEmbedCSS }), `${file}.svg`);
+    if (s.format === 'PNG') save(await toPng(node, { pixelRatio: s.scale, filter: skip, fontEmbedCSS, style: AT_ORIGIN }), `${file}.png`);
+    else if (s.format === 'JPG') save(await toJpeg(node, { pixelRatio: s.scale, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS, style: AT_ORIGIN }), `${file}.jpg`);
+    else if (s.format === 'SVG') save(await toSvg(node, { filter: skip, fontEmbedCSS, style: AT_ORIGIN }), `${file}.svg`);
     else {
       // a PDF page the layer's size, its picture drawn at 2x so it stays sharp
-      const jpg = await toJpeg(node, { pixelRatio: 2, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS });
+      const jpg = await toJpeg(node, { pixelRatio: 2, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS, style: AT_ORIGIN });
       const url = URL.createObjectURL(pdfFromJpeg(jpg, w, h));
       save(url, `${file}.pdf`);
       setTimeout(() => URL.revokeObjectURL(url), 5000);

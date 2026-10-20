@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { toPng } from 'html-to-image';
-import { fontCssFor } from './exportImage';
+import { fontCssFor, AT_ORIGIN } from './exportImage';
 import { useProjectStore, holdHistory } from '../store/useProjectStore';
 import type { AutoLayoutSettings, DeviceFrame, ElementStyle, UIElement } from '../types/components';
 import type { PrototypeInteraction } from '../types/prototype';
@@ -183,7 +183,7 @@ const TOOLS: Record<string, (a: Record<string, any>) => unknown | Promise<unknow
     const w = node.offsetWidth, h = node.offsetHeight;
     const ratio = Math.min(2, 1200 / Math.max(w, h, 1));
     // the picture is of the thing itself, not of where it sits on the canvas
-    const png = await toPng(node, { pixelRatio: ratio, fontEmbedCSS: await fontCssFor(node), style: { left: '0', top: '0', margin: '0' },
+    const png = await toPng(node, { pixelRatio: ratio, fontEmbedCSS: await fontCssFor(node), style: AT_ORIGIN,
                                     filter: n => !(n instanceof HTMLElement && 'exportSkip' in n.dataset) });
     return { image: png.split(',')[1], width: Math.round(w * ratio), height: Math.round(h * ratio) };
   },

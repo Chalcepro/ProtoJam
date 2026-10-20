@@ -38,13 +38,13 @@ export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): st
       p.scale(sx, sy, new paper.Point(0, 0));
       p.translate(new paper.Point(x, y));
       const d = p.pathData; p.remove();
-      return roundCornersD(d, radiusOf(s), cornerOf(s));     // rounded at its drawn size, so the radius is in pixels
+      return roundCornersD(d, radiusOf(s), cornerOf(s), smoothOf(s));     // rounded at its drawn size, so the radius is in pixels
     }
     case 'container':
       // a frame made from a shape is that shape
       if (s.frameShape) return shapeD({ ...el, type: s.frameShape }, ox, oy, all);
       // a boolean group inside a boolean group: its own result
-      return s.booleanOp ? roundCornersD(booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))), radiusOf(s), cornerOf(s)) : cornerShapeD('rect', s, x, y, w, h);
+      return s.booleanOp ? roundCornersD(booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))), radiusOf(s), cornerOf(s), smoothOf(s)) : cornerShapeD('rect', s, x, y, w, h);
     default:
       return cornerShapeD('rect', s, x, y, w, h);
   }
@@ -110,12 +110,14 @@ const joinPaths = (paths: { points: VectorPoint[]; isClosed: boolean }[]) => {
 };
 
 // r: corner radius in the vector's own units (0: corners as drawn)
-export const vectorAllD = (vd: VectorData, r = 0, style: PathCorner = 'round') =>
+export const vectorAllD = (vd: VectorData, r = 0, style: PathCorner = 'round', smooth = 0) =>
   r > 0
-    ? joinPaths(vectorPaths(vd)).map(p => roundedPathD(p.points, p.isClosed, r, style)).join(' ')
+    ? joinPaths(vectorPaths(vd)).map(p => roundedPathD(p.points, p.isClosed, r, style, smooth)).join(' ')
     : vectorPaths(vd).map(p => vectorPathD({ points: p.points, isClosed: p.isClosed, faces: [] })).join(' ');
 
 export const cornerOf = (s: ElementStyle): PathCorner => (s.cornerStyle ?? 'round') as PathCorner;
+// how far a drawn shape's rounding eases in: its corner smoothing, else a soft default
+export const smoothOf = (s: ElementStyle) => s.cornerSmoothing ?? 0.6;
 
 // An element's corner radius as one number (per-corner radii: the first one).
 export const radiusOf = (s: ElementStyle) => {
@@ -124,7 +126,7 @@ export const radiusOf = (s: ElementStyle) => {
 };
 
 // Any outline's sharp corners rounded to radius r: boolean results, regions...
-export const roundCornersD = (d: string, r: number, style: PathCorner = 'round'): string => {
+export const roundCornersD = (d: string, r: number, style: PathCorner = 'round', smooth = 0): string => {
   if (!d || r <= 0) return d;
   setup();
   const cp = new paper.CompoundPath(d);
@@ -132,7 +134,7 @@ export const roundCornersD = (d: string, r: number, style: PathCorner = 'round')
     id: '', x: sg.point.x, y: sg.point.y,
     handleIn: sg.handleIn.isZero() ? undefined : { x: sg.handleIn.x, y: sg.handleIn.y },
     handleOut: sg.handleOut.isZero() ? undefined : { x: sg.handleOut.x, y: sg.handleOut.y }
-  })), p.closed, r, style));
+  })), p.closed, r, style, smooth));
   cp.remove();
   return kids.join(' ');
 };
