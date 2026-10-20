@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { UIElement } from '../../types/components';
-import { booleanD, shapeD } from '../../lib/boolean';
+import { booleanD, cornerOf, radiusOf, roundCornersD, shapeD } from '../../lib/boolean';
 import { effectsCss } from '../../lib/styleCss';
 import { fillsOf, hasLayeredPaint, strokesOf } from '../../lib/paint';
 import { SvgPaint } from './SvgPaint';
@@ -16,10 +16,10 @@ export const BooleanShape: React.FC<{ group: UIElement; elements: UIElement[] }>
   const s = group.style;
   const kids = elements.filter(e => e.parentId === group.id && !e.hidden);
   const d = useMemo(
-    () => booleanD(s.booleanOp!, kids.map(k => shapeD(k, 0, 0, elements))),
+    () => roundCornersD(booleanD(s.booleanOp!, kids.map(k => shapeD(k, 0, 0, elements))), radiusOf(s), cornerOf(s)),
     // the shapes' geometry is all that matters
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s.booleanOp, JSON.stringify(kids.map(k => [k.type, k.style.x, k.style.y, k.style.width, k.style.height, k.style.borderRadius, k.style.cornerStyle, k.style.cornerStyles, k.style.flareAxis, k.style.cornerSmoothing, k.style.pointCount, k.style.starRatio, k.style.vectorData, k.style.booleanOp, k.style.frameShape])), kids.length]
+    [s.booleanOp, JSON.stringify(s.borderRadius), s.cornerStyle, JSON.stringify(kids.map(k => [k.type, k.style.x, k.style.y, k.style.width, k.style.height, k.style.borderRadius, k.style.cornerStyle, k.style.cornerStyles, k.style.flareAxis, k.style.cornerSmoothing, k.style.pointCount, k.style.starRatio, k.style.vectorData, k.style.booleanOp, k.style.frameShape])), kids.length]
   );
   return (
     <svg width="100%" height="100%" overflow="visible" className="absolute inset-0 pointer-events-none"

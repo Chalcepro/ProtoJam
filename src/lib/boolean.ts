@@ -1,6 +1,6 @@
 import paper from 'paper/dist/paper-core';
-import type { UIElement, VectorData, VectorPoint } from '../types/components';
-import { vectorPathD } from './vector';
+import type { ElementStyle, UIElement, VectorData, VectorPoint } from '../types/components';
+import { roundedPathD, vectorPathD, type PathCorner } from './vector';
 import { splitCrossings } from './vectorEdit';
 import { cornerShapeD } from './corners';
 
@@ -38,13 +38,13 @@ export const shapeD = (el: UIElement, ox = 0, oy = 0, all: UIElement[] = []): st
       p.scale(sx, sy, new paper.Point(0, 0));
       p.translate(new paper.Point(x, y));
       const d = p.pathData; p.remove();
-      return d;
+      return roundCornersD(d, radiusOf(s), cornerOf(s));     // rounded at its drawn size, so the radius is in pixels
     }
     case 'container':
       // a frame made from a shape is that shape
       if (s.frameShape) return shapeD({ ...el, type: s.frameShape }, ox, oy, all);
       // a boolean group inside a boolean group: its own result
-      return s.booleanOp ? booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))) : cornerShapeD('rect', s, x, y, w, h);
+      return s.booleanOp ? roundCornersD(booleanD(s.booleanOp, all.filter(c => c.parentId === el.id && !c.hidden).map(c => shapeD(c, x, y, all))), radiusOf(s), cornerOf(s)) : cornerShapeD('rect', s, x, y, w, h);
     default:
       return cornerShapeD('rect', s, x, y, w, h);
   }
@@ -80,8 +80,62 @@ export const booleanD = (op: BoolOp, ds: string[]): string => {
 export const vectorPaths = (vd: VectorData): { points: VectorPoint[]; isClosed: boolean }[] =>
   [...(vd.subpaths || []), { points: vd.points, isClosed: vd.isClosed }].filter(p => p.points.length);
 
-export const vectorAllD = (vd: VectorData) =>
-  vectorPaths(vd).map(p => vectorPathD({ points: p.points, isClosed: p.isClosed, faces: [] })).join(' ');
+// Paths that meet end to end (ends on the same spot) as one path, closed when
+// it comes back round: where two lines were joined is a corner like any other.
+const joinPaths = (paths: { points: VectorPoint[]; isClosed: boolean }[]) => {
+  const key = (p: VectorPoint) => `${Math.round(p.x * 2) / 2},${Math.round(p.y * 2) / 2}`;
+  const rev = (pts: VectorPoint[]) => pts.slice().reverse().map(p => ({ ...p, handleIn: p.handleOut, handleOut: p.handleIn }));
+  const done = paths.filter(p => p.isClosed);
+  const open = paths.filter(p => !p.isClosed && p.points.length > 1).map(p => p.points.slice());
+  const glue = (a: VectorPoint[], b: VectorPoint[]) => [...a.slice(0, -1), { ...a[a.length - 1], handleOut: b[0].handleOut }, ...b.slice(1)];
+  for (let again = true; again;) {
+    again = false;
+    for (let i = 0; i < open.length && !again; i++) for (let j = 0; j < open.length && !again; j++) {
+      if (i === j) continue;
+      let a = open[i], b = open[j];
+      if (key(a[a.length - 1]) === key(b[b.length - 1])) b = rev(b);
+      else if (key(a[0]) === key(b[0])) a = rev(a);
+      if (key(a[a.length - 1]) !== key(b[0])) continue;
+      open[i] = glue(a, b);
+      open.splice(j, 1);
+      again = true;
+    }
+  }
+  return [...done, ...open.map(pts => {
+    const first = pts[0], last = pts[pts.length - 1];
+    return pts.length > 3 && key(first) === key(last)
+      ? { points: [{ ...first, handleIn: last.handleIn }, ...pts.slice(1, -1)], isClosed: true }
+      : { points: pts, isClosed: false };
+  })];
+};
+
+// r: corner radius in the vector's own units (0: corners as drawn)
+export const vectorAllD = (vd: VectorData, r = 0, style: PathCorner = 'round') =>
+  r > 0
+    ? joinPaths(vectorPaths(vd)).map(p => roundedPathD(p.points, p.isClosed, r, style)).join(' ')
+    : vectorPaths(vd).map(p => vectorPathD({ points: p.points, isClosed: p.isClosed, faces: [] })).join(' ');
+
+export const cornerOf = (s: ElementStyle): PathCorner => (s.cornerStyle ?? 'round') as PathCorner;
+
+// An element's corner radius as one number (per-corner radii: the first one).
+export const radiusOf = (s: ElementStyle) => {
+  const r = s.borderRadius;
+  return typeof r === 'object' && r ? Number(r.tl) || 0 : Number(r) || 0;
+};
+
+// Any outline's sharp corners rounded to radius r: boolean results, regions...
+export const roundCornersD = (d: string, r: number, style: PathCorner = 'round'): string => {
+  if (!d || r <= 0) return d;
+  setup();
+  const cp = new paper.CompoundPath(d);
+  const kids = (cp.children as paper.Path[]).map(p => roundedPathD(p.segments.map(sg => ({
+    id: '', x: sg.point.x, y: sg.point.y,
+    handleIn: sg.handleIn.isZero() ? undefined : { x: sg.handleIn.x, y: sg.handleIn.y },
+    handleOut: sg.handleOut.isZero() ? undefined : { x: sg.handleOut.x, y: sg.handleOut.y }
+  })), p.closed, r, style));
+  cp.remove();
+  return kids.join(' ');
+};
 
 // The areas a vector's lines close off, however they were drawn: a line that
 // comes back to one of its own points, lines that meet end to end, a line
