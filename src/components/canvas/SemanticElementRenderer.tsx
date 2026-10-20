@@ -409,11 +409,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         <div
           key="view"
           ref={textRef}
-          style={{
-            ...textBox,
-            outline: mode === 'fixed' && !style.borderWidth ? '1px dashed rgba(235,235,236,0.3)' : undefined,
-            outlineOffset: '1px'
-          }}
+          style={textBox}
           onClick={handleClick}
           // edits only once selected: in a group, the first double-click
           // steps into the group and selects this text

@@ -134,6 +134,9 @@ const TOOLS: Record<string, (a: Record<string, any>) => unknown | Promise<unknow
     const parent = need(a.parentId, 'parentId (a screen or a frame/container id)');
     if (!findFrame(parent) && !findEl(parent)) throw new Error('No screen or layer ' + parent);
     const id = st.createShapeAt(a.type, num(a.x), num(a.y), num(a.width) || 100, num(a.height) || 40, parent);
+    // text hugs its words unless given a size: no width = auto, a width only = grows down
+    if ((a.type === 'text' || a.type === 'heading') && !a.style?.textResize)
+      st.updateElementStyle(id, { textResize: !num(a.width) ? 'auto' : !num(a.height) ? 'autoHeight' : 'fixed' });
     applyLook(id, a);
     useAgent.setState(s => ({ aiMade: { ...s.aiMade, [id]: true } }));
     return { id };
