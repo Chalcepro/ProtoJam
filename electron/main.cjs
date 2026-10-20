@@ -44,6 +44,15 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Right-click a misspelled word in a text box: its corrections, as on any
+  // Windows text box (ProtoJam's own menus handle everything else).
+  mainWindow.webContents.on('context-menu', (_e, params) => {
+    if (!params.isEditable || !params.misspelledWord) return;
+    const items = params.dictionarySuggestions.slice(0, 6).map(s => ({ label: s, click: () => mainWindow.webContents.replaceMisspelling(s) }));
+    if (!items.length) items.push({ label: 'No suggestions', enabled: false });
+    items.push({ type: 'separator' }, { label: 'Add to dictionary', click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord) });
+    Menu.buildFromTemplate(items).popup({ window: mainWindow });
+  });
   // remember the windowed size and place (not the maximised one)
   mainWindow.on('close', () => {
     try { fs.writeFileSync(boundsFile(), JSON.stringify(mainWindow.getNormalBounds())); } catch {}

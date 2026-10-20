@@ -4,6 +4,7 @@ import { startRecording, transcribe, type Recording } from '../../lib/dictate';
 import { create } from 'zustand';
 import { useProjectStore } from '../../store/useProjectStore';
 import { beginTurn, endTurn, useAgent } from '../../lib/agentBridge';
+import { correctText, correctWord, skillsList, spell, toggleSkill, turnOff, useSkills } from './chatSkills';
 import { ago, newChatId, openChatOf, removeChat, renameChat, saveChat, setBrief, setOpenChat, useBriefs, useChats, type Chat, type Msg } from '../../lib/chatHistory';
 
 // The Chat tab: ask for screens or changes and watch them appear on the
@@ -11,6 +12,8 @@ import { ago, newChatId, openChatOf, removeChat, renameChat, saveChat, setBrief,
 // no API key) with only the ProtoJam tools - it cannot touch your files.
 // One reply is one Ctrl+Z. Every chat is kept (History), and the project's
 // Brief goes with every message, so nothing has to be typed twice.
+// Skills: "/skill <path>" turns one on (again: off); "/<name> ..." asks for it.
+// Word correction: right-click a word, or turn on auto-correct (the ABC button).
 
 const MODELS = [
   { id: 'fable', label: 'Fable 5.1' },
@@ -98,6 +101,28 @@ export const ChatPanel: React.FC = () => {
   const setView = (v: View) => useChat.setState({ view: view === v ? 'chat' : v });
   const linked = useAgent(s => s.linked);
   const [draft, setDraft] = useState('');
+  const skillsOn = useSkills(s => s.on);
+  const [autoFix, setAutoFix] = useState(saved('pj-chat-autocorrect', 'off') === 'on');
+  const canSpell = !!spell();
+  // typing a command: what can follow the "/"
+  const typing = draft.startsWith('/') && !/\s/.test(draft.trim()) ? draft.slice(1).toLowerCase() : null;
+  const commands = typing === null ? [] : [
+    { cmd: 'skill ', hint: '<path to a SKILL.md, its folder, or a folder of skills> - on the first time, off the second' },
+    ...skillsOn.flatMap(s => s.names).map(n => ({ cmd: n.name + ' ', hint: n.description || 'use this skill' }))
+  ].filter(c => c.cmd.startsWith(typing));
+  // auto-correct: a finished word (space or punctuation after it) is fixed as you go
+  const fixAsYouType = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!autoFix || !/^[ .,!?;:]$/.test(e.key)) return;
+    const el = e.currentTarget, at = el.selectionStart;
+    const before = draft.slice(0, at), word = (before.match(/(?:^|\s)([A-Za-z']+)$/) || [])[1];
+    if (!word || before.trimStart().startsWith('/') && !/\s/.test(before.trim())) return;
+    const fixed = correctWord(word);
+    if (fixed === word) return;
+    e.preventDefault();
+    const head = before.slice(0, before.length - word.length) + fixed + e.key;
+    setDraft(head + draft.slice(at));
+    requestAnimationFrame(() => el.setSelectionRange(head.length, head.length));
+  };
   // the microphone: off, listening (with how loud), or turning speech into text
   const [mic, setMic] = useState<'off' | 'rec' | 'text'>('off');
   const [micLevel, setMicLevel] = useState(0);
@@ -142,13 +167,25 @@ export const ChatPanel: React.FC = () => {
     const text = draft.trim();
     if (!text || busy) return;
     setDraft('');
+    // slash commands: /skill <path> turns a skill on or off; /<name> asks for one
+    let ask = autoFix ? correctText(text) : text, invoke: string | undefined;
+    if (ask.startsWith('/')) {
+      const cmd = ask.slice(1).split(/\s+/)[0].toLowerCase(), arg = ask.slice(1 + cmd.length).trim();
+      if (cmd === 'skill' || cmd === 'skills') {
+        let reply: string;
+        try { reply = arg ? await toggleSkill(arg) : skillsList(); } catch (e) { reply = e instanceof Error ? e.message : String(e); }
+        useChat.setState(s => ({ msgs: [...s.msgs, { role: 'user', text, steps: [] }, { role: 'assistant', text: reply, steps: [] }] }));
+        return;
+      }
+      if (useSkills.getState().on.some(s => s.names.some(n => n.name === cmd))) { invoke = cmd; ask = arg || `Use the ${cmd} skill.`; }
+    }
     // "this" means the selection: say what it is
     const st = useProjectStore.getState();
     const sel = [
       ...st.frames.filter(f => st.selectedFrameIds.includes(f.id)).map(f => `${f.id} (screen "${f.name}")`),
       ...st.elements.filter(e => st.selectedElementIds.includes(e.id)).map(e => `${e.id} (${e.type} "${e.name}")`)
     ];
-    const message = sel.length ? `${text}\n\n[Selected in ProtoJam: ${sel.join(', ')}]` : text;
+    const message = sel.length ? `${ask}\n\n[Selected in ProtoJam: ${sel.join(', ')}]` : ask;
     if (!useChat.getState().chatId) { const id = newChatId(); useChat.setState({ chatId: id }); setOpenChat(projectId(), id); }
     useChat.setState(s => ({ busy: true, msgs: [...s.msgs, { role: 'user', text, steps: [] }, { role: 'assistant', text: '', steps: [] }] }));
     abort.current = new AbortController();
@@ -156,7 +193,8 @@ export const ChatPanel: React.FC = () => {
     let streamed = false;
     try {
       const brief = useBriefs.getState().briefs[projectId()] || '';
-      const r = await post('/__pj/chat', { message, model, effort, session: useChat.getState().session, brief }, abort.current.signal);
+      const skills = useSkills.getState().on.map(s => s.path);
+      const r = await post('/__pj/chat', { message, model, effort, session: useChat.getState().session, brief, skills, invoke }, abort.current.signal);
       if (!r.ok || !r.body) throw new Error((await r.json().catch(() => ({}))).error || `The chat could not start (${r.status}).`);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '';
@@ -265,15 +303,49 @@ export const ChatPanel: React.FC = () => {
       </div>
 
       {/* kept clear of the floating panel button in the bottom-left corner */}
-      <div className="p-2 pb-14 border-t border-[rgba(235,235,236,0.08)]">
+      <div className="p-2 pb-14 border-t border-[rgba(235,235,236,0.08)] relative">
+        {/* what can follow a "/": turn skills on or off, or ask for one */}
+        {commands.length > 0 && (
+          <div className="absolute left-2 right-2 bottom-full mb-1 rounded-lg border border-[rgba(235,235,236,0.12)] bg-[#1c1d21] shadow-lg py-1 z-10 max-h-56 overflow-auto">
+            {commands.map(c => (
+              <button key={c.cmd} onMouseDown={e => { e.preventDefault(); setDraft('/' + c.cmd); input.current?.focus(); }}
+                      className="w-full text-left px-2.5 py-1 hover:bg-[rgba(235,235,236,0.06)] text-[11px]">
+                <span className="text-[#31C3F3] font-mono">/{c.cmd.trim()}</span>
+                <span className="text-[rgba(235,235,236,0.45)] ml-2">{c.hint}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {/* skills that are on: their instructions go with every message */}
+        {skillsOn.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-1.5">
+            {skillsOn.map(s => (
+              <span key={s.path} title={`${s.path}\n${s.names.map(n => n.description).filter(Boolean).join('\n')}`}
+                    className="flex items-center gap-1 pl-1.5 pr-0.5 py-0.5 rounded bg-[rgba(49,195,243,0.12)] text-[#31C3F3] text-[10.5px]">
+                <Icons.Sparkles size={10} />{s.names.map(n => n.name).join(', ')}
+                <button onClick={() => turnOff(s)} title="Turn this skill off" className="p-0.5 rounded hover:bg-[rgba(235,235,236,0.1)]"><Icons.X size={9} /></button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex items-end gap-1.5 bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.1)] p-1.5">
           <textarea ref={input} value={draft} onChange={e => setDraft(e.target.value)} rows={2}
                     placeholder={mic === 'rec' ? 'Listening… click the microphone again when you are done' : mic === 'text' ? 'Writing down what you said…' : linked ? 'Ask for a screen or a change…' : 'Start ProtoJam with npm run dev to chat'}
+                    spellCheck
                     onKeyDown={e => {
                       if (e.key === 'Escape' && mic === 'rec') { e.preventDefault(); cancelMic(); return; }
+                      if (e.key === 'Tab' && commands.length) { e.preventDefault(); setDraft('/' + commands[0].cmd); return; }
+                      fixAsYouType(e);
                       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
                     }}
                     className="flex-1 bg-transparent resize-none outline-none text-xs text-[rgb(235,235,236)] placeholder:text-[rgba(235,235,236,0.35)] max-h-40" />
+          {canSpell && (
+            <button onClick={() => { setAutoFix(!autoFix); keep('pj-chat-autocorrect', autoFix ? 'off' : 'on'); }}
+                    title={autoFix ? 'Auto-correct is on: misspelled words are fixed as you type (and when you send). Click to turn it off.' : 'Auto-correct is off. Click to fix misspelled words as you type. Right-click a word for suggestions either way.'}
+                    className={`p-1.5 rounded ${autoFix ? 'bg-[rgba(49,195,243,0.18)] text-[#31C3F3]' : 'text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>
+              <Icons.SpellCheck size={12} />
+            </button>
+          )}
           <button onClick={toggleMic} disabled={mic === 'text'}
                   title={mic === 'rec' ? 'Stop and write it down (Esc in the box cancels)' : 'Speak instead of typing - turned into text on this computer'}
                   className={`relative p-1.5 rounded ${mic === 'rec' ? 'bg-[#ff4242] text-white' : 'text-[rgba(235,235,236,0.6)] hover:text-[rgb(235,235,236)] hover:bg-[rgba(235,235,236,0.08)]'}`}>

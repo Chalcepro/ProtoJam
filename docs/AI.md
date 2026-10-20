@@ -27,6 +27,33 @@ you take over and finish them by hand.
 Needs ProtoJam running from the dev server: `npm run dev` or
 `npm run electron:dev`. A packaged build has no Chat yet.
 
+## Skills
+
+Instruction files for the AI, in Claude's skill format (a `SKILL.md` with a
+`---` header holding `name` and `description`, then the instructions).
+
+- `/skill <path>` in the chat: point at a `SKILL.md`, a skill's folder, or a
+  folder of skills. The first time turns them on, pointing at the same path
+  again turns them off. `/skill` alone lists what's on. Skills that are on show
+  as chips above the box (x turns one off).
+- While a skill is on, its instructions go with every message (all of them in
+  full while they fit 40k characters, else the rest by name with where to read
+  them), and the AI may **read** files in that skill's folder - nothing else:
+  ProtoJam's own folder is explicitly denied, the rest isn't allowed.
+- `/<name> what you want` asks for one skill by name. Typing `/` lists them
+  (Tab completes the first).
+- Code: `agent/skills.ts` (finding, reading, the prompt),
+  `/__pj/skills/scan` in `agent/vitePlugin.ts`,
+  `src/components/sidebar/chatSkills.ts` (which are on, kept in this browser).
+
+## Word correction
+
+The system's own spellchecker (offline), in the chat box: misspelled words are
+underlined; right-click one for corrections or "Add to dictionary". The ABC
+button turns on auto-correct: a finished word is fixed as you type, and the
+whole message when you send. Paths and /commands are left alone. Desktop app
+only (needs `electron/preload.cjs`); restart ProtoJam after updating.
+
 ## The MCP server (`mcp/server.mjs`)
 
 For any MCP client (Claude Code in a terminal, Claude Desktop...). Already

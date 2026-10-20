@@ -1,7 +1,13 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
+  // Word correction (the system's spellchecker, on this computer): which words
+  // are misspelled, and what they probably should be.
+  spell: {
+    misspelled: (word) => webFrame.isWordMisspelled(word),
+    suggestions: (word) => webFrame.getWordSuggestions(word)
+  },
   saveProjectFile: (data) => ipcRenderer.invoke('save-project-file', data),
   openProjectFile: () => ipcRenderer.invoke('open-project-file'),
   window: {

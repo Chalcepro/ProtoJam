@@ -4,6 +4,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin, ViteDevServer } from 'vite';
+import { scanSkills, skillsPrompt } from './skills.ts';
 
 // The dev server's side of the AI link (see src/lib/agentBridge.ts).
 //
@@ -35,6 +36,9 @@ const whisper = () => ({
 });
 // What Whisper writes for silence and sounds, and doubled spaces, away.
 const cleanTranscript = (t: string) => t.replace(/\[[^\]]*\]|\([^)]*\)/g, '').replace(/\s+/g, ' ').trim();
+
+// A Windows path written the way Claude Code's permission rules write an absolute one: //c/Users/...
+const claudePath = (p: string) => '//' + p.replace(/\\/g, '/').replace(/^([A-Za-z]):\//, (_m, l: string) => l.toLowerCase() + '/');
 
 const SYSTEM = `You are the design assistant inside ProtoJam, a Figma-like prototyping app. You change the open project only through the protojam tools.
 - Start by reading what is there (get_document, get_selection). If the user has something selected, "this" means the selection.
@@ -154,6 +158,13 @@ export const protojamAgent = (): Plugin => ({
       try {
         if (req.url === '/__pj/status') return json(res, 200, { pages: order.filter(live).length, claude: claudeExe() });
 
+        // what a path pointed at holds: the skills in it (names and descriptions)
+        if (req.url === '/__pj/skills/scan' && req.method === 'POST') {
+          const { path } = await body(req);
+          try { return json(res, 200, scanSkills(String(path || '')).map(({ name, description, file }) => ({ name, description, file }))); }
+          catch (e) { return json(res, 400, { error: e instanceof Error ? e.message : String(e) }); }
+        }
+
         if (req.url === '/__pj/tool' && req.method === 'POST') {
           const { tool, args } = await body(req);
           return json(res, 200, await runTool(String(tool), args || {}));
@@ -186,7 +197,9 @@ export const protojamAgent = (): Plugin => ({
         }
 
         if (req.url === '/__pj/chat' && req.method === 'POST') {
-          const { message, model, effort, session, brief } = await body(req);
+          const { message, model, effort, session, brief, skills, invoke } = await body(req);
+          // skills that are on: their instructions ride along, and their folders may be read
+          const sk = skillsPrompt(Array.isArray(skills) ? skills.map(String) : [], typeof invoke === 'string' ? invoke : undefined);
           // the project's brief rides along with every turn, so it is never retyped
           const note = typeof brief === 'string' && brief.trim() ? `
 
@@ -194,10 +207,16 @@ The designer's brief for this project (follow it):
 ${brief.trim().slice(0, 8000)}` : '';
           const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
             '--model', MODELS.has(model) ? model : 'sonnet', '--effort', EFFORTS.has(effort) ? effort : 'medium',
-            '--tools', '',                                     // no files, no shell: ProtoJam only
+            // no shell, no writing files: ProtoJam only - and, with skills on,
+            // reading inside those skills' folders
+            '--tools', sk.dirs.length ? 'Read' : '',
             '--mcp-config', mcpConfig(), '--strict-mcp-config',
-            '--allowedTools', 'mcp__protojam', '--permission-mode', 'dontAsk',
-            '--append-system-prompt', SYSTEM + note];
+            '--allowedTools', ['mcp__protojam', ...sk.dirs.map(d => `Read(${claudePath(d)}/**)`)].join(','),
+            ...sk.dirs.flatMap(d => ['--add-dir', d]),
+            // Claude Code may read its own working folder by default: not here
+            ...(sk.dirs.length ? ['--disallowedTools', `Read(${claudePath(ROOT)}/**)`] : []),
+            '--permission-mode', 'dontAsk',
+            '--append-system-prompt', SYSTEM + note + sk.text];
           if (typeof session === 'string' && /^[\w-]{8,}$/.test(session)) args.push('--resume', session);
           chat?.kill();
           const child = spawn(claudeExe(), args, { cwd: ROOT, windowsHide: true });
