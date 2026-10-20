@@ -31,14 +31,20 @@ interface Props {
 
 // One element on the canvas - and, for a container (a frame inside a frame),
 // everything inside it, laid out by its own auto layout or placed by x/y.
-export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onPress, boxInside, frameId, ghost }) => {
-  const { elements, selectedElementIds, activeTool, editorMode, isWiring, finishWiring, startWiring, updateElementStyle, setSelection } =
-    useProjectStore(useShallow((s) => ({ elements: s.elements, selectedElementIds: s.selectedElementIds, activeTool: s.activeTool, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateElementStyle: s.updateElementStyle, setSelection: s.setSelection })));
+const NO_ELEMENTS: UIElement[] = [];
+
+// Memoised: it re-renders when its own element (or what it is given) changes,
+// not on every pan, hover or change to another layer. Only containers - which
+// draw their children - follow the whole list of elements.
+export const ElementNode = React.memo(function ElementNode({ element, parentLayout, layer, onPress, boxInside, frameId, ghost }: Props) {
+  const isBox = isContainer(element);
+  const { elements, activeTool, editorMode, isWiring, finishWiring, startWiring, updateElementStyle, setSelection } =
+    useProjectStore(useShallow((s) => ({ elements: isBox ? s.elements : NO_ELEMENTS, activeTool: s.activeTool, editorMode: s.editorMode, isWiring: s.isWiring, finishWiring: s.finishWiring, startWiring: s.startWiring, updateElementStyle: s.updateElementStyle, setSelection: s.setSelection })));
+  const isSelected = useProjectStore((s) => s.selectedElementIds.includes(element.id));
   const ref = useRef<HTMLDivElement>(null);
   // a blend mode being hovered in a menu shows before it is chosen
   const preview = useProjectStore((s) => s.stylePreview?.ids.includes(element.id) ? s.stylePreview.style : null);
   const flow = !!parentLayout && !element.style.absolutePosition;
-  const isSelected = selectedElementIds.includes(element.id);
   const container = isContainer(element);
   const ownLayout = container && element.style.autoLayout?.enabled ? element.style.autoLayout : null;
   const size = nodeSize(element, parentLayout);
@@ -164,4 +170,4 @@ export const ElementNode: React.FC<Props> = ({ element, parentLayout, layer, onP
       )}
     </div>
   );
-};
+});

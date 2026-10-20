@@ -90,14 +90,16 @@ export const exportLayer = async (node: HTMLElement, name: string, settings: Exp
   const w = node.offsetWidth, h = node.offsetHeight;
   const base = (name || 'export').replace(/[\\/:*?"<>|]+/g, '-');
   const fontEmbedCSS = await fontCssFor(node);
+  const opts = { filter: skip, fontEmbedCSS, style: AT_ORIGIN };
+  const jpgOpts = { ...opts, quality: 0.95, backgroundColor: background || '#ffffff' };
   for (const s of settings) {
     const file = `${base}${s.suffix || ''}`;
-    if (s.format === 'PNG') save(await toPng(node, { pixelRatio: s.scale, filter: skip, fontEmbedCSS, style: AT_ORIGIN }), `${file}.png`);
-    else if (s.format === 'JPG') save(await toJpeg(node, { pixelRatio: s.scale, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS, style: AT_ORIGIN }), `${file}.jpg`);
-    else if (s.format === 'SVG') save(await toSvg(node, { filter: skip, fontEmbedCSS, style: AT_ORIGIN }), `${file}.svg`);
+    if (s.format === 'PNG') save(await toPng(node, { ...opts, pixelRatio: s.scale }), `${file}.png`);
+    else if (s.format === 'JPG') save(await toJpeg(node, { ...jpgOpts, pixelRatio: s.scale }), `${file}.jpg`);
+    else if (s.format === 'SVG') save(await toSvg(node, opts), `${file}.svg`);
     else {
       // a PDF page the layer's size, its picture drawn at 2x so it stays sharp
-      const jpg = await toJpeg(node, { pixelRatio: 2, filter: skip, quality: 0.95, backgroundColor: background || '#ffffff', fontEmbedCSS, style: AT_ORIGIN });
+      const jpg = await toJpeg(node, { ...jpgOpts, pixelRatio: 2 });
       const url = URL.createObjectURL(pdfFromJpeg(jpg, w, h));
       save(url, `${file}.pdf`);
       setTimeout(() => URL.revokeObjectURL(url), 5000);

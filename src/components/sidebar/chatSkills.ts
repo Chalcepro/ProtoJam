@@ -20,7 +20,7 @@ const same = (a: string, b: string) => {
   const n = (p: string) => bare(p).replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase();
   return n(a) === n(b);
 };
-const label = (s: SkillRef) => s.names.map(n => n.name).join(', ');
+export const label = (s: SkillRef) => s.names.map(n => n.name).join(', ');
 
 export const toggleSkill = async (path: string): Promise<string> => {
   const at = bare(path);

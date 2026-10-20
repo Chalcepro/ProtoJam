@@ -34,7 +34,7 @@ export const vectorBounds = (vd: VectorData) => {
 // drawn. With smoothing the rounding reaches further along both sides and
 // eases in (corner smoothing, as Figma's), so it blends into the curves next
 // to it. Each outline is rounded on its own: nothing melts together.
-export const ANGLE_LIMIT = Math.PI / 6;     // 30 degrees, Blender's default
+const ANGLE_LIMIT = Math.PI / 6;     // 30 degrees, Blender's default
 // Corner radius for any outline, not just boxes: wherever two segments meet
 // at an angle (straight or curved ones), the corner is cut back along both
 // segments and, by the corner style, a circular arc of radius r put in its
@@ -105,14 +105,15 @@ export const roundedPathD = (pts: VectorPoint[], isClosed: boolean, r: number, s
     return Math.acos(Math.max(-1, Math.min(1, back.x * on.x + back.y * on.y)));   // angle between the two sides
   };
   const first = isClosed ? 0 : 1;
-  const isCorner = segs.map((_, k) => k >= first && Math.PI - angle(k) >= ANGLE_LIMIT && angle(k) >= 1e-3);
+  const ang = segs.map((_, k) => angle(k));
+  const isCorner = ang.map((th, k) => k >= first && Math.PI - th >= ANGLE_LIMIT && th >= 1e-3);
+  const s = style === 'round' ? Math.max(0, Math.min(1, smooth)) : 0;
   for (let k = first; k < segs.length; k++) {
     if (!isCorner[k]) continue;                               // an arc or a gentle bend: left as drawn
-    const into = (k + segs.length - 1) % segs.length, outOf = k, th = angle(k);
-    const s = style === 'round' ? Math.max(0, Math.min(1, smooth)) : 0;
+    const into = (k + segs.length - 1) % segs.length, outOf = k, th = ang[k];
     // a side can be used up to its far end, or half way if a corner waits there too
     const room = (seg: number, farCorner: boolean) => ls[seg][SAMPLES] * (farCorner ? 0.5 : 0.95);
-    const cut = Math.min(r / Math.tan(th / 2) * (1 + s), room(into, isCorner[into]), room(outOf, isCorner[(outOf + 1) % segs.length] && (isClosed || outOf + 1 < segs.length)));
+    const cut = Math.min(r / Math.tan(th / 2) * (1 + s), room(into, isCorner[into]), room(outOf, isCorner[(outOf + 1) % segs.length]));
     const plain = cut / (1 + s);                               // where a plain circular corner would start
     trimEnd[into] = cut; trimStart[outOf] = cut;
     corners[k] = { into, outOf, rr: plain * Math.tan(th / 2), th, ext: cut - plain };

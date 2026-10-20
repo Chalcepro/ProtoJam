@@ -4,7 +4,7 @@ import { startRecording, transcribe, type Recording } from '../../lib/dictate';
 import { create } from 'zustand';
 import { useProjectStore } from '../../store/useProjectStore';
 import { beginTurn, endTurn, useAgent } from '../../lib/agentBridge';
-import { correctText, correctWord, skillsList, spell, toggleSkill, turnOff, useSkills } from './chatSkills';
+import { correctText, correctWord, label, skillsList, spell, toggleSkill, turnOff, useSkills } from './chatSkills';
 import { ago, newChatId, openChatOf, removeChat, renameChat, saveChat, setBrief, setOpenChat, useBriefs, useChats, type Chat, type Msg } from '../../lib/chatHistory';
 
 // The Chat tab: ask for screens or changes and watch them appear on the
@@ -322,7 +322,7 @@ export const ChatPanel: React.FC = () => {
             {skillsOn.map(s => (
               <span key={s.path} title={`${s.path}\n${s.names.map(n => n.description).filter(Boolean).join('\n')}`}
                     className="flex items-center gap-1 pl-1.5 pr-0.5 py-0.5 rounded bg-[rgba(49,195,243,0.12)] text-[#31C3F3] text-[10.5px]">
-                <Icons.Sparkles size={10} />{s.names.map(n => n.name).join(', ')}
+                <Icons.Sparkles size={10} />{label(s)}
                 <button onClick={() => turnOff(s)} title="Turn this skill off" className="p-0.5 rounded hover:bg-[rgba(235,235,236,0.1)]"><Icons.X size={9} /></button>
               </span>
             ))}

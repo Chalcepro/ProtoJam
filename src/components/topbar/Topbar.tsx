@@ -9,7 +9,7 @@ export const Topbar: React.FC = () => {
   const {
     projectName,
     setProjectName,
-    viewport,
+    zoom,
     setZoom,
     resetZoom,
     zoomToFit,
@@ -26,7 +26,7 @@ export const Topbar: React.FC = () => {
     saveCurrentProject,
     isSaved,
     lastSavedAt
-  } = useProjectStore(useShallow((s) => ({ projectName: s.projectName, setProjectName: s.setProjectName, viewport: s.viewport, setZoom: s.setZoom, resetZoom: s.resetZoom, zoomToFit: s.zoomToFit, undo: s.undo, redo: s.redo, historyIndex: s.historyIndex, history: s.history, startPlaying: s.startPlaying, canvasSettings: s.canvasSettings, updateCanvasSettings: s.updateCanvasSettings, editorMode: s.editorMode, setEditorMode: s.setEditorMode, openProjectMenu: s.openProjectMenu, saveCurrentProject: s.saveCurrentProject, isSaved: s.isSaved, lastSavedAt: s.lastSavedAt })));
+  } = useProjectStore(useShallow((s) => ({ projectName: s.projectName, setProjectName: s.setProjectName, zoom: s.viewport.zoom, setZoom: s.setZoom, resetZoom: s.resetZoom, zoomToFit: s.zoomToFit, undo: s.undo, redo: s.redo, historyIndex: s.historyIndex, history: s.history, startPlaying: s.startPlaying, canvasSettings: s.canvasSettings, updateCanvasSettings: s.updateCanvasSettings, editorMode: s.editorMode, setEditorMode: s.setEditorMode, openProjectMenu: s.openProjectMenu, saveCurrentProject: s.saveCurrentProject, isSaved: s.isSaved, lastSavedAt: s.lastSavedAt })));
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const isMac = window.electronAPI?.platform === 'darwin';
@@ -166,7 +166,7 @@ export const Topbar: React.FC = () => {
           {/* Zoom Controls */}
           <div className="flex items-center bg-[rgba(235,235,236,0.04)] rounded-lg border border-[rgba(235,235,236,0.08)] text-[rgb(235,235,236)] px-0.5 py-0.5 mx-0.5">
             <button
-              onClick={() => setZoom(viewport.zoom * 0.85)}
+              onClick={() => setZoom(zoom * 0.85)}
               className="p-1 hover:bg-[rgba(235,235,236,0.08)] rounded text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)] transition-colors"
               title="Zoom Out"
             >
@@ -177,10 +177,10 @@ export const Topbar: React.FC = () => {
               className="text-[10px] font-mono px-1.5 hover:underline text-[rgba(235,235,236,0.7)] min-w-[36px] text-center"
               title="Reset Zoom"
             >
-              {Math.round(viewport.zoom * 100)}%
+              {Math.round(zoom * 100)}%
             </button>
             <button
-              onClick={() => setZoom(viewport.zoom * 1.15)}
+              onClick={() => setZoom(zoom * 1.15)}
               className="p-1 hover:bg-[rgba(235,235,236,0.08)] rounded text-[rgba(235,235,236,0.5)] hover:text-[rgb(235,235,236)] transition-colors"
               title="Zoom In"
             >

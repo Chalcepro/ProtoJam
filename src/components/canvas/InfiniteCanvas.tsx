@@ -8,7 +8,7 @@ import { FlowConnectorLines } from './FlowConnectorLines';
 import { Minimap } from './Minimap';
 import { BottomToolbar } from '../toolbar/BottomToolbar';
 import { CommentPin } from './CommentPin';
-import { UIElement, UIElementType } from '../../types/components';
+import { DeviceFrame, UIElement, UIElementType } from '../../types/components';
 import { CanvasContextMenu, MenuItem } from './CanvasContextMenu';
 import { Rulers, RULER } from './Rulers';
 import { isTextEl, rotateCss } from '../../lib/styleCss';
@@ -22,6 +22,7 @@ import { startGesture } from '../../lib/gesture';
 import { showSnap, snapAxis, snapLine, snapTargets, useSnapLines, type Box, type SnapLine } from '../../lib/snap';
 import { placeIcon } from '../sidebar/IconsPanel';
 import { useDrawAll } from '../../lib/viewCull';
+import { useStable } from '../../lib/useStable';
 import { useIconPop } from './IconPopover';
 
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -392,14 +393,7 @@ export const InfiniteCanvas: React.FC = () => {
   // Screens and loose layers outside the view (and a margin round it) are not
   // drawn at all. Selected ones always are (their handles, Export), and the
   // AI's screenshots draw everything for a moment (lib/viewCull).
-  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
-  useEffect(() => {
-    const el = canvasContainerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setViewSize({ w: el.clientWidth, h: el.clientHeight }));
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  const viewSize = canvasSize;
   const drawAll = useDrawAll(s => s.n > 0) || !viewSize.w;
   const margin = 300 / viewport.zoom;
   const view = { x0: -viewport.x / viewport.zoom - margin, y0: -viewport.y / viewport.zoom - margin,
@@ -429,6 +423,13 @@ export const InfiniteCanvas: React.FC = () => {
     if (e.shiftKey || !st.selectedElementIds.includes(id)) selectElement(id, e.shiftKey);
     setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: Number(target.style.x), origY: Number(target.style.y) });
   };
+  // the same handlers with one identity, for the memoised screens and layers
+  const pressStable = useStable(pressElement);
+  const startFrameDrag = useStable((e: React.PointerEvent, frame: DeviceFrame) => {
+    dragOrigin.current = { x: e.clientX, y: e.clientY };
+    setDraggingFrameId(frame.id);
+    setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: frame.x, origY: frame.y });
+  });
 
   // Prevent native browser zoom and enable trackpad pan / zoom
   useEffect(() => {
@@ -884,19 +885,15 @@ export const InfiniteCanvas: React.FC = () => {
             key={frame.id}
             frame={frame}
             elements={elements}
-            onStartDragFrame={(e) => {
-              dragOrigin.current = { x: e.clientX, y: e.clientY };
-              setDraggingFrameId(frame.id);
-              setDragStartPos({ mouseX: e.clientX, mouseY: e.clientY, origX: frame.x, origY: frame.y });
-            }}
-            onStartDragElement={pressElement}
+            onStartDragFrame={startFrameDrag}
+            onStartDragElement={pressStable}
           />
         ))}
 
         {/* 3. Free Canvas Elements (Detached / Outside Frames) */}
         {freeElements.map((element, layer) => (
           <ElementNode key={element.id} element={element} parentLayout={null} layer={layer}
-                       onPress={pressElement} boxInside={false} />
+                       onPress={pressStable} boxInside={false} />
         ))}
 
         {/* 3b. Selection handles, above everything (as in Figma): a selected

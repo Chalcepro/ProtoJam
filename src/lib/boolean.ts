@@ -118,6 +118,10 @@ export const vectorAllD = (vd: VectorData, r = 0, style: PathCorner = 'round', s
 export const cornerOf = (s: ElementStyle): PathCorner => (s.cornerStyle ?? 'round') as PathCorner;
 // how far a drawn shape's rounding eases in: its corner smoothing, else a soft default
 export const smoothOf = (s: ElementStyle) => s.cornerSmoothing ?? 0.6;
+// A vector is drawn at the size it was made and stretched to its box: how much
+// (so a radius in pixels can be given in the vector's own units).
+export const vectorScale = (vd: VectorData, s: ElementStyle) =>
+  vd.w && vd.h ? (Number(s.width) / vd.w + Number(s.height) / vd.h) / 2 || 1 : 1;
 
 // An element's corner radius as one number (per-corner radii: the first one).
 export const radiusOf = (s: ElementStyle) => {
@@ -126,18 +130,8 @@ export const radiusOf = (s: ElementStyle) => {
 };
 
 // Any outline's sharp corners rounded to radius r: boolean results, regions...
-export const roundCornersD = (d: string, r: number, style: PathCorner = 'round', smooth = 0): string => {
-  if (!d || r <= 0) return d;
-  setup();
-  const cp = new paper.CompoundPath(d);
-  const kids = (cp.children as paper.Path[]).map(p => roundedPathD(p.segments.map(sg => ({
-    id: '', x: sg.point.x, y: sg.point.y,
-    handleIn: sg.handleIn.isZero() ? undefined : { x: sg.handleIn.x, y: sg.handleIn.y },
-    handleOut: sg.handleOut.isZero() ? undefined : { x: sg.handleOut.x, y: sg.handleOut.y }
-  })), p.closed, r, style, smooth));
-  cp.remove();
-  return kids.join(' ');
-};
+export const roundCornersD = (d: string, r: number, style: PathCorner = 'round', smooth = 0): string =>
+  !d || r <= 0 ? d : vectorAllD(dToVectorData(d), r, style, smooth);     // dToVectorData also merges paper's doubled points
 
 // The areas a vector's lines close off, however they were drawn: a line that
 // comes back to one of its own points, lines that meet end to end, a line

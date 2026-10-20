@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import { startGesture } from '../../lib/gesture';
@@ -44,17 +44,6 @@ export const Rulers: React.FC<{
   // a step whose labels land at least ~60px apart
   const step = rulerStep(zoom);
   const minor = rulerMark(zoom);
-
-  const ticks = (axisLen: number, origin: number) => {
-    const out: { pos: number; v: number; major: boolean }[] = [];
-    const first = Math.floor((-origin) / zoom / minor) * minor;
-    const last = (axisLen - origin) / zoom;
-    for (let v = first; v <= last; v += minor) {
-      const major = Math.abs(v / step - Math.round(v / step)) < 1e-6;
-      out.push({ pos: v * zoom + origin, v: Math.round(v), major });
-    }
-    return out;
-  };
 
   // Moving a guide: follow the pointer; let go over its own ruler and it goes.
   const dragGuide = (id: string, axis: 'x' | 'y', start: PointerEvent | React.PointerEvent, fresh = false) => {
@@ -127,13 +116,7 @@ export const Rulers: React.FC<{
           <div className="absolute top-0 bottom-0 bg-[rgba(255,107,74,0.18)]"
                style={{ left: sx(selection.x0) - RULER, width: Math.max(1, (selection.x1 - selection.x0) * zoom) }} />
         )}
-        {ticks(width, vx).map((t, i) => (
-          <React.Fragment key={i}>
-            <div className="absolute bottom-0 bg-[rgba(235,235,236,0.35)]"
-                 style={{ left: t.pos - RULER, width: 1, height: t.major ? 8 : 4 }} />
-            {t.major && label(String(t.v), { left: t.pos - RULER + 3, top: 2, color: 'rgba(235,235,236,0.55)' })}
-          </React.Fragment>
-        ))}
+        <RulerTicks across length={width - RULER} origin={vx - RULER} zoom={zoom} step={step} minor={minor} />
         {selection && <>
           {label(String(Math.round(selection.x0)), { left: sx(selection.x0) - RULER + 2, top: 2, color: '#ff8a70', background: 'rgb(26,26,25)' })}
           {label(String(Math.round(selection.x1)), { left: sx(selection.x1) - RULER + 2, top: 2, color: '#ff8a70', background: 'rgb(26,26,25)' })}
@@ -149,16 +132,7 @@ export const Rulers: React.FC<{
           <div className="absolute left-0 right-0 bg-[rgba(255,107,74,0.18)]"
                style={{ top: sy(selection.y0) - RULER, height: Math.max(1, (selection.y1 - selection.y0) * zoom) }} />
         )}
-        {ticks(height, vy).map((t, i) => (
-          <React.Fragment key={i}>
-            <div className="absolute right-0 bg-[rgba(235,235,236,0.35)]"
-                 style={{ top: t.pos - RULER, height: 1, width: t.major ? 8 : 4 }} />
-            {t.major && label(String(t.v), {
-              top: t.pos - RULER + 3, left: 2, color: 'rgba(235,235,236,0.55)',
-              writingMode: 'vertical-rl', transform: 'rotate(180deg)'
-            })}
-          </React.Fragment>
-        ))}
+        <RulerTicks across={false} length={height - RULER} origin={vy - RULER} zoom={zoom} step={step} minor={minor} />
         {pointer && <div className="absolute left-0 right-0 bg-[rgba(235,235,236,0.8)]" style={{ top: pointer.y - RULER, height: 1 }} />}
       </div>
 
@@ -168,3 +142,38 @@ export const Rulers: React.FC<{
     </div>
   );
 };
+
+// One ruler's tick marks and numbers, drawn on a canvas: a few dozen strokes,
+// instead of a page element per tick rebuilt on every pan. Memoised, so the
+// pointer hairline and the selection band moving don't redraw it.
+const RulerTicks = React.memo(function RulerTicks({ across, length, origin, zoom, step, minor }:
+  { across: boolean; length: number; origin: number; zoom: number; step: number; minor: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useLayoutEffect(() => {
+    const c = ref.current;
+    if (!c || length <= 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = across ? length : RULER, h = across ? RULER : length;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    const g = c.getContext('2d');
+    if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    g.font = '9px ui-monospace, monospace';
+    g.textBaseline = 'top';
+    const first = Math.floor(-origin / zoom / minor) * minor, last = (length - origin) / zoom;
+    for (let v = first; v <= last; v += minor) {
+      const p = Math.round(v * zoom + origin) + 0.5;
+      const major = Math.abs(v / step - Math.round(v / step)) < 1e-6;
+      g.fillStyle = 'rgba(235,235,236,0.35)';
+      if (across) g.fillRect(p, RULER - (major ? 8 : 4), 1, major ? 8 : 4);
+      else g.fillRect(RULER - (major ? 8 : 4), p, major ? 8 : 4, 1);
+      if (!major) continue;
+      g.fillStyle = 'rgba(235,235,236,0.55)';
+      if (across) g.fillText(String(Math.round(v)), p + 3, 2);
+      else { g.save(); g.translate(2, p + 3); g.rotate(-Math.PI / 2); g.textAlign = 'right'; g.fillText(String(Math.round(v)), 0, 0); g.restore(); }
+    }
+  }, [across, length, origin, zoom, step, minor]);
+  return <canvas ref={ref} className="absolute left-0 top-0 pointer-events-none"
+                 style={across ? { width: length, height: RULER } : { width: RULER, height: length }} />;
+});

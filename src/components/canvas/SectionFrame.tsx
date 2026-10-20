@@ -16,9 +16,8 @@ export const SectionFrame: React.FC<SectionFrameProps> = ({ section }) => {
     updateSection,
     deleteSection,
     activeTool,
-    viewport,
     pushHistory
-  } = useProjectStore(useShallow((s) => ({ selectedSectionIds: s.selectedSectionIds, selectSection: s.selectSection, updateSection: s.updateSection, deleteSection: s.deleteSection, activeTool: s.activeTool, viewport: s.viewport, pushHistory: s.pushHistory })));
+  } = useProjectStore(useShallow((s) => ({ selectedSectionIds: s.selectedSectionIds, selectSection: s.selectSection, updateSection: s.updateSection, deleteSection: s.deleteSection, activeTool: s.activeTool, pushHistory: s.pushHistory })));
 
   const isSelected = selectedSectionIds.includes(section.id);
   const [isEditingName, setIsEditingName] = useState(false);
@@ -34,7 +33,7 @@ export const SectionFrame: React.FC<SectionFrameProps> = ({ section }) => {
     const startMouseY = e.clientY;
     const initialSecX = section.x;
     const initialSecY = section.y;
-    const zoom = viewport.zoom;
+    const zoom = useProjectStore.getState().viewport.zoom;
 
     const onPointerMove = (moveEvt: PointerEvent) => {
       const dx = (moveEvt.clientX - startMouseX) / zoom;
@@ -68,7 +67,7 @@ export const SectionFrame: React.FC<SectionFrameProps> = ({ section }) => {
     const initialY = section.y;
     const initialW = section.width;
     const initialH = section.height;
-    const zoom = viewport.zoom;
+    const zoom = useProjectStore.getState().viewport.zoom;
 
     const onPointerMove = (moveEvt: PointerEvent) => {
       const dx = (moveEvt.clientX - startMouseX) / zoom;

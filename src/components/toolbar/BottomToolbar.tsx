@@ -6,7 +6,8 @@ import * as Icons from 'lucide-react';
 import { alignPoints, symmetrize } from '../../lib/vectorEdit';
 import type { VectorData } from '../../types/components';
 
-export const BottomToolbar: React.FC = () => {
+// Memoised: it sits inside the canvas, which re-renders on every pan.
+export const BottomToolbar = React.memo(function BottomToolbar() {
   const {
     activeTool,
     setActiveTool,
@@ -22,9 +23,8 @@ export const BottomToolbar: React.FC = () => {
     bucketColor,
     pointIds,
     frames,
-    viewport,
     addPredefinedElement
-  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, bucketColor: s.vectorBucketColor, pointIds: s.selectedVectorPointIds, frames: s.frames, viewport: s.viewport, addPredefinedElement: s.addPredefinedElement })));
+  } = useProjectStore(useShallow((s) => ({ activeTool: s.activeTool, setActiveTool: s.setActiveTool, isVectorEditing: s.isVectorEditing, vectorTool: s.vectorTool, setVectorTool: s.setVectorTool, finishVectorEditing: s.finishVectorEditing, cancelVectorEditing: s.cancelVectorEditing, closeVectorPath: s.closeVectorPath, addFrame: s.addFrame, addSection: s.addSection, activeVectorData: s.activeVectorData, bucketColor: s.vectorBucketColor, pointIds: s.selectedVectorPointIds, frames: s.frames, addPredefinedElement: s.addPredefinedElement })));
 
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -43,6 +43,7 @@ export const BottomToolbar: React.FC = () => {
         const width = Math.max(20, Math.round(img.naturalWidth * scale));
         const height = Math.max(20, Math.round(img.naturalHeight * scale));
 
+        const viewport = useProjectStore.getState().viewport;     // read now: subscribing re-rendered the toolbar on every pan
         const worldX = (window.innerWidth / 2 - viewport.x) / viewport.zoom + offsetIndex * 32;
         const worldY = (window.innerHeight / 2 - viewport.y) / viewport.zoom + offsetIndex * 32;
 
@@ -520,4 +521,4 @@ export const BottomToolbar: React.FC = () => {
       />
     </div>
   );
-};
+});

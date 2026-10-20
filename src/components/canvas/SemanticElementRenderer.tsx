@@ -6,7 +6,7 @@ import { IconView } from './IconView';
 import { OutlineShape } from './OutlineShape';
 import { needsOutline } from '../../lib/corners';
 import { blended, fillsCss, fillsOf, hasLayeredPaint, lettersCss, paintRgba, paintsLetters, strokesCss, strokesOf } from '../../lib/paint';
-import { cornerOf, radiusOf, roundCornersD, smoothOf, vectorAllD, vectorRegions } from '../../lib/boolean';
+import { cornerOf, radiusOf, roundCornersD, smoothOf, vectorAllD, vectorRegions, vectorScale } from '../../lib/boolean';
 import { isPlainStroke } from '../../lib/strokeArt';
 import { clearTextSel, fillEditor, normalize, readRuns, registerEditor, runCss, runsOf, selectionOffsets, setSelectionOffsets, useTextSel } from '../../lib/richText';
 import { UIElement } from '../../types/components';
@@ -272,8 +272,8 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
     case 'line':
     case 'arrow': {
       const w = Number(style.width) || 0, mid = (Number(style.height) || 0) / 2;
-      const weight = style.strokes?.find(s => s.visible !== false)?.width ?? style.borderWidth ?? 2;
-      const colour = style.strokes?.find(s => s.visible !== false)?.color || style.borderColor || style.fillColor || '#ebebec';
+      const st = strokesOf(element).find(s => s.visible !== false);
+      const weight = st?.width ?? 2, colour = st?.color || style.fillColor || '#ebebec';
       const head = element.type === 'arrow' ? Math.max(8, weight * 4) : 0;
       return (
         <svg width="100%" height="100%" overflow="visible" onClick={handleClick} style={{ display: 'block', opacity: style.opacity ?? 1 }}>
@@ -304,8 +304,7 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
       const regionKeys = Object.keys(vd.regions || {});
       // corner radius rounds every sharp corner of the drawing; drawn at vd's own
       // size and stretched, so the radius is given in those units
-      const scale = vd.w && vd.h ? (Number(style.width) / vd.w + Number(style.height) / vd.h) / 2 || 1 : 1;
-      const rr = radiusOf(style) / scale;
+      const rr = radiusOf(style) / vectorScale(vd, style);
       const corner = cornerOf(style);
       const soft = smoothOf(style);
       const allD = vectorAllD(vd, rr, corner, soft);

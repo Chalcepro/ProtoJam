@@ -6,21 +6,23 @@ import { useProjectStore } from '../../store/useProjectStore';
 import { useShallow } from 'zustand/react/shallow';
 import * as Icons from 'lucide-react';
 import { startGesture } from '../../lib/gesture';
+import { useStable } from '../../lib/useStable';
 import { measured } from '../../store/useProjectStore';
 
 interface ArtboardFrameProps {
   frame: DeviceFrame;
   elements: UIElement[];
-  onStartDragFrame?: (e: React.PointerEvent) => void;
+  onStartDragFrame?: (e: React.PointerEvent, frame: DeviceFrame) => void;
   onStartDragElement?: (element: UIElement, e: React.PointerEvent) => void;
 }
 
-export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
+// Memoised: panning or zooming the canvas no longer re-renders every screen.
+export const ArtboardFrame = React.memo(function ArtboardFrame({
   frame,
   elements,
   onStartDragFrame,
   onStartDragElement
-}) => {
+}: ArtboardFrameProps) {
   const {
     selectedFrameIds,
     selectedElementIds,
@@ -36,10 +38,9 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     isWiring,
     finishWiring,
     updateFrameDimensions,
-    viewport,
     pushHistory,
     updateAutoLayout
-  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, isWiring: s.isWiring, finishWiring: s.finishWiring, updateFrameDimensions: s.updateFrameDimensions, updateAutoLayout: s.updateAutoLayout, viewport: s.viewport, pushHistory: s.pushHistory })));
+  } = useProjectStore(useShallow((s) => ({ selectedFrameIds: s.selectedFrameIds, selectedElementIds: s.selectedElementIds, selectFrame: s.selectFrame, selectElement: s.selectElement, deleteFrame: s.deleteFrame, duplicateFrame: s.duplicateFrame, toggleFrameOrientation: s.toggleFrameOrientation, toggleFrameLock: s.toggleFrameLock, toggleFrameHidden: s.toggleFrameHidden, setStartingFrame: s.setStartingFrame, startPlaying: s.startPlaying, isWiring: s.isWiring, finishWiring: s.finishWiring, updateFrameDimensions: s.updateFrameDimensions, updateAutoLayout: s.updateAutoLayout, pushHistory: s.pushHistory })));
 
   const isFrameSelected = selectedFrameIds.includes(frame.id);
   // its direct children; things inside containers are drawn by those
@@ -62,6 +63,18 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     }
   });
 
+  // what a press on one of its layers does, with one identity (see useStable)
+  const pressChild = useStable((el: UIElement, e: React.PointerEvent) => {
+              // an old-style group frame: a click picks the group until
+              // something inside it is selected
+              if (isGroup && !frameElements.some(fe => selectedElementIds.includes(fe.id))) {
+                handleFrameBodyPointerDown(e);
+                return;
+              }
+              if (onStartDragElement) onStartDragElement(el, e);
+              else selectElement(el.id, e.shiftKey);
+});
+
   if (frame.hidden) return null;
   // the same flex layout frames inside screens use (both axes aligned)
   const frameBodyLayoutStyle: React.CSSProperties = autoLayout ? flexLayoutCss(autoLayout) : {};
@@ -80,7 +93,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     const others = st.selectedElementIds.length || st.selectedFrameIds.some(id => id !== frame.id);
     if (others && !e.shiftKey) { st.clearSelection(); st.setInlineEditingElementId(null); return; }
     selectFrame(frame.id, e.shiftKey);
-    if (onStartDragFrame) onStartDragFrame(e);
+    if (onStartDragFrame) onStartDragFrame(e, frame);
   };
 
   // Smooth frame scaling/resizing handle at bottom-right
@@ -92,7 +105,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
     const startY = e.clientY;
     const initialW = frame.width;
     const initialH = frame.height;
-    const zoom = viewport.zoom;
+    const zoom = useProjectStore.getState().viewport.zoom;
     if (hugW || hugH) updateAutoLayout(frame.id, { sizingH: 'fixed', sizingV: 'fixed' });
 
     const onPointerMove = (moveEvt: PointerEvent) => {
@@ -138,7 +151,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
           if (frame.locked || e.button !== 0) return;
           e.stopPropagation();
           selectFrame(frame.id, e.shiftKey);
-          if (onStartDragFrame) onStartDragFrame(e);
+          if (onStartDragFrame) onStartDragFrame(e, frame);
         }}
         className={`absolute -top-9 left-0 right-0 h-8 flex items-center justify-between px-2.5 rounded-t-lg transition-colors cursor-grab active:cursor-grabbing ${
           isFrameSelected 
@@ -286,16 +299,7 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
             layer={stackLayer(layer, frameElements.length, autoLayout)}
             boxInside={false}
             frameId={frame.id}
-            onPress={(el, e) => {
-              // an old-style group frame: a click picks the group until
-              // something inside it is selected
-              if (isGroup && !frameElements.some(fe => selectedElementIds.includes(fe.id))) {
-                handleFrameBodyPointerDown(e);
-                return;
-              }
-              if (onStartDragElement) onStartDragElement(el, e);
-              else selectElement(el.id, e.shiftKey);
-            }}
+            onPress={pressChild}
           />
         ))}
 
@@ -315,4 +319,4 @@ export const ArtboardFrame: React.FC<ArtboardFrameProps> = ({
       )}
     </div>
   );
-};
+});
