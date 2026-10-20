@@ -21,6 +21,7 @@ import { absBoxOf, chainOf, frameAbove, inFlow, originOf, pickTarget, subtreeIds
 import { startGesture } from '../../lib/gesture';
 import { showSnap, snapAxis, snapLine, snapTargets, useSnapLines, type Box, type SnapLine } from '../../lib/snap';
 import { placeIcon } from '../sidebar/IconsPanel';
+import { useDrawAll } from '../../lib/viewCull';
 import { useIconPop } from './IconPopover';
 
 // A smart guide drawn while dragging: a line in canvas space, and the gap to
@@ -378,7 +379,42 @@ export const InfiniteCanvas: React.FC = () => {
     return { x: (rect.width / 2 - viewport.x) / viewport.zoom, y: (rect.height / 2 - viewport.y) / viewport.zoom };
   };
 
-  const freeElements = elements.filter(el => !el.parentId && !el.hidden);
+  // While the view moves (wheel, pan) the stage draws lighter, straight on the
+  // element - no React render - and goes back 200ms after the last move.
+  const movingTimer = useRef<number | undefined>(undefined);
+  const moving = () => {
+    stageRef.current?.classList.add('pj-moving');
+    window.clearTimeout(movingTimer.current);
+    movingTimer.current = window.setTimeout(() => stageRef.current?.classList.remove('pj-moving'), 200);
+  };
+
+  // ---- drawing only what is in view ---------------------------------------
+  // Screens and loose layers outside the view (and a margin round it) are not
+  // drawn at all. Selected ones always are (their handles, Export), and the
+  // AI's screenshots draw everything for a moment (lib/viewCull).
+  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setViewSize({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const drawAll = useDrawAll(s => s.n > 0) || !viewSize.w;
+  const margin = 300 / viewport.zoom;
+  const view = { x0: -viewport.x / viewport.zoom - margin, y0: -viewport.y / viewport.zoom - margin,
+                 x1: (viewSize.w - viewport.x) / viewport.zoom + margin, y1: (viewSize.h - viewport.y) / viewport.zoom + margin };
+  const inView = (x: number, y: number, w: number, h: number, turned?: number) => {
+    const pad = turned ? Math.max(w, h) / 2 : 0;           // turned: its corners reach further
+    return x + w + pad >= view.x0 && x - pad <= view.x1 && y + h + pad >= view.y0 && y - pad <= view.y1;
+  };
+  const shownFrames = drawAll ? frames
+    : frames.filter(f => selectedFrameIds.includes(f.id) || inView(f.x, f.y, f.width, f.height));
+  const freeElements = elements.filter(el => !el.parentId && !el.hidden && (drawAll || selectedElementIds.includes(el.id)
+    || inView(Number(el.style.x), Number(el.style.y), Number(el.style.width) || 0, Number(el.style.height) || 0, Number(el.style.rotation) || 0)));
+  // Lighter drawing - shadows, blurs and other effects left out - when zoomed
+  // far out or with a great many things in view, and while the view moves.
+  const light = viewport.zoom < 0.35 || freeElements.length + shownFrames.length * 20 > 400;
 
   // A press on an element (the deepest under the pointer): pick what Figma
   // would - the outermost container not yet stepped into - and drag that.
@@ -401,6 +437,7 @@ export const InfiniteCanvas: React.FC = () => {
 
     const handleWheelEvent = (e: WheelEvent) => {
       e.preventDefault();
+      moving();
 
       if (e.ctrlKey || e.metaKey) {
         const zoomDelta = -e.deltaY * 0.005;
@@ -491,6 +528,7 @@ export const InfiniteCanvas: React.FC = () => {
     }
 
     if (isPanning) {
+      moving();
       setViewport({
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y
@@ -833,7 +871,7 @@ export const InfiniteCanvas: React.FC = () => {
           // close in, show an image's real pixels rather than a blur
           imageRendering: viewport.zoom >= 4 ? 'pixelated' : undefined
         }}
-        className="absolute inset-0 pointer-events-auto"
+        className={`absolute inset-0 pointer-events-auto${light ? ' pj-light' : ''}`}
       >
         {/* 1. Organizing Sections (Rendered behind frames) */}
         {sections.map(section => (
@@ -841,7 +879,7 @@ export const InfiniteCanvas: React.FC = () => {
         ))}
 
         {/* 2. Device Artboard Frames */}
-        {frames.map(frame => (
+        {shownFrames.map(frame => (
           <ArtboardFrame
             key={frame.id}
             frame={frame}

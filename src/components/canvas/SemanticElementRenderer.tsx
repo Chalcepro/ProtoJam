@@ -265,35 +265,25 @@ export const SemanticElementRenderer: React.FC<SemanticElementRendererProps> = (
         <><div style={boxStyle({ borderRadius: '9999px' })} onClick={handleClick} className="overflow-hidden">{fillStack()}</div>{strokeOverlays('9999px')}</>
       );
 
-    // ---------------- LINE SHAPE ----------------
+    // ---------------- LINE / ARROW ----------------
+    // A stroke along the middle of its box, end to end (the box is turned to
+    // the line's angle). Its colour and weight are the stroke's; an arrow has
+    // a head at its end. A wide invisible stroke makes it easy to click.
     case 'line':
+    case 'arrow': {
+      const w = Number(style.width) || 0, mid = (Number(style.height) || 0) / 2;
+      const weight = style.strokes?.find(s => s.visible !== false)?.width ?? style.borderWidth ?? 2;
+      const colour = style.strokes?.find(s => s.visible !== false)?.color || style.borderColor || style.fillColor || '#ebebec';
+      const head = element.type === 'arrow' ? Math.max(8, weight * 4) : 0;
       return (
-        <div
-          style={{
-            width: '100%',
-            height: style.height || 2,
-            backgroundColor: style.fillColor || style.borderColor || '#ebebec'
-          }}
-          onClick={handleClick}
-        />
+        <svg width="100%" height="100%" overflow="visible" onClick={handleClick} style={{ display: 'block', opacity: style.opacity ?? 1 }}>
+          <line x1={0} y1={mid} x2={w} y2={mid} stroke="transparent" strokeWidth={Math.max(10, weight + 8)} />
+          <line x1={0} y1={mid} x2={Math.max(0, w - head * 0.8)} y2={mid} stroke={colour} strokeWidth={weight}
+                strokeLinecap={style.strokeCap || 'round'} />
+          {head > 0 && <path d={`M ${w - head} ${mid - head / 2} L ${w} ${mid} L ${w - head} ${mid + head / 2} Z`} fill={colour} />}
+        </svg>
       );
-
-    // ---------------- ARROW SHAPE ----------------
-    case 'arrow':
-      return (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center'
-          }}
-          onClick={handleClick}
-        >
-          <div className="flex-1 h-[2px] bg-[rgb(235,235,236)]" />
-          <Icons.ChevronRight size={18} className="text-[rgb(235,235,236)] -ml-2 shrink-0" />
-        </div>
-      );
+    }
 
     // ---------------- POLYGON / TRIANGLE ----------------
     // ---------------- STAR ----------------

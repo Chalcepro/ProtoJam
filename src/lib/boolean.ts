@@ -264,8 +264,8 @@ export const vectorRegions = (vd: VectorData): { key: string; d: string }[] => {
 
 // Points where lines cross (splitCrossings), keeping the fills: each new
 // area takes the colour of the area it lies in.
-export const withCrossings = (vd: VectorData): VectorData => {
-  const next = splitCrossings(vd);
+export const withCrossings = (vd: VectorData, changed?: Set<string>): VectorData => {
+  const next = splitCrossings(vd, changed);
   if (next === vd || !vd.regions || !Object.keys(vd.regions).length) return next;
   const before = vectorRegions(vd), regions: Record<string, string> = {};
   setup();

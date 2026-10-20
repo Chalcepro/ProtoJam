@@ -1555,7 +1555,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd) return;
     const pt: VectorPoint = { id: `pt-${Date.now()}-${vd.points.length}`, x: Math.round(x), y: Math.round(y), isCorner: true };
-    const data: VectorData = { ...vd, points: [...vd.points, pt] };
+    // the new line (last point to this one) gets its crossings now, once -
+    // checked against the other lines, nothing else
+    const prev = vd.points[vd.points.length - 1];
+    const added: VectorData = { ...vd, points: [...vd.points, pt] };
+    const data: VectorData = prev ? withCrossings(added, new Set([prev.id, pt.id])) : added;
     set({ activeVectorData: data, selectedVectorPointIds: [pt.id] });
     get().updateElementStyle(id, { vectorData: data });
   },
@@ -1587,7 +1591,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const id = get().editingVectorId;
     const vd = id && get().elements.find(e => e.id === id)?.style.vectorData;
     if (!id || !vd || vd.points.length < 3) return;
-    const data: VectorData = withCrossings({ ...vd, subpaths: [...(vd.subpaths || []), { points: vd.points, isClosed: true }], points: [], isClosed: false });
+    // only this path's lines (the closing one, and any moved since) are checked
+    const data: VectorData = withCrossings({ ...vd, subpaths: [...(vd.subpaths || []), { points: vd.points, isClosed: true }], points: [], isClosed: false },
+                                           new Set(vd.points.map(p => p.id)));
     set({ activeVectorData: data, selectedVectorPointIds: [] });
     get().updateElementStyle(id, { vectorData: data });
   },
@@ -2090,6 +2096,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setSnapGuides: (guides) => set({ snapGuides: guides }),
 
   finishDrawingShape: (type, startX, startY, endX, endY) => {
+    const LINE_BOX = 10;                 // a line's box: thin, centred on the line, easy to grab
     const x = Math.round(Math.min(startX, endX));
     const y = Math.round(Math.min(startY, endY));
     const width = Math.round(Math.max(Math.abs(endX - startX), 20));
@@ -2104,6 +2111,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       } else get().addCustomFrame(x, y, width, height);
     } else if (type === 'section') {
       get().addSection(x, y, width, height);
+    } else if (type === 'line' || type === 'arrow') {
+      // As in Figma: from where the press was to where it let go, at any
+      // angle - a length, turned. A click without a drag makes a 100px line.
+      let dx = endX - startX, dy = endY - startY;
+      if (Math.hypot(dx, dy) < 4) { dx = 100; dy = 0; }
+      const r2 = (v: number) => Math.round(v * 100) / 100;      // whole pixels would shift the ends
+      const len = Math.max(1, r2(Math.hypot(dx, dy))), cx = startX + dx / 2, cy = startY + dy / 2;
+      const p = get().parentAt(Math.round(cx), Math.round(cy));
+      const id = get().createShapeAt(toolToElementType(type), r2(cx - len / 2) - p.x, r2(cy - LINE_BOX / 2) - p.y, len, LINE_BOX, p.id);
+      const deg = Math.round(Math.atan2(dy, dx) * 180 / Math.PI * 100) / 100;
+      get().updateElementStyle(id, { rotation: deg || undefined, borderWidth: 2, borderColor: get().elements.find(e => e.id === id)?.style.borderColor || '#ebebec' });
     } else {
       // Drawn inside a frame, it belongs to that frame - as in Figma. It used
       // to float above the frame instead, and anything floating draws above

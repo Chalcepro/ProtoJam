@@ -191,3 +191,12 @@ input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 input[type='number']::-webkit-inner-spin-button,
 input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type='number']:not(:focus) { cursor: ew-resize; }
+
+/* The canvas drawing lighter (InfiniteCanvas): zoomed far out, a great many
+   things in view, or while the view moves - the costly effects are left out. */
+.pj-light *, .pj-moving * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+}

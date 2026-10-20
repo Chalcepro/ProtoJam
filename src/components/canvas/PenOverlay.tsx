@@ -191,7 +191,8 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         if (j) {
           // the joined line is finished; the next click starts a new one
           const merged = { points: j.points, isClosed: j.isClosed };
-          useProjectStore.getState().setVectorData(withCrossings({ ...j, subpaths: [...(j.subpaths || []), merged], points: [], isClosed: false }));
+          useProjectStore.getState().setVectorData(withCrossings({ ...j, subpaths: [...(j.subpaths || []), merged], points: [], isClosed: false },
+                                                                 new Set(merged.points.map(p => p.id))));
           useProjectStore.setState({ selectedVectorPointIds: [] });
           return;
         }
@@ -533,14 +534,15 @@ export const PenOverlay: React.FC<{ toWorld: (cx: number, cy: number) => { x: nu
         if (k2 === 'j' && vdNow && s.selectedVectorPointIds.length >= 2) {
           const sel = s.selectedVectorPointIds;
           const j = sel.length === 2 ? joinPoints(vdNow, sel[0], sel[1]) : null;
-          if (j) s.setVectorData(withCrossings(j));
+          if (j) s.setVectorData(withCrossings(j, new Set(sel)));
           else {
             // not two loose ends: a new line through the picked points, in the
             // order they were picked; its ends sit on them and move with them
             const pts = sel.map(id => allNow.find(p => p.id === id)!).filter(Boolean)
               .map((p, i) => ({ id: `pt-${Date.now()}-j${i}`, x: p.x, y: p.y, isCorner: true }));
             const paths = vectorPaths(vdNow);
-            s.setVectorData(withCrossings({ ...vdNow, subpaths: [...paths, { points: pts, isClosed: false }], points: [], isClosed: false }));
+            s.setVectorData(withCrossings({ ...vdNow, subpaths: [...paths, { points: pts, isClosed: false }], points: [], isClosed: false },
+                                          new Set(pts.map(p => p.id))));
           }
         } else if (k2 === 'a') {
           useProjectStore.setState({ selectedVectorPointIds: allNow.map(p => p.id), vectorTool: 'select' });

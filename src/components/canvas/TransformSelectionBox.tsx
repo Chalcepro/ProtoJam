@@ -221,6 +221,34 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
   const H = (tiny ? 5 : 8) / z;                 // handle size
   const HB = 1.25 / z;                          // handle border
 
+  // ---------------- LINES: an end handle each, as in Figma ----------------
+  // Dragging one end moves only that end: the other stays put, and the line's
+  // length and angle follow. Shift: in 45-degree steps.
+  const handleLineEnd = (end: 0 | 1, e: React.PointerEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const w = Number(style.width), h = Number(style.height), rad = (Number(style.rotation) || 0) * Math.PI / 180;
+    const cx = Number(style.x) + w / 2, cy = Number(style.y) + h / 2, ux = Math.cos(rad), uy = Math.sin(rad);
+    const ends = [{ x: cx - ux * w / 2, y: cy - uy * w / 2 }, { x: cx + ux * w / 2, y: cy + uy * w / 2 }];
+    const fixed = ends[1 - end], moving = ends[end], sx = e.clientX, sy = e.clientY;
+    pushHistory();
+    const move = (m: PointerEvent) => {
+      let px = moving.x + (m.clientX - sx) / z, py = moving.y + (m.clientY - sy) / z;
+      // the line keeps running from its first end to its second
+      let dx = end ? px - fixed.x : fixed.x - px, dy = end ? py - fixed.y : fixed.y - py;
+      if (m.shiftKey) {
+        const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4), l = Math.hypot(dx, dy);
+        dx = Math.cos(a) * l; dy = Math.sin(a) * l;
+        if (end) { px = fixed.x + dx; py = fixed.y + dy; } else { px = fixed.x - dx; py = fixed.y - dy; }
+      }
+      const len = Math.max(1, Math.hypot(dx, dy)), mx = (fixed.x + px) / 2, my = (fixed.y + py) / 2;
+      updateElementStyle(element.id, { x: Math.round((mx - len / 2) * 100) / 100, y: Math.round((my - h / 2) * 100) / 100, width: Math.round(len * 100) / 100,
+                                       rotation: Math.round(Math.atan2(dy, dx) * 180 / Math.PI * 100) / 100 });
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   // ---------------- SHAPE CONTOURS ----------------
   const renderShapeOutline = () => {
     if (type === 'polygon' || type === 'star' || needsOutline(style)) {
@@ -294,6 +322,23 @@ export const TransformSelectionBox: React.FC<TransformSelectionBoxProps> = ({ el
     <div data-handle={`rotate-${corner}`} onPointerDown={handleRotateStart}
          style={{ position: 'absolute', width: R, height: R, ...pos, cursor: rotateCursor(base + rot), pointerEvents: 'auto' }} />
   );
+
+  if (type === 'line' || type === 'arrow') {
+    const endDot = (end: 0 | 1) => (
+      <div data-handle={`end-${end}`} onPointerDown={(e) => handleLineEnd(end, e)} title="Drag to move this end (Shift: 45-degree steps)"
+           className="absolute rounded-full bg-white"
+           style={{ width: H * 1.2, height: H * 1.2, top: '50%', [end ? 'right' : 'left']: 0, transform: `translate(${end ? '50%' : '-50%'}, -50%)`,
+                    border: `${HB}px solid ${SELECTION_COLOR}`, pointerEvents: 'auto', cursor: 'crosshair' }} />
+    );
+    return (
+      <div ref={boxRef} className="absolute inset-0 pointer-events-none select-none">
+        {onPress && <div data-sel-body className="absolute inset-0" style={{ pointerEvents: 'auto' }}
+                         onPointerDown={handleBodyDown} onDoubleClick={handleBodyDouble} />}
+        <div className="absolute left-0 right-0" style={{ top: '50%', height: stroke, background: SELECTION_COLOR, transform: 'translateY(-50%)' }} />
+        {endDot(0)}{endDot(1)}
+      </div>
+    );
+  }
 
   return (
     <div ref={boxRef} className="absolute inset-0 pointer-events-none select-none">

@@ -336,16 +336,19 @@ const crossings = (A: Bez, B: Bez, straight: boolean): [number, number][] => {
 // very same spot, so they meet there (as joined points do) and the areas
 // between them can be filled. A line whose end lands on another line's
 // middle splits that one too. Curves keep their shape.
-export const splitCrossings = (vd: VectorData): VectorData => {
+// changed: the points just made or moved. Only lines touching one of them are
+// checked (against every line); two lines that were both there before have
+// been checked already, so a drawing doesn't get slower to draw as it grows.
+export const splitCrossings = (vd: VectorData, changed?: Set<string>): VectorData => {
   const paths = pathsOf(vd);
-  const segs: { pi: number; si: number; c: Bez; box: Box4; straight: boolean }[] = [];
+  const segs: { pi: number; si: number; c: Bez; box: Box4; straight: boolean; fresh: boolean }[] = [];
   paths.forEach((p, pi) => {
     const n = p.points.length;
     for (let si = 0; si < (p.isClosed ? n : n - 1) && n > 1; si++) {
       const a = p.points[si], b = p.points[(si + 1) % n], straight = !a.handleOut && !b.handleIn;
       // a straight line as a curve with its controls at the thirds, so t runs evenly along it
       const c: Bez = straight ? [a, lerp(a, b, 1 / 3), lerp(a, b, 2 / 3), b] : ctrl(a, b) as unknown as Bez;
-      segs.push({ pi, si, c, box: boxOf(c), straight });
+      segs.push({ pi, si, c, box: boxOf(c), straight, fresh: !changed || changed.has(a.id) || changed.has(b.id) });
     }
   });
   const END = 0.5;                                        // this close to an end point is the end point
@@ -358,6 +361,7 @@ export const splitCrossings = (vd: VectorData): VectorData => {
   const endOf = (c: Bez, p: Pt) => [c[0], c[3]].find(q => Math.hypot(q.x - p.x, q.y - p.y) < END);
   for (let i = 0; i < segs.length; i++) for (let j = i + 1; j < segs.length; j++) {
     const A = segs[i], B = segs[j];
+    if (!A.fresh && !B.fresh) continue;                    // both unchanged: done before
     if (apart(A.box, B.box)) continue;
     for (const [ta, tb] of crossings(A.c, B.c, A.straight && B.straight)) {
       const pa = cut(A.c, Math.min(1, Math.max(0, ta)))[0][3];

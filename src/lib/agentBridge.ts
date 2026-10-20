@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { withEverythingDrawn } from './viewCull';
 import { toPng } from 'html-to-image';
 import { fontCssFor, AT_ORIGIN } from './exportImage';
 import { useProjectStore, holdHistory } from '../store/useProjectStore';
@@ -177,7 +178,7 @@ const TOOLS: Record<string, (a: Record<string, any>) => unknown | Promise<unknow
   },
 
   // A picture of a screen or layer, so the AI can see what it made.
-  screenshot: async (a) => {
+  screenshot: (a) => withEverythingDrawn(async () => {
     const node = nodeFor(need(a.id, 'id'));
     if (!node) throw new Error('Not on the canvas: ' + a.id);
     const w = node.offsetWidth, h = node.offsetHeight;
@@ -186,7 +187,7 @@ const TOOLS: Record<string, (a: Record<string, any>) => unknown | Promise<unknow
     const png = await toPng(node, { pixelRatio: ratio, fontEmbedCSS: await fontCssFor(node), style: AT_ORIGIN,
                                     filter: n => !(n instanceof HTMLElement && 'exportSkip' in n.dataset) });
     return { image: png.split(',')[1], width: Math.round(w * ratio), height: Math.round(h * ratio) };
-  },
+  }),
 
   // Anything the other tools cannot do: JavaScript with the project store as
   // `pj` (its getState() has every action the editor uses).
